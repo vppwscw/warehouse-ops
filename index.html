@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สมุดทักษะคลัง</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<link rel="stylesheet" href="css/mobile.css">
+</head>
+<body>
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <div class="login-logo" id="loginLogo"></div>
+    <div class="login-title">เข้าสู่ระบบ</div>
+    <div class="login-sub">คลังสินค้า — สมุดทักษะพนักงาน</div>
+    <div class="field" style="margin-bottom:14px;"><label for="loginEmail">อีเมล</label><input id="loginEmail" type="email" placeholder="you@company.com" autocomplete="username"></div>
+    <div class="field" style="margin-bottom:18px;"><label for="loginPass">รหัสผ่าน</label><input id="loginPass" type="password" placeholder="กรอกรหัสผ่าน" autocomplete="current-password"></div>
+    <button type="button" class="btn" id="loginSubmitBtn">เข้าสู่ระบบ</button>
+    <p class="hint" id="loginHint"></p>
+  </div>
+</div>
+
+<div class="shell-outer">
+<div class="phone">
+
+  <div class="topbar">
+    <button type="button" class="back-btn" id="backBtn" hidden></button>
+    <div class="topbar-title" id="topbarTitle">เริ่มงาน</div>
+    <span class="role-badge" id="roleBadge"></span>
+    <button type="button" class="icon-btn" id="logoutBtn" title="ออกจากระบบ"></button>
+    <div class="live-pill" id="liveStatus"><span class="live-dot"></span>เชื่อมต่อ...</div>
+  </div>
+
+  <div class="content" id="contentArea">
+
+    <div class="screen active" id="screen-step1">
+      <div class="stat-row" id="statRow"></div>
+      <p class="step-q">วันนี้จะทำงานฝั่งไหน?</p>
+      <div class="tile-list" id="deptTiles"></div>
+    </div>
+
+    <div class="screen" id="screen-step2">
+      <p class="step-q" id="step2Title">เลือกงาน</p>
+      <div class="job-choice-list" id="jobChoiceList"></div>
+    </div>
+
+    <div class="screen" id="screen-step3">
+      <p class="step-q" id="step3Title">ใครทำงานนี้บ้าง?</p>
+      <div class="emp-check-list" id="empCheckList"></div>
+
+      <div class="field-row" style="margin-bottom:12px;">
+        <div class="field"><label for="d-date">วันที่</label><input id="d-date" type="date"></div>
+      </div>
+      <div class="field-row" style="margin-bottom:14px;">
+        <div class="field"><label for="d-start">เวลาเริ่ม</label><input id="d-start" type="time"></div>
+        <div class="field"><label for="d-end">เวลาจบ</label><input id="d-end" type="time"></div>
+      </div>
+      <div id="doneResultFields"></div>
+
+      <div class="sticky-cta">
+        <button type="button" class="btn" id="openSubmitBtn">บันทึกงาน</button>
+        <p class="hint" id="openHint"></p>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-success">
+      <div class="success-flash">
+        <div class="ok-circle"></div>
+        <div class="ok-text" id="successText">บันทึกงานแล้ว</div>
+        <div class="ok-sub" id="successSub"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-history">
+      <button type="button" class="job-choice" id="openMatrixBtn" style="margin-bottom:16px;">
+        <span class="jc-icon badge INV" id="matrixTrophyIcon" style="width:40px;height:40px;border-radius:11px;"></span>
+        <span><span class="jc-name">ใครทำอะไรได้บ้าง</span><br><span class="jc-sub">ดูสรุปทักษะพนักงานแต่ละคน</span></span>
+        <span class="t-chev" id="openMatrixChev"></span>
+      </button>
+
+      <div class="chip-scroll" id="dateFilterChips">
+        <button class="chip" data-range="today" aria-pressed="true">วันนี้</button>
+        <button class="chip" data-range="week" aria-pressed="false">7 วันล่าสุด</button>
+        <button class="chip" data-range="all" aria-pressed="false">ทั้งหมด</button>
+      </div>
+      <button type="button" class="link-btn" id="toggleMoreFiltersLink" style="margin-bottom:8px;">ค้นหา / กรองตามคน</button>
+      <div class="optional-panel" id="moreFiltersPanel" hidden>
+        <div class="field" style="margin-bottom:10px;"><select id="empFilter"><option value="">พนักงานทั้งหมด</option></select></div>
+        <input type="search" id="searchBox" placeholder="ค้นหาชื่องาน...">
+      </div>
+
+      <div id="historyList"></div>
+      <div class="empty-state" id="historyEmpty" hidden><div class="big">○</div>ยังไม่มีงานที่เสร็จช่วงนี้</div>
+    </div>
+
+    <div class="screen" id="screen-matrix">
+      <p class="hint" style="text-align:left;margin:0 0 16px;">แตะชื่อพนักงานเพื่อดูว่าเคยทำงานอะไรมาบ้าง</p>
+      <div id="matrixWrap"></div>
+    </div>
+
+    <div class="screen" id="screen-manage">
+      <button type="button" class="btn ghost" id="toggleAddEmpLink" style="margin-bottom:14px;">+ เพิ่มพนักงานใหม่</button>
+      <div id="rosterCols" style="margin-top:0;"></div>
+    </div>
+
+  </div>
+
+  <div class="bottomnav" id="bottomNav"></div>
+</div>
+</div>
+
+<div class="modal-backdrop" id="addEmpBackdrop"></div>
+<div class="modal-card" id="addEmpModal">
+  <div class="modal-title">เพิ่มพนักงานใหม่</div>
+  <div class="field" style="margin-bottom:12px;"><label for="r-name">ชื่อพนักงานคนใหม่</label><input id="r-name" placeholder="พิมพ์ชื่อ-นามสกุล"></div>
+  <button type="button" class="btn ghost" id="rosterSubmitBtn" style="margin-bottom:6px;">+ เพิ่มเข้ารายชื่อ</button>
+  <p class="hint" id="rosterHint"></p>
+</div>
+
+<footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
+
+<script src="js/supabase-config.js"></script>
+<script src="js/mobile.js"></script>
+</body>
+</html>

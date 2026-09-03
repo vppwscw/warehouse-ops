@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>สมุดทักษะคลัง</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/mobile.css">
+<link rel="stylesheet" href="css/mobile.css?v=2">
 </head>
 <body>
 
@@ -104,6 +104,39 @@
       <div id="rosterCols" style="margin-top:0;"></div>
     </div>
 
+    <!-- ===== USER role: today's task list (tap to open) ===== -->
+    <div class="screen" id="screen-worker-tasks">
+      <p class="step-q">งานของฉันวันนี้ — แตะเพื่อเริ่มงาน</p>
+      <div class="job-choice-list" id="workerTaskList"></div>
+    </div>
+
+    <!-- ===== USER role: the one job currently open (tap to close) ===== -->
+    <div class="screen" id="screen-worker-active">
+      <div class="active-job-card" id="activeJobCard"></div>
+      <div id="workerDoneFields"></div>
+      <div class="sticky-cta">
+        <button type="button" class="btn" id="workerCloseBtn">ปิดงาน · ส่งอนุมัติ</button>
+        <p class="hint" id="workerCloseHint"></p>
+      </div>
+    </div>
+
+    <!-- ===== USER role: post-close confirmation ===== -->
+    <div class="screen" id="screen-worker-success">
+      <div class="success-flash">
+        <div class="ok-circle"></div>
+        <div class="ok-text">ปิดงานแล้ว ส่งอนุมัติเรียบร้อย</div>
+        <div class="ok-sub" id="workerSuccessSub"></div>
+      </div>
+    </div>
+
+    <!-- ===== SUPERVISOR role: placeholder home (task mgmt + approvals ship next) ===== -->
+    <div class="screen" id="screen-supervisor-home">
+      <div class="empty-state" style="margin-top:56px;">
+        <div class="big">○</div>
+        หน้าจัดการชนิดงาน/อนุมัติงานสำหรับหัวหน้างาน<br>กำลังเปิดใช้งานเร็วๆ นี้<br>ตอนนี้ดูภาพรวมงานของแผนกได้ที่แท็บ "ประวัติ"
+      </div>
+    </div>
+
   </div>
 
   <div class="bottomnav" id="bottomNav"></div>
@@ -121,6 +154,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js"></script>
-<script src="js/mobile.js?v=4"></script>
+<script src="js/mobile.js?v=5"></script>
 </body>
 </html>

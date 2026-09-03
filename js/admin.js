@@ -3,7 +3,8 @@
 const DEPT_KEYS = ['INB','OUT','INV'];
 const DEPT_PLAIN = { INB:'ขาเข้า', OUT:'ขาออก', INV:'สต๊อก' };
 const DEPT_ICON  = { INB:'inbound', OUT:'outbound', INV:'inventory' };
-const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', SUPERVISOR:'หัวหน้างาน' };
+const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
+const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 
 const FALLBACK_TASKS = {
   INB: [
@@ -41,6 +42,9 @@ let profile = null, currentUser = null;
 let jobs = [], roster = [], users = [];
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
+
+// ASSISTANT sees everything ADMIN sees but can't approve/reject jobs
+const isReadOnly = () => !profile || profile.role !== 'ADMIN';
 
 // ---------- date helpers (Asia/Bangkok) ----------
 function nowBkk(){ return new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Bangkok'})); }
@@ -99,7 +103,7 @@ async function afterLogin(user){
     return;
   }
   profile = data;
-  if (profile.role !== 'ADMIN'){
+  if (!['ADMIN','ASSISTANT'].includes(profile.role)){
     showScreen('denied');
     return;
   }
@@ -169,6 +173,11 @@ document.addEventListener('click', e=>{
     deptChip.setAttribute('aria-pressed','true');
     deptFilter = deptChip.dataset.dept; render(); return;
   }
+
+  const approveBtn = e.target.closest('[data-approve-job]');
+  if (approveBtn){ setJobStatus(approveBtn.dataset.approveJob, 'approved'); return; }
+  const rejectBtn = e.target.closest('[data-reject-job]');
+  if (rejectBtn){ setJobStatus(rejectBtn.dataset.rejectJob, 'rejected'); return; }
 });
 document.getElementById('searchInput').addEventListener('input', e=>{ searchTerm = e.target.value.trim().toLowerCase(); render(); });
 
@@ -219,10 +228,12 @@ function renderStats(closed){
   const totalMins = closed.reduce((s,j)=>s+((j.details&&j.details.mins)||0),0);
   const avgMins = closed.length ? Math.round(totalMins/closed.length) : 0;
   const rosterScoped = deptFilter==='ALL' ? roster : roster.filter(r=>r.department===deptFilter);
+  const pendingCount = closed.filter(j=>(j.status||'approved')==='pending').length;
   document.getElementById('statGrid').innerHTML = `
     <div class="stat-tile accent"><div class="l">งานที่บันทึกแล้ว</div><div class="n num">${closed.length}<span class="unit">งาน</span></div></div>
     <div class="stat-tile"><div class="l">เวลาเฉลี่ยต่องาน</div><div class="n num">${avgMins}<span class="unit">นาที</span></div></div>
     <div class="stat-tile"><div class="l">พนักงานในขอบเขตนี้</div><div class="n num">${rosterScoped.length}<span class="unit">คน</span></div></div>
+    <div class="stat-tile${pendingCount?' warn':''}"><div class="l">รออนุมัติ</div><div class="n num">${pendingCount}<span class="unit">งาน</span></div></div>
   `;
 }
 
@@ -279,15 +290,17 @@ function renderDayChart(){
 function renderRecentTable(closed){
   const rows = [...closed].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,10);
   const tbody = document.querySelector('#recentTable tbody');
-  if (rows.length===0){ tbody.innerHTML = `<tr><td colspan="5" class="empty-note">ยังไม่มีงานที่บันทึกในช่วงนี้</td></tr>`; return; }
+  if (rows.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty-note">ยังไม่มีงานที่บันทึกในช่วงนี้</td></tr>`; return; }
   tbody.innerHTML = rows.map(j=>{
     const task = taskById(j.task_id); const d = j.details||{};
+    const status = j.status || 'approved';
     return `<tr>
       <td class="mono">${d.date||''} ${d.end||''}</td>
       <td><span class="badge ${j.department}"><span class="dot"></span>${DEPT_PLAIN[j.department]}</span></td>
       <td class="td-task">${task?task.label:j.task_id}</td>
       <td>${(j.crew||[]).join(', ')}</td>
       <td class="mono">${formatResult(d,task)}</td>
+      <td><span class="status-badge ${status}">${STATUS_LABEL[status]||status}</span></td>
     </tr>`;
   }).join('');
 }
@@ -295,9 +308,11 @@ function renderRecentTable(closed){
 function renderDetailsTable(closed){
   const rows = [...closed].sort((a,b)=>((b.details&&b.details.date)+((b.details&&b.details.start)||'')).localeCompare((a.details&&a.details.date)+((a.details&&a.details.start)||'')));
   const tbody = document.querySelector('#detailsTable tbody');
-  if (rows.length===0){ tbody.innerHTML = `<tr><td colspan="7" class="empty-note">ไม่พบรายการที่ตรงกับตัวกรอง</td></tr>`; return; }
+  if (rows.length===0){ tbody.innerHTML = `<tr><td colspan="9" class="empty-note">ไม่พบรายการที่ตรงกับตัวกรอง</td></tr>`; return; }
   tbody.innerHTML = rows.map(j=>{
     const task = taskById(j.task_id); const d = j.details||{};
+    const status = j.status || 'approved';
+    const canAct = !isReadOnly() && status==='pending';
     return `<tr>
       <td class="mono">${d.date||''}</td>
       <td><span class="badge ${j.department}"><span class="dot"></span>${DEPT_PLAIN[j.department]}</span></td>
@@ -306,8 +321,21 @@ function renderDetailsTable(closed){
       <td class="mono">${d.start||'–'}–${d.end||'–'}</td>
       <td class="mono">${d.mins ?? '–'}</td>
       <td class="mono">${formatResult(d,task)}</td>
+      <td><span class="status-badge ${status}">${STATUS_LABEL[status]||status}</span></td>
+      <td>${canAct ? `
+        <button type="button" class="mini-btn approve" data-approve-job="${j.id}">อนุมัติ</button>
+        <button type="button" class="mini-btn reject" data-reject-job="${j.id}">ไม่อนุมัติ</button>
+      ` : '–'}</td>
     </tr>`;
   }).join('');
+}
+
+async function setJobStatus(jobId, status){
+  const { error } = await sb.from('jobs').update({
+    status, approved_by: currentUser.id, approved_at: new Date().toISOString(),
+  }).eq('id', jobId);
+  if (error){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
+  await refreshJobs(); render();
 }
 
 function renderEmployeesTable(closed){

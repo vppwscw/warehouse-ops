@@ -476,6 +476,7 @@ function showSuccess(taskLabel, crewCount){
     document.getElementById('d-date').value=''; document.getElementById('d-start').value=''; document.getElementById('d-end').value='';
     document.getElementById('openHint').textContent='';
     goTab('history');
+    render();
   }, 1100);
 }
 

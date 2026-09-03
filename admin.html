@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=2">
+<link rel="stylesheet" href="css/admin.css?v=3">
 </head>
 <body>
 
@@ -105,7 +105,7 @@
         <p class="panel-sub">10 รายการล่าสุด</p>
         <div class="table-wrap" style="border:none;">
           <table id="recentTable">
-            <thead><tr><th>เวลา</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>ผลลัพธ์</th></tr></thead>
+            <thead><tr><th>เวลา</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>ผลลัพธ์</th><th>สถานะ</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -116,7 +116,7 @@
     <section class="view" id="view-details">
       <div class="table-wrap">
         <table id="detailsTable">
-          <thead><tr><th>วันที่</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>เริ่ม–จบ</th><th>นาที</th><th>ผลลัพธ์</th></tr></thead>
+          <thead><tr><th>วันที่</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>เริ่ม–จบ</th><th>นาที</th><th>ผลลัพธ์</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -148,6 +148,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js"></script>
-<script src="js/admin.js"></script>
+<script src="js/admin.js?v=2"></script>
 </body>
 </html>

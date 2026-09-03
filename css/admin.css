@@ -89,6 +89,9 @@ button{font:inherit;}
 .stat-tile .n .unit{font-size:13px;font-weight:500;color:var(--ink-dim);margin-left:3px;}
 .stat-tile.accent{background:var(--accent);}
 .stat-tile.accent .l{color:color-mix(in srgb, var(--accent-ink) 75%, transparent);}
+.stat-tile.warn{background:var(--danger-bg);}
+.stat-tile.warn .l{color:var(--danger);}
+.stat-tile.warn .n{color:var(--danger);}
 .stat-tile.accent .n{color:var(--accent-ink);}
 
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:20px;}
@@ -132,6 +135,16 @@ tbody tr:hover{background:var(--surface-2);}
 .badge.INV{background:var(--inv-bg);color:var(--inv);}
 .badge.INB .dot{background:var(--inb);} .badge.OUT .dot{background:var(--out);} .badge.INV .dot{background:var(--inv);}
 .badge.issue{background:var(--danger-bg);color:var(--danger);}
+.status-badge{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:4px 9px;border-radius:100px;white-space:nowrap;}
+.status-badge.pending{background:var(--danger-bg);color:var(--danger);}
+.status-badge.approved{background:var(--good-bg);color:var(--good);}
+.status-badge.rejected{background:var(--surface-3);color:var(--ink-dim);}
+.status-badge.open{background:var(--inb-bg);color:var(--inb);}
+.mini-btn{font:inherit;font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);cursor:pointer;margin-right:4px;}
+.mini-btn.approve{color:var(--good);border-color:var(--good);}
+.mini-btn.approve:hover{background:var(--good-bg);}
+.mini-btn.reject{color:var(--danger);border-color:var(--danger);}
+.mini-btn.reject:hover{background:var(--danger-bg);}
 .badge.role{background:var(--surface-3);color:var(--ink-dim);}
 .td-task{font-weight:600;}
 .td-sub{font-size:11.5px;color:var(--ink-dim);margin-top:1px;}

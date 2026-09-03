@@ -458,7 +458,8 @@ document.getElementById('workerCloseBtn').addEventListener('click', async ()=>{
 // ================= SUPERVISOR role: approvals =================
 async function refreshPendingApprovals(){
   try{
-    const { data, error } = await sb.from('jobs').select('*')
+    const { data, error } = await sb.from('jobs')
+      .select('*, requester:profiles!jobs_created_by_fkey(employee_code,full_name)')
       .eq('department', profile.department).eq('status', 'pending')
       .order('created_at', { ascending:true });
     if (error) throw error;
@@ -473,10 +474,11 @@ function renderApproveQueue(){
   empty.hidden = true;
   box.innerHTML = supervisorPending.map(j=>{
     const task = taskById(j.task_id); const d = j.details||{};
+    const code = j.requester && j.requester.employee_code;
     return `<div class="hist-card">
       <div class="hist-top"><div>
         <div class="hist-task">${task?task.label:j.task_id}</div>
-        <div class="hist-crew">${j.employee_name||''}</div>
+        <div class="hist-crew">${j.employee_name||''}${code ? ` · รหัส ${code}` : ''}</div>
       </div></div>
       <div class="hist-meta">
         <span>${d.date||''}</span>

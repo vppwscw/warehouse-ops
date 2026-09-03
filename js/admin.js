@@ -178,6 +178,9 @@ document.addEventListener('click', e=>{
   if (approveBtn){ setJobStatus(approveBtn.dataset.approveJob, 'approved'); return; }
   const rejectBtn = e.target.closest('[data-reject-job]');
   if (rejectBtn){ setJobStatus(rejectBtn.dataset.rejectJob, 'rejected'); return; }
+
+  const saveCodeBtn = e.target.closest('[data-save-code]');
+  if (saveCodeBtn){ saveEmployeeCode(saveCodeBtn.dataset.saveCode); return; }
 });
 document.getElementById('searchInput').addEventListener('input', e=>{ searchTerm = e.target.value.trim().toLowerCase(); render(); });
 
@@ -358,13 +361,27 @@ function renderEmployeesTable(closed){
 function renderUsersTable(){
   const tbody = document.querySelector('#usersTable tbody');
   if (!tbody) return;
-  if (users.length===0){ tbody.innerHTML = `<tr><td colspan="3" class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</td></tr>`; return; }
+  if (users.length===0){ tbody.innerHTML = `<tr><td colspan="5" class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</td></tr>`; return; }
   tbody.innerHTML = users.map(u=>`
     <tr>
       <td>${u.full_name||'–'}</td>
       <td><span class="badge role">${ROLE_LABEL[u.role]||u.role}</span></td>
       <td>${u.department ? `<span class="badge ${u.department}"><span class="dot"></span>${DEPT_PLAIN[u.department]}</span>` : '<span class="td-sub">ทุกแผนก</span>'}</td>
+      <td>${isReadOnly()
+        ? (u.employee_code || '–')
+        : `<input type="text" class="code-input" data-code-input="${u.id}" value="${u.employee_code||''}" placeholder="รหัส">`}</td>
+      <td>${isReadOnly() ? '' : `<button type="button" class="mini-btn approve" data-save-code="${u.id}">บันทึก</button>`}</td>
     </tr>`).join('');
+}
+async function saveEmployeeCode(userId){
+  const input = document.querySelector(`[data-code-input="${userId}"]`);
+  if (!input) return;
+  const code = input.value.trim();
+  try{
+    const { error } = await sb.from('profiles').update({ employee_code: code || null }).eq('id', userId);
+    if (error) throw error;
+    await refreshUsers(); renderUsersTable();
+  }catch(err){ alert('บันทึกไม่สำเร็จ: ' + mapDbError(err)); }
 }
 
 function render(){

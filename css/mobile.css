@@ -137,6 +137,17 @@ input[type=time],input[type=date]{font-family:'IBM Plex Mono',monospace;}
 .status-badge.rejected{background:var(--surface-3);color:var(--ink-dim);}
 .status-badge.open{background:var(--inb-bg);color:var(--inb);}
 
+.approve-actions{display:flex;gap:8px;margin-top:12px;}
+.mini-btn{flex:1;font:inherit;font-size:13px;font-weight:700;padding:9px 10px;border-radius:9px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;}
+.mini-btn.approve{color:var(--good);border-color:var(--good);}
+.mini-btn.approve:active{background:var(--good-bg);}
+.mini-btn.reject{color:var(--danger);border-color:var(--danger);}
+.mini-btn.reject:active{background:var(--danger-bg);}
+
+.task-row{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 15px;margin-bottom:9px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.task-row .t-name{font-weight:700;font-size:14.5px;}
+.task-row .t-inactive{color:var(--ink-faint);text-decoration:line-through;}
+
 .active-job-card{background:var(--surface);border:1.5px solid var(--accent);border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:var(--shadow-sm);}
 .active-job-name{font-weight:700;font-size:18px;margin-bottom:6px;}
 .active-job-meta{font-size:13px;color:var(--ink-dim);}

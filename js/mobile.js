@@ -87,6 +87,8 @@ const visibleDepts = () => isAdmin() ? DEPT_KEYS : DEPT_KEYS.filter(d=>d===profi
 
 let myOpenJob = null; // USER role: the job row they currently have open, if any
 let workerStep = 'list'; // USER role: 'list' (task list or active job) | 'success' (just closed)
+let supervisorPending = []; // SUPERVISOR role: pending jobs in their department
+let deptTasks = []; // SUPERVISOR role: raw tasks rows (active + inactive) for their department
 
 let oDeptVal = null, oTaskVal = null, crew = [];
 let doneFieldsBuiltForTask = null;
@@ -132,7 +134,7 @@ async function afterLogin(user){
   await loadTasksFromDb();
   if (isWorker()) await refreshMyOpenJob();
   wireRealtime();
-  goTab('new');
+  goTab(isSupervisorRole() ? 'approve' : 'new');
   await refreshAll();
 }
 
@@ -204,22 +206,23 @@ function navForRole(){
     {id:'new', label:'งานของฉัน', icon:'bolt'},
     {id:'history', label:'ประวัติ', icon:'chart'},
   ];
-  // SUPERVISOR home ships in a later pass — history stays available meanwhile
+  // SUPERVISOR: approve their department's pending jobs + manage its task types
   return [
-    {id:'new', label:'หน้าหลัก', icon:'bolt'},
+    {id:'approve', label:'อนุมัติงาน', icon:'check'},
+    {id:'tasks', label:'ชนิดงาน', icon:'box'},
     {id:'history', label:'ประวัติ', icon:'chart'},
   ];
 }
 function buildNav(){
-  document.getElementById('bottomNav').innerHTML = navForRole().map(n=>`
-    <button type="button" class="nav-btn" data-nav="${n.id}" aria-selected="${n.id==='new'}">
+  document.getElementById('bottomNav').innerHTML = navForRole().map((n,i)=>`
+    <button type="button" class="nav-btn" data-nav="${n.id}" aria-selected="${i===0}">
       <span class="n-icon">${ICONS[n.icon]}</span>
       <span class="n-label">${n.label}</span>
     </button>`).join('');
 }
 buildNav();
 
-const TAB_TITLE = { new:'เริ่มงาน', history:'ประวัติ', manage:'รายชื่อคนงาน' };
+const TAB_TITLE = { new:'เริ่มงาน', history:'ประวัติ', manage:'รายชื่อคนงาน', approve:'อนุมัติงาน', tasks:'ชนิดงาน' };
 
 let historySub = 'list';
 function goTab(tab){
@@ -227,9 +230,10 @@ function goTab(tab){
   if (tab==='new'){
     if (isAdmin()){ activeStep = 1; renderStep1(); }
     else if (isWorker()){ renderWorkerHome(); }
-    // SUPERVISOR: static placeholder screen, nothing to render yet
   }
   if (tab==='history') historySub = 'list';
+  if (tab==='approve') refreshPendingApprovals().then(renderApproveQueue);
+  if (tab==='tasks') refreshDeptTasks().then(renderTaskManager);
   document.querySelectorAll('.nav-btn').forEach(b=>b.setAttribute('aria-selected', b.dataset.nav===tab));
   renderScreens();
 }
@@ -246,7 +250,9 @@ function renderScreens(){
       if (workerStep==='success'){ screenId='screen-worker-success'; title='งานของฉัน'; }
       else { screenId = myOpenJob ? 'screen-worker-active' : 'screen-worker-tasks'; title = myOpenJob ? 'กำลังทำงาน' : 'งานของฉัน'; }
     } else {
-      screenId = 'screen-supervisor-home'; title = 'หน้าหลัก';
+      // SUPERVISOR has no 'new' tab (lands on 'approve' instead) — this only
+      // fires pre-login, while the login overlay covers the screen anyway
+      screenId = 'screen-step1'; title = 'เริ่มงาน';
     }
   } else if (activeTab==='history'){
     if (historySub==='matrix'){ screenId='screen-matrix'; title='ใครทำอะไรได้บ้าง'; showBack=true; }
@@ -449,6 +455,101 @@ document.getElementById('workerCloseBtn').addEventListener('click', async ()=>{
   }
 });
 
+// ================= SUPERVISOR role: approvals =================
+async function refreshPendingApprovals(){
+  try{
+    const { data, error } = await sb.from('jobs').select('*')
+      .eq('department', profile.department).eq('status', 'pending')
+      .order('created_at', { ascending:true });
+    if (error) throw error;
+    supervisorPending = data || [];
+  }catch(e){ supervisorPending = []; }
+}
+function renderApproveQueue(){
+  const box = document.getElementById('approveList');
+  const empty = document.getElementById('approveEmpty');
+  if (!box) return;
+  if (supervisorPending.length===0){ box.innerHTML=''; empty.hidden=false; return; }
+  empty.hidden = true;
+  box.innerHTML = supervisorPending.map(j=>{
+    const task = taskById(j.task_id); const d = j.details||{};
+    return `<div class="hist-card">
+      <div class="hist-top"><div>
+        <div class="hist-task">${task?task.label:j.task_id}</div>
+        <div class="hist-crew">${j.employee_name||''}</div>
+      </div></div>
+      <div class="hist-meta">
+        <span>${d.date||''}</span>
+        <span>${d.start||''}–${d.end||'–'} (${d.mins ?? '–'} นาที)</span>
+        <span class="hist-result">${formatResult(d, task)}</span>
+      </div>
+      <div class="approve-actions">
+        <button type="button" class="mini-btn approve" data-approve-job="${j.id}">อนุมัติ</button>
+        <button type="button" class="mini-btn reject" data-reject-job="${j.id}">ไม่อนุมัติ</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function setJobStatusSupervisor(jobId, status){
+  try{
+    const { error } = await sb.from('jobs').update({
+      status, approved_by: currentUser.id, approved_at: new Date().toISOString(),
+    }).eq('id', jobId);
+    if (error) throw error;
+    await refreshPendingApprovals(); renderApproveQueue();
+    await refreshJobs(); render();
+  }catch(err){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
+}
+
+// ================= SUPERVISOR role: task types =================
+async function refreshDeptTasks(){
+  try{
+    const { data, error } = await sb.from('tasks').select('*')
+      .eq('department', profile.department).order('name');
+    if (error) throw error;
+    deptTasks = data || [];
+  }catch(e){ deptTasks = []; }
+}
+function renderTaskManager(){
+  const box = document.getElementById('taskMgmtList');
+  if (!box) return;
+  if (deptTasks.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของแผนกนี้</div>`; return; }
+  box.innerHTML = deptTasks.map(t=>`
+    <div class="task-row">
+      <span class="t-name ${t.active?'':'t-inactive'}">${t.name}</span>
+      <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${t.id}" data-next-active="${t.active?'false':'true'}">
+        ${t.active?'ปิดใช้งาน':'เปิดใช้งาน'}
+      </button>
+    </div>`).join('');
+}
+function openAddTaskModal(){
+  document.getElementById('t-name').value='';
+  document.getElementById('taskHint').textContent='';
+  document.getElementById('addTaskBackdrop').classList.add('open');
+  document.getElementById('addTaskModal').classList.add('open');
+  setTimeout(()=>document.getElementById('t-name').focus(), 50);
+}
+function closeAddTaskModal(){
+  document.getElementById('addTaskBackdrop').classList.remove('open');
+  document.getElementById('addTaskModal').classList.remove('open');
+}
+document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('t-name').value.trim();
+  const hint = document.getElementById('taskHint');
+  if (!name){ hint.textContent = 'พิมพ์ชื่องานก่อน'; return; }
+  if (deptTasks.some(t=>t.name===name)){ hint.textContent = `"${name}" มีอยู่แล้ว`; return; }
+  hint.textContent = 'กำลังเพิ่ม...';
+  try{
+    const id = profile.department.toLowerCase() + '_' + Date.now();
+    const { error } = await sb.from('tasks').insert({ id, department: profile.department, name, active: true });
+    if (error) throw error;
+    hint.textContent = `เพิ่ม "${name}" แล้ว`;
+    await refreshDeptTasks(); renderTaskManager();
+    await loadTasksFromDb();
+    setTimeout(closeAddTaskModal, 500);
+  }catch(err){ hint.textContent = 'เพิ่มไม่สำเร็จ: ' + mapDbError(err); }
+});
+
 // ================= EVENT DELEGATION =================
 document.addEventListener('click', async (e)=>{
   const navBtn = e.target.closest('[data-nav]');
@@ -538,6 +639,26 @@ document.addEventListener('click', async (e)=>{
     const d = rosterHead.dataset.rosterDept;
     openRosterDept = (openRosterDept===d) ? null : d;
     renderRosterManager();
+    return;
+  }
+
+  const approveBtn = e.target.closest('[data-approve-job]');
+  if (approveBtn){ setJobStatusSupervisor(approveBtn.dataset.approveJob, 'approved'); return; }
+  const rejectBtn = e.target.closest('[data-reject-job]');
+  if (rejectBtn){ setJobStatusSupervisor(rejectBtn.dataset.rejectJob, 'rejected'); return; }
+
+  if (e.target.closest('#toggleAddTaskLink')){ openAddTaskModal(); return; }
+  if (e.target.closest('#addTaskBackdrop')){ closeAddTaskModal(); return; }
+
+  const toggleTask = e.target.closest('[data-toggle-task]');
+  if (toggleTask){
+    const id = toggleTask.dataset.toggleTask;
+    const nextActive = toggleTask.dataset.nextActive === 'true';
+    try{
+      await sb.from('tasks').update({ active: nextActive }).eq('id', id);
+      await refreshDeptTasks(); renderTaskManager();
+      await loadTasksFromDb();
+    }catch(err){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
     return;
   }
 });
@@ -789,6 +910,8 @@ function render(){
     } else if (isWorker() && workerStep!=='success'){
       renderWorkerHome();
     }
+  } else if (activeTab==='approve' && isSupervisorRole()){
+    refreshPendingApprovals().then(renderApproveQueue);
   }
 }
 

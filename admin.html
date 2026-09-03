@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=3">
+<link rel="stylesheet" href="css/admin.css?v=4">
 </head>
 <body>
 
@@ -132,12 +132,12 @@
       </div>
     </section>
 
-    <!-- ===== VIEW: USERS (read-only, replaces the old permissions/password editor) ===== -->
+    <!-- ===== VIEW: USERS (employee code is editable; everything else stays Supabase-dashboard-only) ===== -->
     <section class="view" id="view-users">
-      <p class="sub" style="margin:0 0 14px;">รายชื่อผู้ใช้งานในระบบ (สร้าง/แก้ไขบัญชีได้ที่ Supabase dashboard เท่านั้น)</p>
+      <p class="sub" style="margin:0 0 14px;">รายชื่อผู้ใช้งานในระบบ — ตั้งรหัสพนักงานได้ที่นี่ ส่วนอื่น (สร้าง/แก้ไขบัญชี) ทำที่ Supabase dashboard เท่านั้น</p>
       <div class="table-wrap">
         <table id="usersTable">
-          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>แผนก</th></tr></thead>
+          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>แผนก</th><th>รหัสพนักงาน</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -148,6 +148,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js"></script>
-<script src="js/admin.js?v=2"></script>
+<script src="js/admin.js?v=3"></script>
 </body>
 </html>

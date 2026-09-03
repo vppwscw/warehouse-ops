@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>สมุดทักษะคลัง</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/mobile.css?v=2">
+<link rel="stylesheet" href="css/mobile.css?v=3">
 </head>
 <body>
 
@@ -129,12 +129,16 @@
       </div>
     </div>
 
-    <!-- ===== SUPERVISOR role: placeholder home (task mgmt + approvals ship next) ===== -->
-    <div class="screen" id="screen-supervisor-home">
-      <div class="empty-state" style="margin-top:56px;">
-        <div class="big">○</div>
-        หน้าจัดการชนิดงาน/อนุมัติงานสำหรับหัวหน้างาน<br>กำลังเปิดใช้งานเร็วๆ นี้<br>ตอนนี้ดูภาพรวมงานของแผนกได้ที่แท็บ "ประวัติ"
-      </div>
+    <!-- ===== SUPERVISOR role: pending-approval queue for their department ===== -->
+    <div class="screen" id="screen-approve">
+      <div id="approveList"></div>
+      <div class="empty-state" id="approveEmpty" hidden><div class="big">○</div>ไม่มีงานรออนุมัติตอนนี้</div>
+    </div>
+
+    <!-- ===== SUPERVISOR role: task types for their department ===== -->
+    <div class="screen" id="screen-tasks">
+      <button type="button" class="btn ghost" id="toggleAddTaskLink" style="margin-bottom:14px;">+ เพิ่มชนิดงานใหม่</button>
+      <div id="taskMgmtList"></div>
     </div>
 
   </div>
@@ -151,9 +155,17 @@
   <p class="hint" id="rosterHint"></p>
 </div>
 
+<div class="modal-backdrop" id="addTaskBackdrop"></div>
+<div class="modal-card" id="addTaskModal">
+  <div class="modal-title">เพิ่มชนิดงานใหม่</div>
+  <div class="field" style="margin-bottom:12px;"><label for="t-name">ชื่องาน</label><input id="t-name" placeholder="เช่น ตรวจนับสต๊อกปลายวัน"></div>
+  <button type="button" class="btn ghost" id="taskSubmitBtn" style="margin-bottom:6px;">+ เพิ่มชนิดงาน</button>
+  <p class="hint" id="taskHint"></p>
+</div>
+
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js"></script>
-<script src="js/mobile.js?v=5"></script>
+<script src="js/mobile.js?v=6"></script>
 </body>
 </html>

@@ -254,8 +254,8 @@ function renderStep3(){
     box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง${DEPT_PLAIN[oDeptVal]}<br>ไปเพิ่มที่แถบ "คนงาน" ด้านล่างก่อน</div>`;
   } else {
     box.innerHTML = list.map(r=>`
-      <button type="button" class="emp-check" data-pick-emp="${r.id}" aria-pressed="${crew.includes(r.id)}">
-        <span class="ec-box">${crew.includes(r.id) ? ICONS.checksm : ''}</span>
+      <button type="button" class="emp-check" data-pick-emp="${r.id}" aria-pressed="${crew.includes(String(r.id))}">
+        <span class="ec-box">${crew.includes(String(r.id)) ? ICONS.checksm : ''}</span>
         <span class="ec-name">${r.name}</span>
       </button>`).join('');
   }

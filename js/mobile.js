@@ -192,7 +192,7 @@ function goTab(tab){
   activeTab = tab;
   if (tab==='new'){
     if (isAdmin()){ activeStep = 1; renderStep1(); }
-    else { oDeptVal = profile.department; oTaskVal=null; crew=[]; activeStep = 2; renderStep2(); }
+    else if (profile){ oDeptVal = profile.department; oTaskVal=null; crew=[]; activeStep = 2; renderStep2(); }
   }
   if (tab==='history') historySub = 'list';
   document.querySelectorAll('.nav-btn').forEach(b=>b.setAttribute('aria-selected', b.dataset.nav===tab));

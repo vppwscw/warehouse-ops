@@ -54,7 +54,12 @@ npx serve -l 8000
 
 > รหัสผ่านนี้เป็นบัญชีทดสอบเท่านั้น แนะนำให้เปลี่ยน/ลบก่อนใช้งานจริงกับทีม แล้วสร้างบัญชีจริงของแต่ละคนแทน (สร้าง auth user ที่ Supabase Auth dashboard แล้ว insert แถวคู่กันใน `profiles` — ดูโครงสร้างด้านล่าง)
 
-### วิธีสร้างบัญชีใหม่ (2 ขั้น)
+### วิธีสร้างบัญชีใหม่
+
+**วิธีปกติ — จากหน้า admin.html (ต้อง deploy Edge Function ก่อน ดู "การจัดการผู้ใช้งาน" ด้านล่าง):**
+ADMIN → แท็บ "ผู้ใช้งานระบบ" → **＋ เพิ่มผู้ใช้ใหม่** → กรอกอีเมล / ชื่อ / รหัสผ่านชั่วคราว / สิทธิ์ / แผนก → สร้างบัญชี. ระบบสร้าง auth user (ยืนยันอีเมลให้อัตโนมัติ) + แถว `profiles` ให้พร้อมกัน. ผู้ใช้ login ด้วยรหัสชั่วคราวแล้วเปลี่ยนเองทีหลัง
+
+**วิธี manual (2 ขั้น) — ถ้ายังไม่ได้ deploy Edge Function:**
 
 1. **Supabase dashboard → Authentication → Users → Add user** — กรอกอีเมล/รหัสผ่าน ติ๊ก **Auto Confirm User**
 2. **SQL Editor** — insert แถว `profiles` คู่กัน:
@@ -99,6 +104,7 @@ npx serve -l 8000
   - `full_name`, `department` (enum `department`: INB/OUT/INV, ว่างสำหรับ ADMIN/ASSISTANT)
   - `role` (enum `user_role`: ADMIN / ASSISTANT / SUPERVISOR / USER)
   - `employee_code` — รหัสพนักงาน ตั้งเองได้จากหน้า admin.html → ผู้ใช้งานระบบ (ใช้แยกคนตอนอนุมัติงาน กันชื่อซ้ำ)
+  - `active` (boolean, default `true`) — soft delete. `false` = login ไม่ได้ (แอปเช็คใน `afterLogin`) แต่ข้อมูลงานที่เคยทำยังอยู่ครบ
 - `employees` — รายชื่อพนักงานแบบ roster เก่า (ยังใช้โดย ADMIN ในโหมดเดิมของ index.html)
 - `tasks` — ชนิดงานที่ทำได้ต่อแผนก (`id` text, `department`, `name`, `active`) — SUPERVISOR เพิ่ม/ปิดใช้งานได้เฉพาะแผนกตัวเอง
 - `jobs` — งานที่บันทึก
@@ -110,31 +116,30 @@ Helper functions (SQL, `SECURITY DEFINER`): `is_admin()`, `is_assistant()`, `is_
 
 กติกา RLS หลัก:
 - `profiles` — เห็นตัวเอง เสมอ; ADMIN/ASSISTANT เห็นทุกคน; SUPERVISOR เห็นคนในแผนกตัวเอง (เอาไว้โชว์ `employee_code` ตอนอนุมัติ)
-- `profiles` update — policy `profiles_update` = `((id = auth.uid()) OR is_admin())` (ใครก็แก้แถวตัวเองได้). **กัน privilege escalation ด้วย trigger** `trg_prevent_profile_privilege_change` (BEFORE UPDATE) → เรียก `prevent_profile_privilege_change()` ซึ่ง `raise exception` ถ้าจะเปลี่ยน `role` / `department` / `employee_code` โดยไม่ใช่ ADMIN (แก้ `full_name` ตัวเองยังได้). เพิ่มเมื่อ 2026-09-04 หลังพบว่า USER/SUPERVISOR/ASSISTANT ยิง `update profiles set role='ADMIN'` แถวตัวเองแล้วกลายเป็น ADMIN ได้
+- `profiles` update — policy `profiles_update` = `((id = auth.uid()) OR is_admin())` (ใครก็แก้แถวตัวเองได้). **กัน privilege escalation ด้วย trigger** `trg_prevent_profile_privilege_change` (BEFORE UPDATE) → `raise exception` ถ้าจะเปลี่ยน `role` / `department` / `employee_code` / `active` โดยไม่ใช่ ADMIN (แก้ `full_name` ตัวเองยังได้; `service_role` ผ่านได้ สำหรับ Edge Function). เพิ่มเมื่อ 2026-09-04 หลังพบว่า USER/SUPERVISOR/ASSISTANT ยิง `update profiles set role='ADMIN'` แถวตัวเองแล้วกลายเป็น ADMIN ได้
 - `tasks`/`jobs`/`employees` — เห็น/แก้ได้เฉพาะแผนกตัวเอง ยกเว้น ADMIN/ASSISTANT เห็นทุกแผนก (ASSISTANT อ่านอย่างเดียว)
 - `jobs` insert — เฉพาะ USER เปิดงานของตัวเอง (`created_by = auth.uid()`) หรือ ADMIN
 - `jobs` update — เจ้าของงานเอง (ตอน `status='open'` เท่านั้น) หรือ SUPERVISOR/ADMIN (อนุมัติ/ไม่อนุมัติ)
 
-> SQL ของ trigger นี้อยู่ใน Supabase project เท่านั้น (repo เป็น static site ไม่มีโฟลเดอร์ migration):
-> ```sql
-> create or replace function public.prevent_profile_privilege_change()
-> returns trigger language plpgsql security definer set search_path = public as $$
-> begin
->   if not public.is_admin() and (
->        new.role          is distinct from old.role
->     or new.department    is distinct from old.department
->     or new.employee_code is distinct from old.employee_code
->   ) then
->     raise exception 'not allowed to change role, department or employee_code';
->   end if;
->   return new;
-> end $$;
+> SQL ที่ต้องรันบน Supabase (ไม่ auto-migrate — repo เป็น static site) เก็บไว้ที่ [`sql/`](sql/):
+> - `sql/2026-09-04-user-management.sql` — เพิ่มคอลัมน์ `active` + trigger `trg_prevent_profile_privilege_change` เวอร์ชันล่าสุด (กัน `role`/`department`/`employee_code`/`active` + ยอมให้ `service_role` ผ่าน)
 >
-> drop trigger if exists trg_prevent_profile_privilege_change on public.profiles;
-> create trigger trg_prevent_profile_privilege_change
->   before update on public.profiles
->   for each row execute function public.prevent_profile_privilege_change();
-> ```
+> รันไฟล์นี้ **ก่อน** deploy เว็บเวอร์ชันที่มีระบบจัดการผู้ใช้
+
+## การจัดการผู้ใช้งาน (ADMIN)
+
+ADMIN สร้าง/แก้สิทธิ์/ปิดใช้งานบัญชีได้จาก **admin.html → แท็บ "ผู้ใช้งานระบบ"**:
+
+- **＋ เพิ่มผู้ใช้ใหม่** — กรอกอีเมล / ชื่อ / รหัสผ่านชั่วคราว / สิทธิ์ / แผนก → เรียก Edge Function `admin-users`
+- **แก้ราย row** — เปลี่ยน role / แผนก / รหัสพนักงาน แล้วกด "บันทึก" (เขียน `profiles` ตรงด้วย JWT ของ ADMIN — trigger ยอมให้ `is_admin()` ผ่าน)
+- **ปิดใช้งาน / เปิดใช้งาน** — soft delete (`profiles.active`). บัญชีที่ปิดจะ login ไม่ได้ แต่ประวัติงานยังอยู่. ลบถาวรทำที่ Supabase dashboard เท่านั้น
+- ปิดใช้งาน/เปลี่ยนสิทธิ์บัญชี **ตัวเอง** ไม่ได้ (กัน ADMIN ล็อกตัวเองออก)
+
+**ทำไมต้องมี Edge Function:** การสร้าง/ลบ auth user ต้องใช้ `service_role` key ซึ่งห้ามฝังในหน้าเว็บ. Edge Function `admin-users` ถือ key ฝั่ง server, ตรวจว่าคนเรียกเป็น ADMIN ที่ active อยู่ก่อนทำงาน
+
+**Deploy Edge Function:** Supabase dashboard → Edge Functions → Deploy a new function ชื่อ `admin-users` → paste เนื้อหา [`supabase/functions/admin-users/index.ts`](supabase/functions/admin-users/index.ts) → Deploy. Secret (`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`) Supabase ใส่ให้อัตโนมัติ ไม่ต้องตั้งเอง
+
+> Trigger เวอร์ชันก่อนหน้า (ยังไม่มี `active` / service_role bypass) เพิ่มเมื่อ 2026-09-04 — ดู `sql/2026-09-04-user-management.sql` สำหรับเวอร์ชันปัจจุบันที่ต้องใช้
 
 ## สถานะโปรเจกต์ (อัปเดตล่าสุด)
 
@@ -150,6 +155,7 @@ Helper functions (SQL, `SECURITY DEFINER`): `is_admin()`, `is_assistant()`, `is_
 - [x] ทดสอบ end-to-end ทุก flow ครบ 4 role บน production ยืนยันจริง (เปิด/ปิดงาน, อนุมัติ+ไม่อนุมัติ ทั้ง SUPERVISOR และ ADMIN, จัดการชนิดงาน, ตั้ง `employee_code`, ASSISTANT read-only) — บัญชี `assistant.test` ที่ใช้ทดสอบถูกปิดใช้งานแล้ว (ลบแถว `profiles`)
 - [x] แก้ช่องโหว่ privilege escalation ใน `profiles` (S1) ด้วย trigger `trg_prevent_profile_privilege_change` — ดูหัวข้อ RLS
 - [x] แก้บั๊ก B1 (แท็บประวัติมือถือค้าง stale หลังปิดงาน) + G1 (admin แท็บ "พนักงาน" ไม่นับงานของบัญชี auth เพราะ match ชื่อกับ roster เก่า → เปลี่ยนเป็น union ชื่อ roster + ชื่อใน job crew)
+- [x] ระบบจัดการผู้ใช้งานในหน้า admin.html — ADMIN สร้างบัญชี (ผ่าน Edge Function `admin-users`), แก้ role/แผนก/รหัสพนักงาน, ปิดใช้งาน (soft delete `profiles.active`) — ต้องรัน `sql/2026-09-04-user-management.sql` + deploy Edge Function ก่อน
 - [ ] สร้างบัญชีจริงให้พนักงานแต่ละคน (รอรายชื่อ-อีเมล-แผนก-สิทธิ์จากผู้ใช้งาน) แล้วลบ/เปลี่ยนรหัสบัญชีทดสอบ
 - [ ] ฟีเจอร์ "มอบหมายงานรายคน" โดย SUPERVISOR (ตอนนี้ USER เลือกงานจากรายการเองอิสระ ยังไม่มีการมอบหมายเจาะจงรายคน — ถ้าต้องการค่อยทำเพิ่ม)
 - [ ] ทดสอบกับผู้ใช้งานจริงหน้างาน ก่อนเลิกใช้ระบบเดิม

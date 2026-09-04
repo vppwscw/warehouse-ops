@@ -5,6 +5,8 @@ const DEPT_PLAIN = { INB:'ขาเข้า', OUT:'ขาออก', INV:'ส�
 const DEPT_ICON  = { INB:'inbound', OUT:'outbound', INV:'inventory' };
 const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
+const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
+const ROLE_ORDER = ['USER','SUPERVISOR','ASSISTANT','ADMIN'];
 
 const FALLBACK_TASKS = {
   INB: [
@@ -103,6 +105,11 @@ async function afterLogin(user){
     return;
   }
   profile = data;
+  if (profile.active === false){
+    document.getElementById('deniedText').textContent = 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+    showScreen('denied');
+    return;
+  }
   if (!['ADMIN','ASSISTANT'].includes(profile.role)){
     showScreen('denied');
     return;
@@ -179,8 +186,13 @@ document.addEventListener('click', e=>{
   const rejectBtn = e.target.closest('[data-reject-job]');
   if (rejectBtn){ setJobStatus(rejectBtn.dataset.rejectJob, 'rejected'); return; }
 
-  const saveCodeBtn = e.target.closest('[data-save-code]');
-  if (saveCodeBtn){ saveEmployeeCode(saveCodeBtn.dataset.saveCode); return; }
+  const saveUserBtn = e.target.closest('[data-save-user]');
+  if (saveUserBtn){ saveUserRow(saveUserBtn.dataset.saveUser); return; }
+  const toggleUserBtn = e.target.closest('[data-toggle-user]');
+  if (toggleUserBtn){ toggleUserActive(toggleUserBtn.dataset.toggleUser, toggleUserBtn.dataset.nextActive === 'true'); return; }
+  if (e.target.closest('#toggleAddUserBtn')){ const f = document.getElementById('addUserForm'); f.hidden = !f.hidden; return; }
+  if (e.target.closest('#cancelAddUserBtn')){ document.getElementById('addUserForm').hidden = true; return; }
+  if (e.target.closest('#createUserBtn')){ createUserFromForm(); return; }
 });
 document.getElementById('searchInput').addEventListener('input', e=>{ searchTerm = e.target.value.trim().toLowerCase(); render(); });
 
@@ -378,30 +390,120 @@ function renderEmployeesTable(closed){
   }).join('');
 }
 
+function roleOptions(sel){
+  return ROLE_ORDER.map(r=>`<option value="${r}" ${sel===r?'selected':''}>${ROLE_LABEL[r]}</option>`).join('');
+}
+function deptOptions(sel){
+  return `<option value="">— ไม่มีแผนก —</option>` +
+    DEPT_KEYS.map(d=>`<option value="${d}" ${sel===d?'selected':''}>${DEPT_PLAIN[d]}</option>`).join('');
+}
+
 function renderUsersTable(){
   const tbody = document.querySelector('#usersTable tbody');
   if (!tbody) return;
-  if (users.length===0){ tbody.innerHTML = `<tr><td colspan="5" class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</td></tr>`; return; }
-  tbody.innerHTML = users.map(u=>`
-    <tr>
+  const ro = isReadOnly();
+  const bar = document.getElementById('userAdminBar');
+  if (bar) bar.hidden = ro;
+  if (ro){ const f = document.getElementById('addUserForm'); if (f) f.hidden = true; }
+  const note = document.getElementById('usersViewNote');
+  if (note) note.textContent = ro
+    ? 'รายชื่อผู้ใช้งานในระบบ (อ่านอย่างเดียว)'
+    : 'เพิ่มบัญชี / แก้สิทธิ์-แผนก-รหัสพนักงาน / ปิดใช้งานได้จากที่นี่ · การลบถาวรทำที่ Supabase dashboard';
+  const nuRole = document.getElementById('nuRole');
+  if (!ro && nuRole && !nuRole.options.length){
+    nuRole.innerHTML = roleOptions('USER');
+    document.getElementById('nuDept').innerHTML = deptOptions('');
+  }
+
+  if (users.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</td></tr>`; return; }
+  tbody.innerHTML = users.map(u=>{
+    const active = u.active !== false;
+    const isSelf = currentUser && u.id === currentUser.id;
+    const deptBadge = u.department
+      ? `<span class="badge ${u.department}"><span class="dot"></span>${DEPT_PLAIN[u.department]}</span>`
+      : '<span class="td-sub">ทุกแผนก</span>';
+    const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
+    if (ro){
+      return `<tr>
+        <td>${u.full_name||'–'}</td>
+        <td><span class="badge role">${ROLE_LABEL[u.role]||u.role}</span></td>
+        <td>${deptBadge}</td>
+        <td>${u.employee_code || '–'}</td>
+        <td>${statusBadge}</td>
+        <td></td>
+      </tr>`;
+    }
+    return `<tr data-user-row="${u.id}" class="${active?'':'row-inactive'}">
       <td>${u.full_name||'–'}</td>
-      <td><span class="badge role">${ROLE_LABEL[u.role]||u.role}</span></td>
-      <td>${u.department ? `<span class="badge ${u.department}"><span class="dot"></span>${DEPT_PLAIN[u.department]}</span>` : '<span class="td-sub">ทุกแผนก</span>'}</td>
-      <td>${isReadOnly()
-        ? (u.employee_code || '–')
-        : `<input type="text" class="code-input" data-code-input="${u.id}" value="${u.employee_code||''}" placeholder="รหัส">`}</td>
-      <td>${isReadOnly() ? '' : `<button type="button" class="mini-btn approve" data-save-code="${u.id}">บันทึก</button>`}</td>
-    </tr>`).join('');
+      <td><select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select></td>
+      <td><select class="mini-select" data-u-dept>${deptOptions(u.department)}</select></td>
+      <td><input type="text" class="code-input" data-u-code value="${u.employee_code||''}" placeholder="รหัส"></td>
+      <td>${isSelf ? statusBadge
+        : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${u.id}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}</td>
+      <td><button type="button" class="mini-btn approve" data-save-user="${u.id}">บันทึก</button></td>
+    </tr>`;
+  }).join('');
 }
-async function saveEmployeeCode(userId){
-  const input = document.querySelector(`[data-code-input="${userId}"]`);
-  if (!input) return;
-  const code = input.value.trim();
+
+async function saveUserRow(userId){
+  const row = document.querySelector(`tr[data-user-row="${userId}"]`);
+  if (!row) return;
+  const role = row.querySelector('[data-u-role]').value;
+  const noDept = role === 'ADMIN' || role === 'ASSISTANT';
+  const department = noDept ? null : (row.querySelector('[data-u-dept]').value || null);
+  const employee_code = row.querySelector('[data-u-code]').value.trim() || null;
+  if (!noDept && !department){ alert('SUPERVISOR / USER ต้องระบุแผนก'); return; }
+  const btn = row.querySelector('[data-save-user]');
+  const label = btn.textContent; btn.textContent = '...'; btn.disabled = true;
   try{
-    const { error } = await sb.from('profiles').update({ employee_code: code || null }).eq('id', userId);
+    const { error } = await sb.from('profiles').update({ role, department, employee_code }).eq('id', userId);
     if (error) throw error;
     await refreshUsers(); renderUsersTable();
-  }catch(err){ alert('บันทึกไม่สำเร็จ: ' + mapDbError(err)); }
+  }catch(err){
+    alert('บันทึกไม่สำเร็จ: ' + mapDbError(err));
+    btn.textContent = label; btn.disabled = false;
+  }
+}
+
+async function toggleUserActive(userId, next){
+  if (currentUser && userId === currentUser.id){ alert('ปิดใช้งานบัญชีตัวเองไม่ได้'); return; }
+  if (!next && !confirm('ปิดใช้งานบัญชีนี้? ผู้ใช้จะเข้าสู่ระบบไม่ได้ (ข้อมูลงานยังอยู่ครบ)')) return;
+  try{
+    const { error } = await sb.from('profiles').update({ active: next }).eq('id', userId);
+    if (error) throw error;
+    await refreshUsers(); renderUsersTable();
+  }catch(err){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
+}
+
+async function createUserFromForm(){
+  const hint = document.getElementById('addUserHint');
+  const email = document.getElementById('nuEmail').value.trim();
+  const full_name = document.getElementById('nuName').value.trim();
+  const password = document.getElementById('nuPass').value;
+  const role = document.getElementById('nuRole').value;
+  const department = document.getElementById('nuDept').value || null;
+  if (!email || !full_name || !password){ hint.textContent = 'กรอก อีเมล / ชื่อ / รหัสผ่าน ให้ครบ'; return; }
+  if (password.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
+  if ((role === 'SUPERVISOR' || role === 'USER') && !department){ hint.textContent = 'SUPERVISOR / USER ต้องระบุแผนก'; return; }
+  hint.textContent = 'กำลังสร้างบัญชี...';
+  try{
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch(ADMIN_USERS_FN, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ action: 'create', email, password, full_name, role, department }),
+    });
+    const out = await res.json().catch(()=>({}));
+    if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
+    hint.textContent = `สร้างบัญชี ${email} แล้ว`;
+    ['nuEmail','nuName','nuPass'].forEach(id=>{ document.getElementById(id).value = ''; });
+    await refreshUsers(); renderUsersTable();
+    setTimeout(()=>{ document.getElementById('addUserForm').hidden = true; hint.textContent = ''; }, 1400);
+  }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
 }
 
 function render(){
@@ -435,7 +537,8 @@ async function refreshRoster(){
 }
 async function refreshUsers(){
   try{
-    const { data, error } = await sb.from('profiles').select('*').order('full_name');
+    const { data, error } = await sb.from('profiles').select('*')
+      .order('active', { ascending: false }).order('full_name');
     if (error) throw error;
     users = data || [];
   }catch(e){ /* admin-only view; ignore errors for non-critical panel */ }

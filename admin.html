@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=10">
+<link rel="stylesheet" href="css/admin.css?v=11">
 </head>
 <body>
 
@@ -79,6 +79,9 @@
         <input type="search" id="searchInput" placeholder="ค้นหางาน / ชื่อพนักงาน...">
       </div>
     </div>
+
+    <!-- loading skeleton / load-error card — replaces the active view while shown -->
+    <div id="viewState" hidden></div>
 
     <!-- ===== VIEW: DASHBOARD ===== -->
     <section class="view active" id="view-dashboard">
@@ -172,6 +175,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=13"></script>
+<script src="js/admin.js?v=14"></script>
 </body>
 </html>

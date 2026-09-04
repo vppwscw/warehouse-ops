@@ -742,6 +742,7 @@ document.getElementById('openSubmitBtn').addEventListener('click', async ()=>{
 function mapDbError(err){
   if (!err) return 'unknown error';
   if (err.code === '42501' || /row-level security/i.test(err.message||'')) return 'ไม่มีสิทธิ์บันทึกข้อมูลของแผนกนี้';
+  if (err.code === '23505') return 'ข้อมูลซ้ำกับที่มีอยู่แล้ว';
   return err.message || err.code || 'unknown error';
 }
 

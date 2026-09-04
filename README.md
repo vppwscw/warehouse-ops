@@ -47,6 +47,7 @@ npx serve -l 8000
 | อีเมล | รหัสผ่าน | สิทธิ์ | แผนก |
 |---|---|---|---|
 | admin.test@warehouse-ops.local | Wh0use-Test-2026! | ADMIN | ทุกแผนก |
+| assistant.test@warehouse-ops.local | Wh0use-Test-2026! | ASSISTANT | ทุกแผนก (อ่านอย่างเดียว) |
 | supervisor.test@warehouse-ops.local | Wh0use-Test-2026! | SUPERVISOR | OUT |
 | user.test@warehouse-ops.local | Wh0use-Test-2026! | USER | OUT |
 

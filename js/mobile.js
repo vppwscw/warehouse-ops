@@ -231,7 +231,7 @@ function goTab(tab){
     if (isAdmin()){ activeStep = 1; renderStep1(); }
     else if (isWorker()){ renderWorkerHome(); }
   }
-  if (tab==='history') historySub = 'list';
+  if (tab==='history'){ historySub = 'list'; refreshJobs().then(renderHistory); }
   if (tab==='approve') refreshPendingApprovals().then(renderApproveQueue);
   if (tab==='tasks') refreshDeptTasks().then(renderTaskManager);
   document.querySelectorAll('.nav-btn').forEach(b=>b.setAttribute('aria-selected', b.dataset.nav===tab));

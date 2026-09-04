@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=4">
+<link rel="stylesheet" href="css/admin.css?v=5">
 </head>
 <body>
 
@@ -132,12 +132,29 @@
       </div>
     </section>
 
-    <!-- ===== VIEW: USERS (employee code is editable; everything else stays Supabase-dashboard-only) ===== -->
+    <!-- ===== VIEW: USERS ===== -->
     <section class="view" id="view-users">
-      <p class="sub" style="margin:0 0 14px;">รายชื่อผู้ใช้งานในระบบ — ตั้งรหัสพนักงานได้ที่นี่ ส่วนอื่น (สร้าง/แก้ไขบัญชี) ทำที่ Supabase dashboard เท่านั้น</p>
+      <div class="user-admin-bar" id="userAdminBar" hidden>
+        <button type="button" class="btn-sm" id="toggleAddUserBtn">＋ เพิ่มผู้ใช้ใหม่</button>
+      </div>
+      <form class="add-user-form" id="addUserForm" hidden autocomplete="off">
+        <div class="auf-grid">
+          <div class="field"><label for="nuEmail">อีเมล</label><input type="email" id="nuEmail" placeholder="name@company.com" autocomplete="off"></div>
+          <div class="field"><label for="nuName">ชื่อ-นามสกุล</label><input type="text" id="nuName" placeholder="ชื่อ นามสกุล"></div>
+          <div class="field"><label for="nuPass">รหัสผ่านชั่วคราว</label><input type="text" id="nuPass" placeholder="อย่างน้อย 8 ตัว" autocomplete="off"></div>
+          <div class="field"><label for="nuRole">สิทธิ์</label><select id="nuRole"></select></div>
+          <div class="field"><label for="nuDept">แผนก</label><select id="nuDept"></select></div>
+        </div>
+        <div class="auf-actions">
+          <button type="button" class="btn-sm primary" id="createUserBtn">สร้างบัญชี</button>
+          <button type="button" class="btn-sm" id="cancelAddUserBtn">ยกเลิก</button>
+          <span class="form-hint" id="addUserHint"></span>
+        </div>
+      </form>
+      <p class="sub" id="usersViewNote" style="margin:0 0 14px;">รายชื่อผู้ใช้งานในระบบ</p>
       <div class="table-wrap">
         <table id="usersTable">
-          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>แผนก</th><th>รหัสพนักงาน</th><th></th></tr></thead>
+          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>แผนก</th><th>รหัสพนักงาน</th><th>สถานะ</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -148,6 +165,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js"></script>
-<script src="js/admin.js?v=4"></script>
+<script src="js/admin.js?v=5"></script>
 </body>
 </html>

@@ -128,6 +128,12 @@ async function afterLogin(user){
     await sb.auth.signOut();
     return;
   }
+  if (profile.active === false){
+    document.getElementById('loginHint').textContent = 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+    await sb.auth.signOut();
+    profile = null;
+    return;
+  }
   hideLogin();
   refreshRoleBadge();
   buildNav();

@@ -15,23 +15,29 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// Only the production site may use this from a browser. Other origins get an
+// ACAO they don't match, so the browser blocks the response. (Non-browser
+// callers ignore CORS but still have to pass the active-ADMIN check below.)
+const ALLOWED_ORIGINS = ["https://vppwscw.github.io"];
+
+function corsHeaders(req: Request) {
+  const origin = req.headers.get("Origin") ?? "";
+  return {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+}
 
 const ROLES = ["ADMIN", "ASSISTANT", "SUPERVISOR", "USER"];
 const DEPTS = ["INB", "OUT", "INV"];
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, "Content-Type": "application/json" },
-  });
-}
-
 Deno.serve(async (req) => {
+  const CORS = corsHeaders(req);
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -65,6 +71,17 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? "");
     if (!userId) return json({ error: "user_id required" }, 400);
     if (password.length < 8) return json({ error: "password must be >= 8 chars" }, 400);
+
+    // Don't let one ADMIN reset another ADMIN's password here — a compromised
+    // admin account could otherwise lock every other admin out. Resetting
+    // another admin is still possible from the Supabase dashboard.
+    if (userId !== user.id) {
+      const { data: target } = await admin.from("profiles").select("role").eq("id", userId).single();
+      if (target?.role === "ADMIN") {
+        return json({ error: "รีเซ็ตรหัสของ ADMIN คนอื่นทำที่ Supabase dashboard เท่านั้น" }, 403);
+      }
+    }
+
     const { error } = await admin.auth.admin.updateUserById(userId, { password });
     if (error) return json({ error: "reset failed: " + error.message }, 400);
     return json({ ok: true });

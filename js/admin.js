@@ -8,6 +8,12 @@ const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อน�
 const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
 const ROLE_ORDER = ['USER','SUPERVISOR','ASSISTANT','ADMIN'];
 
+// Every value that ends up inside an innerHTML template must go through esc() —
+// full_name, employee_code, task names, crew names and the whole jobs.details
+// blob are user-controlled and were an XSS vector before this.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = v => Number(v) || 0;
+
 const FALLBACK_TASKS = {
   INB: [
     {id:'inb_unload',      label:'โหลดรถลงจากตู้คอนเทนเนอร์',  unit:'containers', unitLabel:'ตู้', vehiclesPerContainer:56},
@@ -249,9 +255,9 @@ function filteredJobs(){
 
 function formatResult(details, task){
   if (!task || !details) return '–';
-  if (task.unit==='containers') return `${details.containers ?? 0} ตู้ / ${details.vehicles ?? ((details.containers||0)*(task.vehiclesPerContainer||56))} คัน`;
-  let s = `${details.qty ?? 0} ${task.unitLabel}`;
-  if (task.hasIssue && details.hasIssue) s += ` · มีปัญหา ${details.issueCount||0} คัน`;
+  if (task.unit==='containers') return `${num(details.containers)} ตู้ / ${num(details.vehicles) || (num(details.containers)*(task.vehiclesPerContainer||56))} คัน`;
+  let s = `${num(details.qty)} ${task.unitLabel}`;
+  if (task.hasIssue && details.hasIssue) s += ` · มีปัญหา ${num(details.issueCount)} คัน`;
   return s;
 }
 
@@ -301,11 +307,11 @@ function renderUnitCards(closed){
   const sums = { INB:{containers:0,vehicles:0}, OUT:{vehicles:0,issue:0}, INV:{pieces:0,boxes:0} };
   closed.forEach(j=>{
     const task = taskById(j.task_id); const d = j.details||{}; if (!task) return;
-    if (task.unit==='containers'){ sums.INB.containers += d.containers||0; sums.INB.vehicles += d.vehicles ?? ((d.containers||0)*(task.vehiclesPerContainer||56)); }
-    else if (j.department==='INB') sums.INB.vehicles += d.qty||0;
-    else if (j.department==='OUT'){ sums.OUT.vehicles += d.qty||0; if (task.hasIssue && d.hasIssue) sums.OUT.issue += d.issueCount||0; }
-    else if (task.unit==='boxes') sums.INV.boxes += d.qty||0;
-    else if (task.unit==='pieces') sums.INV.pieces += d.qty||0;
+    if (task.unit==='containers'){ sums.INB.containers += num(d.containers); sums.INB.vehicles += num(d.vehicles) || (num(d.containers)*(task.vehiclesPerContainer||56)); }
+    else if (j.department==='INB') sums.INB.vehicles += num(d.qty);
+    else if (j.department==='OUT'){ sums.OUT.vehicles += num(d.qty); if (task.hasIssue && d.hasIssue) sums.OUT.issue += num(d.issueCount); }
+    else if (task.unit==='boxes') sums.INV.boxes += num(d.qty);
+    else if (task.unit==='pieces') sums.INV.pieces += num(d.qty);
   });
   const cards = [
     {dept:'INB', ic:DEPT_ICON.INB, t1:'ขาเข้า', t2:`${sums.INB.containers} ตู้`, n:sums.INB.vehicles+' คัน'},
@@ -344,12 +350,12 @@ function renderRecentTable(closed){
     const task = taskById(j.task_id); const d = j.details||{};
     const status = j.status || 'approved';
     return `<tr>
-      <td class="mono">${d.date||''} ${d.end||''}</td>
-      <td><span class="badge ${j.department}"><span class="dot"></span>${DEPT_PLAIN[j.department]}</span></td>
-      <td class="td-task">${task?task.label:j.task_id}</td>
-      <td>${(j.crew||[]).join(', ')}</td>
-      <td class="mono">${formatResult(d,task)}</td>
-      <td><span class="status-badge ${status}">${STATUS_LABEL[status]||status}</span></td>
+      <td class="mono">${esc(d.date)} ${esc(d.end)}</td>
+      <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
+      <td class="td-task">${esc(task?task.label:j.task_id)}</td>
+      <td>${esc((j.crew||[]).join(', '))}</td>
+      <td class="mono">${esc(formatResult(d,task))}</td>
+      <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
     </tr>`;
   }).join('');
 }
@@ -363,17 +369,17 @@ function renderDetailsTable(closed){
     const status = j.status || 'approved';
     const canAct = !isReadOnly() && status==='pending';
     return `<tr>
-      <td class="mono">${d.date||''}</td>
-      <td><span class="badge ${j.department}"><span class="dot"></span>${DEPT_PLAIN[j.department]}</span></td>
-      <td class="td-task">${task?task.label:j.task_id}</td>
-      <td>${(j.crew||[]).join(', ')}</td>
-      <td class="mono">${d.start||'–'}–${d.end||'–'}</td>
-      <td class="mono">${d.mins ?? '–'}</td>
-      <td class="mono">${formatResult(d,task)}</td>
-      <td><span class="status-badge ${status}">${STATUS_LABEL[status]||status}</span></td>
+      <td class="mono">${esc(d.date)}</td>
+      <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
+      <td class="td-task">${esc(task?task.label:j.task_id)}</td>
+      <td>${esc((j.crew||[]).join(', '))}</td>
+      <td class="mono">${esc(d.start||'–')}–${esc(d.end||'–')}</td>
+      <td class="mono">${d.mins == null ? '–' : num(d.mins)}</td>
+      <td class="mono">${esc(formatResult(d,task))}</td>
+      <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
       <td>${canAct ? `
-        <button type="button" class="mini-btn approve" data-approve-job="${j.id}">อนุมัติ</button>
-        <button type="button" class="mini-btn reject" data-reject-job="${j.id}">ไม่อนุมัติ</button>
+        <button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>
+        <button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
       ` : '–'}</td>
     </tr>`;
   }).join('');
@@ -394,15 +400,15 @@ function renderEmployeesTable(closed){
   tbody.innerHTML = people.map(r=>{
     const inRange = closed.filter(j=>(j.crew||[]).includes(r.name)).length;
     const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
-    const initials = r.name.trim().slice(0,1);
+    const initials = esc(r.name.trim().slice(0,1));
     const deptCell = r.department
-      ? `<span class="badge ${r.department}"><span class="dot"></span>${DEPT_PLAIN[r.department]}</span>`
+      ? `<span class="badge ${esc(r.department)}"><span class="dot"></span>${DEPT_PLAIN[r.department]||esc(r.department)}</span>`
       : '<span class="td-sub">–</span>';
     return `<tr>
-      <td><span class="emp-name-cell"><span class="emp-avatar">${initials}</span>${r.name}</span></td>
+      <td><span class="emp-name-cell"><span class="emp-avatar">${initials}</span>${esc(r.name)}</span></td>
       <td>${deptCell}</td>
-      <td class="mono">${inRange}</td>
-      <td class="mono">${total}</td>
+      <td class="mono">${num(inRange)}</td>
+      <td class="mono">${num(total)}</td>
     </tr>`;
   }).join('');
 }
@@ -437,29 +443,29 @@ function renderUsersTable(){
     const active = u.active !== false;
     const isSelf = currentUser && u.id === currentUser.id;
     const deptBadge = u.department
-      ? `<span class="badge ${u.department}"><span class="dot"></span>${DEPT_PLAIN[u.department]}</span>`
+      ? `<span class="badge ${esc(u.department)}"><span class="dot"></span>${DEPT_PLAIN[u.department]||esc(u.department)}</span>`
       : '<span class="td-sub">ทุกแผนก</span>';
     const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
     if (ro){
       return `<tr>
-        <td>${u.full_name||'–'}</td>
-        <td><span class="badge role">${ROLE_LABEL[u.role]||u.role}</span></td>
+        <td>${esc(u.full_name||'–')}</td>
+        <td><span class="badge role">${ROLE_LABEL[u.role]||esc(u.role)}</span></td>
         <td>${deptBadge}</td>
-        <td>${u.employee_code || '–'}</td>
+        <td>${esc(u.employee_code || '–')}</td>
         <td>${statusBadge}</td>
         <td></td>
       </tr>`;
     }
-    return `<tr data-user-row="${u.id}" class="${active?'':'row-inactive'}">
-      <td>${u.full_name||'–'}</td>
+    return `<tr data-user-row="${esc(u.id)}" class="${active?'':'row-inactive'}">
+      <td>${esc(u.full_name||'–')}</td>
       <td><select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select></td>
       <td><select class="mini-select" data-u-dept>${deptOptions(u.department)}</select></td>
-      <td><input type="text" class="code-input" data-u-code value="${u.employee_code||''}" placeholder="รหัส"></td>
+      <td><input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส"></td>
       <td>${isSelf ? statusBadge
-        : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${u.id}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}</td>
+        : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}</td>
       <td>
-        <button type="button" class="mini-btn approve" data-save-user="${u.id}">บันทึก</button>
-        <button type="button" class="mini-btn" data-reset-pass="${u.id}">รีเซ็ตรหัส</button>
+        <button type="button" class="mini-btn approve" data-save-user="${esc(u.id)}">บันทึก</button>
+        <button type="button" class="mini-btn" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
       </td>
     </tr>`;
   }).join('');

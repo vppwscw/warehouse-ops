@@ -174,19 +174,59 @@ function logout(){
 document.getElementById('logoutBtn').addEventListener('click', ()=> logout());
 
 document.getElementById('changePwBtn').innerHTML = ICONS.key;
-async function changeOwnPassword(){
-  if (!currentUser){ return; }
-  const np = prompt('ตั้งรหัสผ่านใหม่ของคุณ (อย่างน้อย 8 ตัว):');
-  if (np === null) return;
-  if (np.length < 8){ alert('รหัสผ่านต้องอย่างน้อย 8 ตัว'); return; }
-  const np2 = prompt('พิมพ์รหัสผ่านใหม่อีกครั้งเพื่อยืนยัน:');
-  if (np2 === null) return;
-  if (np !== np2){ alert('รหัสผ่านสองครั้งไม่ตรงกัน'); return; }
-  try{
+
+// Non-blocking toast — replaces alert(), which webviews and the browser's
+// "prevent additional dialogs" checkbox both suppress.
+function toast(msg, kind){
+  let host = document.getElementById('toastHost');
+  if (!host){ host = document.createElement('div'); host.id = 'toastHost'; document.body.appendChild(host); }
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind === 'ok' ? 'toast-ok' : 'toast-err');
+  el.textContent = msg;
+  host.appendChild(el);
+  setTimeout(()=>{ el.classList.add('leaving'); setTimeout(()=>el.remove(), 220); }, kind === 'ok' ? 2600 : 4400);
+}
+
+// In-page password modal — replaces window.prompt(). onSubmit(pw) returns an
+// error string to show in place, or null on success (modal then closes).
+function askNewPassword(onSubmit){
+  const bd   = document.getElementById('pwBackdrop');
+  const card = document.getElementById('pwModal');
+  const a    = document.getElementById('pwNew');
+  const b    = document.getElementById('pwNew2');
+  const hint = document.getElementById('pwHint');
+  const ok   = document.getElementById('pwConfirm');
+  const no   = document.getElementById('pwCancel');
+  a.value = ''; b.value = ''; hint.textContent = ''; ok.disabled = false;
+  bd.classList.add('open'); card.classList.add('open');
+  setTimeout(()=>a.focus(), 40);
+  function close(){
+    bd.classList.remove('open'); card.classList.remove('open');
+    ok.removeEventListener('click', submit); no.removeEventListener('click', close); bd.removeEventListener('click', close);
+  }
+  async function submit(){
+    const p = a.value, p2 = b.value;
+    if (p.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
+    if (p !== p2){ hint.textContent = 'รหัสผ่านสองครั้งไม่ตรงกัน'; return; }
+    ok.disabled = true; hint.textContent = 'กำลังบันทึก...';
+    const err = onSubmit ? await onSubmit(p) : null;
+    if (err){ ok.disabled = false; hint.textContent = err; return; }
+    hint.textContent = 'สำเร็จ';
+    setTimeout(close, 800);
+  }
+  ok.addEventListener('click', submit);
+  no.addEventListener('click', close);
+  bd.addEventListener('click', close);
+}
+
+function changeOwnPassword(){
+  if (!currentUser) return;
+  askNewPassword(async (np)=>{
     const { error } = await sb.auth.updateUser({ password: np });
-    if (error) throw error;
-    alert('เปลี่ยนรหัสผ่านเรียบร้อย ครั้งต่อไปใช้รหัสใหม่');
-  }catch(err){ alert('เปลี่ยนรหัสผ่านไม่สำเร็จ: ' + (err.message || err)); }
+    if (error) return 'ไม่สำเร็จ: ' + (error.message || error);
+    toast('เปลี่ยนรหัสผ่านเรียบร้อย ครั้งต่อไปใช้รหัสใหม่', 'ok');
+    return null;
+  });
 }
 document.getElementById('changePwBtn').addEventListener('click', changeOwnPassword);
 
@@ -439,7 +479,7 @@ async function openWorkerJob(taskId){
     created_by: currentUser.id, status: 'open', started_at: new Date().toISOString(),
     details: { date: todayISO(), start: timeNowHHMM() },
   }).select().single();
-  if (error){ alert('เปิดงานไม่สำเร็จ: ' + mapDbError(error)); return; }
+  if (error){ toast('เปิดงานไม่สำเร็จ: ' + mapDbError(error)); return; }
   myOpenJob = data;
   renderActiveJobCard();
   renderScreens();
@@ -481,7 +521,7 @@ document.getElementById('workerCloseBtn').addEventListener('click', async ()=>{
     showWorkerSuccess(task.label);
   }catch(err){
     hint.textContent = '';
-    alert('ปิดงานไม่สำเร็จ: ' + mapDbError(err));
+    toast('ปิดงานไม่สำเร็จ: ' + mapDbError(err));
   }
 });
 
@@ -530,7 +570,7 @@ async function setJobStatusSupervisor(jobId, status){
     if (error) throw error;
     await refreshPendingApprovals(); renderApproveQueue();
     await refreshJobs(); render();
-  }catch(err){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
+  }catch(err){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
 }
 
 // ================= SUPERVISOR role: task types =================
@@ -690,7 +730,7 @@ document.addEventListener('click', async (e)=>{
       await sb.from('tasks').update({ active: nextActive }).eq('id', id);
       await refreshDeptTasks(); renderTaskManager();
       await loadTasksFromDb();
-    }catch(err){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
+    }catch(err){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
     return;
   }
 });
@@ -735,7 +775,7 @@ document.getElementById('openSubmitBtn').addEventListener('click', async ()=>{
     showSuccess(task?.label||'', crewMembers.length);
   } catch(err){
     hint.textContent = '';
-    alert('บันทึกไม่สำเร็จ: ' + mapDbError(err));
+    toast('บันทึกไม่สำเร็จ: ' + mapDbError(err));
   }
 });
 

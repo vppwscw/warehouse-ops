@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=12">
+<link rel="stylesheet" href="css/admin.css?v=13">
 </head>
 <body>
 
@@ -171,10 +171,24 @@
   <nav class="botnav" id="botNav"></nav>
 </div>
 
+<!-- password modal — inline replacement for window.prompt() -->
+<div class="modal-overlay" id="pwModal" hidden>
+  <div class="modal">
+    <h3 id="pwModalTitle">เปลี่ยนรหัสผ่าน</h3>
+    <div class="field"><label for="pwNew">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label><input type="password" id="pwNew" autocomplete="new-password"></div>
+    <div class="field"><label for="pwNew2">พิมพ์อีกครั้ง</label><input type="password" id="pwNew2" autocomplete="new-password"></div>
+    <p class="form-hint" id="pwModalHint"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn-sm" id="pwCancel">ยกเลิก</button>
+      <button type="button" class="btn-sm primary" id="pwConfirm">บันทึก</button>
+    </div>
+  </div>
+</div>
+
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=15"></script>
+<script src="js/admin.js?v=16"></script>
 </body>
 </html>

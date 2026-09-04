@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=6">
+<link rel="stylesheet" href="css/admin.css?v=7">
 </head>
 <body>
 
@@ -54,6 +54,7 @@
         <p class="sub" id="pageSub">สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก</p>
       </div>
       <div class="pagehead-actions">
+        <button type="button" class="gear-btn" id="gearBtn" data-view="users" title="ผู้ใช้งานระบบ" aria-label="ผู้ใช้งานระบบ"></button>
         <button type="button" class="btn-sm" id="changePwBtn">เปลี่ยนรหัสผ่าน</button>
         <button type="button" class="logout-btn" id="logoutBtn">ออกจากระบบ</button>
       </div>
@@ -164,11 +165,13 @@
       </div>
     </section>
   </main>
+
+  <nav class="botnav" id="botNav"></nav>
 </div>
 
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/admin.js?v=9"></script>
+<script src="js/admin.js?v=10"></script>
 </body>
 </html>

@@ -177,8 +177,11 @@ button{font:inherit;}
 .side-card .sc-lab{font-size:11px;font-weight:700;color:var(--ink-dim);text-transform:uppercase;
   letter-spacing:.04em;display:flex;align-items:center;gap:6px;}
 .side-card .sc-lab .dot{width:7px;height:7px;border-radius:50%;}
-.side-card .sc-big{font-size:30px;font-weight:700;line-height:1;}
-.side-card .sc-big .u{font-size:12px;font-weight:500;color:var(--ink-dim);margin-left:4px;}
+.side-card .sc-big{display:flex;align-items:baseline;gap:4px;line-height:1;}
+.side-card .sc-big-n{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;}
+.side-card .sc-big .u{font-size:12px;font-weight:500;color:var(--ink-dim);}
+.side-card.anim-up{animation:animUp .8s ease-out;}
+@keyframes animUp{0%{box-shadow:0 0 0 2px var(--good);}100%{box-shadow:var(--shadow-sm);}}
 .side-card .sc-unit{font-size:12px;color:var(--ink);line-height:1.5;}
 .side-card .sc-unit .approx{font-weight:600;}
 .side-card .sc-cvt{font-size:10.5px;color:var(--ink-faint);}
@@ -307,3 +310,17 @@ tbody tr.row-inactive{opacity:.5;}
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
 .denied-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
 footer.build-footer{font-size:10.5px;color:var(--ink-faint);text-align:center;padding:18px 0 8px;}
+
+/* ===== micro-interactions (phase 4) — press/hover feedback ===== */
+.chip, .preset, .navbtn, .botbtn, .q-btn, .btn-sm, .mini-btn, .gear-btn, .as-cta{
+  transition:transform .12s ease, background-color .12s ease, color .12s ease, filter .12s ease;
+}
+.chip:hover, .preset:hover, .q-btn:hover, .btn-sm:hover, .gear-btn:hover{transform:translateY(-1px);}
+.chip:active, .preset:active, .navbtn:active, .botbtn:active, .q-btn:active,
+.btn-sm:active, .mini-btn:active, .gear-btn:active, .as-cta:active{transform:scale(.97);}
+
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important;}
+  .chip, .preset, .navbtn, .botbtn, .q-btn, .btn-sm, .mini-btn, .gear-btn, .as-cta{transform:none!important;}
+}

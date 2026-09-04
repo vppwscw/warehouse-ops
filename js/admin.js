@@ -53,6 +53,7 @@ let jobs = [], roster = [], users = [];
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
+let prevSideCounts = {}; // last-rendered side-card job counts, for the counter animation
 
 // ASSISTANT sees everything ADMIN sees but can't approve/reject jobs
 const isReadOnly = () => !profile || profile.role !== 'ADMIN';
@@ -385,8 +386,10 @@ function renderSideCards(closed){
     return t && t.unit==='containers' && num(d.containers) && !num(d.vehicles);
   });
 
+  const counts = {};
   const html = DEPT_KEYS.map(dept=>{
     const count = closed.filter(j=>j.department===dept).length;
+    counts[dept] = count;
     const series = daySeries(dept);
     const smax = Math.max(1, ...series);
     const spark = series.map(v=>`<i class="${v>0?'on':''}" style="height:${Math.max(2,Math.round(v/smax*26))}px"></i>`).join('');
@@ -409,7 +412,7 @@ function renderSideCards(closed){
       <div class="sc-cap"></div>
       <div class="sc-body">
         <div class="sc-lab"><span class="dot" style="background:var(--${dept.toLowerCase()})"></span>${DEPT_PLAIN[dept]}</div>
-        <div class="sc-big num">${count}<span class="u">งาน</span></div>
+        <div class="sc-big"><span class="sc-big-n num">${count}</span><span class="u">งาน</span></div>
         <div class="sc-unit">${unit}</div>
         ${cvt ? `<div class="sc-cvt">${cvt}</div>` : ''}
         ${issue}
@@ -418,6 +421,13 @@ function renderSideCards(closed){
     </div>`;
   }).join('');
   document.getElementById('sideCards').innerHTML = html;
+  if (window.Anim) DEPT_KEYS.forEach(dept=>{
+    const card = document.querySelector(`.side-card[data-dept="${dept}"]`);
+    if (!card) return;
+    Anim.count(card.querySelector('.sc-big-n'), counts[dept], prevSideCounts[dept]);
+    Anim.bars(card.querySelector('.sc-spark'), 'i', { stiffness:90, damping:16, stagger:28 });
+  });
+  prevSideCounts = counts;
 }
 
 function renderDayChart(){
@@ -434,6 +444,7 @@ function renderDayChart(){
       <span class="daybar-lbl">${dow}</span>
     </div>`;
   }).join('');
+  if (window.Anim) Anim.bars(document.getElementById('dayChart'), '.daybar', { stiffness:90, damping:16, stagger:40 });
 }
 
 // One row renderer, shared by the dashboard table and the "งานทั้งหมด" view —
@@ -544,13 +555,15 @@ function renderQueue(){
 
   const el = document.getElementById('qList');
   if (!list.length){
-    el.innerHTML = `<div class="empty-note">ไม่มีงานรออนุมัติ${deptFilter!=='ALL' ? 'ในฝั่งนี้' : ''}</div>`;
+    const emptyHTML = `<div class="empty-note">ไม่มีงานรออนุมัติ${deptFilter!=='ALL' ? 'ในฝั่งนี้' : ''}</div>`;
+    if (window.Anim) Anim.flipList(el, '.q-card', () => { el.innerHTML = emptyHTML; });
+    else el.innerHTML = emptyHTML;
     return;
   }
-  el.innerHTML = scored.map(({j})=>{
+  const html = scored.map(({j})=>{
     const task = taskById(j.task_id); const d = j.details || {};
     const r = urgencyReason(j, list);
-    return `<div class="q-card" data-dept="${esc(j.department)}">
+    return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}">
       <div class="q-main">
         <div class="q-top">
           <span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span>
@@ -566,6 +579,8 @@ function renderQueue(){
       </div>`}
     </div>`;
   }).join('');
+  if (window.Anim) Anim.flipList(el, '.q-card', () => { el.innerHTML = html; });
+  else el.innerHTML = html;
 }
 
 async function approveDept(dept){

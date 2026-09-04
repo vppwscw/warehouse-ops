@@ -54,6 +54,8 @@ let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
 let prevSideCounts = {}; // last-rendered side-card job counts, for the counter animation
+let firstLoad = true;    // true until the first successful data load (drives the skeleton)
+let loadError = null;    // set when the initial jobs load fails (drives the error card)
 
 // ASSISTANT sees everything ADMIN sees but can't approve/reject jobs
 const isReadOnly = () => !profile || profile.role !== 'ADMIN';
@@ -212,6 +214,9 @@ function setJobsPreset(preset){
 }
 
 document.addEventListener('click', e=>{
+  if (e.target.closest('#retryBtn')){ refreshAll(); return; }
+  if (e.target.closest('[data-clear-filters]')){ clearFilters(); return; }
+
   const navBtn = e.target.closest('[data-view]');
   if (navBtn){ goView(navBtn.dataset.view); return; }
 
@@ -468,11 +473,15 @@ function jobRowHTML(j){
     ` : '–'}</td>
   </tr>`;
 }
+function emptyRow(cols, msg){
+  const clr = isFiltered() ? ` · <button type="button" class="link-btn" data-clear-filters>ล้างตัวกรอง</button>` : '';
+  return `<tr><td colspan="${cols}" class="empty-note">${esc(msg)}${clr}</td></tr>`;
+}
 function renderJobRows(tbody, rows, emptyMsg){
   if (!tbody) return;
   tbody.innerHTML = rows.length
     ? rows.map(jobRowHTML).join('')
-    : `<tr><td colspan="9" class="empty-note">${esc(emptyMsg||'ไม่พบรายการ')}</td></tr>`;
+    : emptyRow(9, emptyMsg || 'ไม่พบรายการ');
 }
 
 // Dashboard bottom table — filtered set, narrowed by the preset tabs, capped.
@@ -555,7 +564,8 @@ function renderQueue(){
 
   const el = document.getElementById('qList');
   if (!list.length){
-    const emptyHTML = `<div class="empty-note">ไม่มีงานรออนุมัติ${deptFilter!=='ALL' ? 'ในฝั่งนี้' : ''}</div>`;
+    const clr = (deptFilter!=='ALL' || searchTerm) ? ` · <button type="button" class="link-btn" data-clear-filters>ล้างตัวกรอง</button>` : '';
+    const emptyHTML = `<div class="empty-note">ไม่มีงานรออนุมัติ${deptFilter!=='ALL' ? 'ในฝั่งนี้' : ''}${clr}</div>`;
     if (window.Anim) Anim.flipList(el, '.q-card', () => { el.innerHTML = emptyHTML; });
     else el.innerHTML = emptyHTML;
     return;
@@ -611,7 +621,7 @@ function updatePendingBadges(){
 function renderEmployeesTable(closed){
   const people = peopleInScope();
   const tbody = document.querySelector('#employeesTable tbody');
-  if (people.length===0){ tbody.innerHTML = `<tr><td colspan="4" class="empty-note">ยังไม่มีพนักงานในขอบเขตนี้</td></tr>`; return; }
+  if (people.length===0){ tbody.innerHTML = emptyRow(4, 'ยังไม่มีพนักงานในขอบเขตนี้'); return; }
   tbody.innerHTML = people.map(r=>{
     const inRange = closed.filter(j=>(j.crew||[]).includes(r.name)).length;
     const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
@@ -770,7 +780,47 @@ async function createUserFromForm(){
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
 }
 
+// ---------- view state: loading skeleton / load-error card ----------
+function isFiltered(){ return dateRange!=='all' || deptFilter!=='ALL' || !!searchTerm; }
+
+function clearFilters(){
+  dateRange = 'all'; deptFilter = 'ALL'; searchTerm = '';
+  const s = document.getElementById('searchInput'); if (s) s.value = '';
+  document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.range==='all'));
+  document.querySelectorAll('#deptChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.dept==='ALL'));
+  render();
+}
+
+function skeletonHTML(){
+  const b = n => Array(n).fill('<div class="sk sk-row"></div>').join('');
+  if (activeView==='dashboard')
+    return `<div class="sk sk-strip"></div>
+      <div class="sk-cards"><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-card"></div></div>
+      <div class="sk sk-chart"></div>${b(4)}`;
+  if (activeView==='queue')
+    return `<div class="sk sk-qcard"></div><div class="sk sk-qcard"></div><div class="sk sk-qcard"></div>`;
+  return b(7);
+}
+
+function showViewState(kind){
+  const vs = document.getElementById('viewState');
+  document.querySelector('.main').classList.toggle('has-state', !!kind);
+  if (!kind){ vs.hidden = true; vs.innerHTML = ''; return; }
+  vs.hidden = false;
+  vs.innerHTML = kind==='error'
+    ? `<div class="state-card">
+         <div class="state-ic">!</div>
+         <div class="state-title">โหลดข้อมูลไม่สำเร็จ</div>
+         <div class="state-sub">${esc(loadError || 'เชื่อมต่อฐานข้อมูลไม่ได้')}</div>
+         <button type="button" class="btn-sm primary" id="retryBtn">ลองใหม่</button>
+       </div>`
+    : skeletonHTML();
+}
+
 function render(){
+  if (loadError){ showViewState('error'); return; }
+  if (firstLoad){ showViewState('loading'); return; }
+  showViewState(null);
   const closed = filteredJobs();
   updatePendingBadges();
   if (activeView==='dashboard'){
@@ -788,11 +838,9 @@ function render(){
 
 // ---------- data refresh ----------
 async function refreshJobs(){
-  try{
-    const { data, error } = await sb.from('jobs').select('*').order('created_at', { ascending:false }).limit(2000);
-    if (error) throw error;
-    jobs = groupJobs(data || []);
-  }catch(e){ document.getElementById('syncText').textContent = 'เชื่อมต่อข้อมูลงานไม่สำเร็จ ('+mapDbError(e)+')'; }
+  const { data, error } = await sb.from('jobs').select('*').order('created_at', { ascending:false }).limit(2000);
+  if (error) throw error;                 // jobs is critical — let refreshAll surface it
+  jobs = groupJobs(data || []);
 }
 async function refreshRoster(){
   try{
@@ -811,16 +859,30 @@ async function refreshUsers(){
 }
 async function refreshAll(){
   document.getElementById('syncText').textContent = 'กำลังโหลดข้อมูล...';
-  await Promise.all([refreshJobs(), refreshRoster(), refreshUsers()]);
+  loadError = null;
+  if (firstLoad) render();                        // paints the skeleton
+  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers()]);
+  if (jobsRes.status === 'rejected'){
+    loadError = mapDbError(jobsRes.reason);
+    document.getElementById('syncText').textContent = 'โหลดข้อมูลไม่สำเร็จ';
+    render();
+    return;
+  }
+  firstLoad = false;
   document.getElementById('syncText').textContent = 'ซิงก์สดกับแอปมือถือ';
   render();
 }
 
 function wireRealtime(){
   if (realtimeChannel) sb.removeChannel(realtimeChannel);
+  // realtime refreshes never blow away the view — a transient failure just
+  // notes it in the sync line; the full error state is for the initial load.
+  const softRefresh = fn => () => fn().then(render).catch(()=>{
+    document.getElementById('syncText').textContent = 'อัปเดตล่าสุดไม่สำเร็จ · จะลองใหม่';
+  });
   realtimeChannel = sb.channel('erp-jobs-changes-'+(currentUser?currentUser.id:'anon'))
-    .on('postgres_changes', {event:'*', schema:'public', table:'jobs'}, () => refreshJobs().then(render))
-    .on('postgres_changes', {event:'*', schema:'public', table:'employees'}, () => refreshRoster().then(render))
+    .on('postgres_changes', {event:'*', schema:'public', table:'jobs'}, softRefresh(refreshJobs))
+    .on('postgres_changes', {event:'*', schema:'public', table:'employees'}, softRefresh(refreshRoster))
     .subscribe();
 }
 

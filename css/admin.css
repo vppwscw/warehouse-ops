@@ -185,6 +185,7 @@ tbody tr:hover{background:var(--surface-2);}
 .auf-actions .form-hint{margin-top:0;}
 .mini-select{font:inherit;font-size:12px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);}
 tbody tr.row-inactive{opacity:.5;}
+.pagehead-actions{display:flex;gap:8px;align-items:center;flex:none;}
 
 /* login screen (full-page, reused lock-panel style) */
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}

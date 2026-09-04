@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=5">
+<link rel="stylesheet" href="css/admin.css?v=6">
 </head>
 <body>
 
@@ -52,7 +52,10 @@
         <h1 id="pageTitle">ภาพรวม</h1>
         <p class="sub" id="pageSub">สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก</p>
       </div>
-      <button type="button" class="logout-btn" id="logoutBtn">ออกจากระบบ</button>
+      <div class="pagehead-actions">
+        <button type="button" class="btn-sm" id="changePwBtn">เปลี่ยนรหัสผ่าน</button>
+        <button type="button" class="logout-btn" id="logoutBtn">ออกจากระบบ</button>
+      </div>
     </div>
 
     <div class="filterbar">
@@ -165,6 +168,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js"></script>
-<script src="js/admin.js?v=6"></script>
+<script src="js/admin.js?v=7"></script>
 </body>
 </html>

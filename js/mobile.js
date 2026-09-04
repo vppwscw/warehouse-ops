@@ -43,6 +43,7 @@ const ICONS = {
   checksm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L19 7"/></svg>',
   x:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   logout:'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h9"/><path d="M20 12H9M20 12l-3.5-3.5M20 12l-3.5 3.5"/></svg>',
+  key:   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l2 2M15 8l2 2"/></svg>',
   box:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
   trophy:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 5H4a3 3 0 0 0 3 4"/><path d="M17 5h3a3 3 0 0 1-3 4"/><path d="M9 20h6"/><path d="M12 14v3"/><path d="M9 20c0-2 1.3-3 3-3s3 1 3 3"/></svg>',
   inbound:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>',
@@ -165,6 +166,23 @@ function logout(){
   showLogin();
 }
 document.getElementById('logoutBtn').addEventListener('click', ()=> logout());
+
+document.getElementById('changePwBtn').innerHTML = ICONS.key;
+async function changeOwnPassword(){
+  if (!currentUser){ return; }
+  const np = prompt('ตั้งรหัสผ่านใหม่ของคุณ (อย่างน้อย 8 ตัว):');
+  if (np === null) return;
+  if (np.length < 8){ alert('รหัสผ่านต้องอย่างน้อย 8 ตัว'); return; }
+  const np2 = prompt('พิมพ์รหัสผ่านใหม่อีกครั้งเพื่อยืนยัน:');
+  if (np2 === null) return;
+  if (np !== np2){ alert('รหัสผ่านสองครั้งไม่ตรงกัน'); return; }
+  try{
+    const { error } = await sb.auth.updateUser({ password: np });
+    if (error) throw error;
+    alert('เปลี่ยนรหัสผ่านเรียบร้อย ครั้งต่อไปใช้รหัสใหม่');
+  }catch(err){ alert('เปลี่ยนรหัสผ่านไม่สำเร็จ: ' + (err.message || err)); }
+}
+document.getElementById('changePwBtn').addEventListener('click', changeOwnPassword);
 
 document.getElementById('loginSubmitBtn').addEventListener('click', async ()=>{
   const hint = document.getElementById('loginHint');

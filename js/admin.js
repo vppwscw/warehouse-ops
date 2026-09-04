@@ -51,6 +51,7 @@ let profile = null, currentUser = null;
 let jobs = [], roster = [], users = [];
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
+let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
 
 // ASSISTANT sees everything ADMIN sees but can't approve/reject jobs
 const isReadOnly = () => !profile || profile.role !== 'ADMIN';
@@ -199,6 +200,14 @@ function goView(id){
   if (id==='users') renderUsersTable();
   render();
 }
+
+function setJobsPreset(preset){
+  jobsPreset = preset;
+  document.querySelectorAll('#jobsPresets .preset').forEach(p=>
+    p.setAttribute('aria-pressed', p.dataset.preset===preset));
+  if (activeView!=='dashboard') goView('dashboard'); else render();
+}
+
 document.addEventListener('click', e=>{
   const navBtn = e.target.closest('[data-view]');
   if (navBtn){ goView(navBtn.dataset.view); return; }
@@ -214,6 +223,15 @@ document.addEventListener('click', e=>{
     document.querySelectorAll('#deptChips .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
     deptChip.setAttribute('aria-pressed','true');
     deptFilter = deptChip.dataset.dept; render(); return;
+  }
+
+  const presetBtn = e.target.closest('#jobsPresets [data-preset]');
+  if (presetBtn){ setJobsPreset(presetBtn.dataset.preset); return; }
+
+  if (e.target.closest('#actionStripBtn')){
+    setJobsPreset('pending');
+    document.getElementById('dashJobsTable').scrollIntoView({ behavior:'smooth', block:'center' });
+    return;
   }
 
   const approveBtn = e.target.closest('[data-approve-job]');
@@ -293,31 +311,63 @@ function peopleInScope(){
     .sort((a,b)=>a.name.localeCompare(b.name,'th'));
 }
 
-function renderStats(closed){
-  const totalMins = closed.reduce((s,j)=>s+((j.details&&j.details.mins)||0),0);
-  const avgMins = closed.length ? Math.round(totalMins/closed.length) : 0;
-  const peopleCount = peopleInScope().length;
-  const pendingCount = closed.filter(j=>(j.status||'approved')==='pending').length;
-  document.getElementById('statGrid').innerHTML = `
-    <div class="stat-tile accent"><div class="l">งานที่บันทึกแล้ว</div><div class="n num">${closed.length}<span class="unit">งาน</span></div></div>
-    <div class="stat-tile"><div class="l">เวลาเฉลี่ยต่องาน</div><div class="n num">${avgMins}<span class="unit">นาที</span></div></div>
-    <div class="stat-tile"><div class="l">พนักงานในขอบเขตนี้</div><div class="n num">${peopleCount}<span class="unit">คน</span></div></div>
-    <div class="stat-tile${pendingCount?' warn':''}"><div class="l">รออนุมัติ</div><div class="n num">${pendingCount}<span class="unit">งาน</span></div></div>
-  `;
+// ---- dashboard: month names + age formatting (Asia/Bangkok) ----
+const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function rangeLabel(){
+  if (dateRange==='today'){ const n = nowBkk(); return `วันนี้ (${n.getDate()} ${TH_MONTHS[n.getMonth()]})`; }
+  if (dateRange==='week') return '7 วันล่าสุด';
+  if (dateRange==='month') return '30 วันล่าสุด';
+  return 'ทั้งหมด';
+}
+function ageText(iso){
+  if (!iso) return '–';
+  const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
+  if (h < 1) return 'ไม่ถึงชั่วโมง';
+  if (h < 24) return h + ' ชม.';
+  return Math.floor(h / 24) + ' วัน';
 }
 
-function renderDeptBars(closed){
-  const counts = DEPT_KEYS.map(d=>({d, n: closed.filter(j=>j.department===d).length}));
-  const max = Math.max(1, ...counts.map(c=>c.n));
-  document.getElementById('deptBarList').innerHTML = counts.map(({d,n})=>`
-    <div class="barrow">
-      <span class="lbl"><span class="dot" style="background:var(--${d.toLowerCase()})"></span>${DEPT_PLAIN[d]}</span>
-      <span class="track"><span class="fill" style="width:${(n/max*100).toFixed(1)}%;background:var(--${d.toLowerCase()})"></span></span>
-      <span class="val num">${n}</span>
-    </div>`).join('');
+// Amber strip = the ADMIN's one "act now". Counts pending jobs in the current
+// department scope but ignores the date filter — a job stuck pending for days
+// should still show even while looking at "วันนี้".
+function renderActionStrip(){
+  const el = document.getElementById('actionStrip');
+  if (!el) return;
+  const pend = jobs.filter(j => (j.status||'approved')==='pending'
+    && (deptFilter==='ALL' || j.department===deptFilter));
+  el.hidden = false;
+  if (!pend.length){
+    el.className = 'action-strip ok';
+    el.innerHTML = `<span class="as-text">✓ ไม่มีงานค้างอนุมัติ</span>`;
+    return;
+  }
+  const oldest = pend.reduce((m,j)=> (j.created_at||'') && (j.created_at < m) ? j.created_at : m, pend[0].created_at || '');
+  el.className = 'action-strip';
+  el.innerHTML = `<span class="as-text">⚠ มีงานรออนุมัติ ${pend.length} งาน · เก่าสุดค้าง ${esc(ageText(oldest))}</span>
+    <button type="button" class="as-cta" id="actionStripBtn">ดูรายการ</button>`;
 }
 
-function renderUnitCards(closed){
+// Plain-Thai restatement of the active filters, so the scope is never ambiguous.
+function renderScopeLine(closed){
+  const el = document.getElementById('scopeLine');
+  if (!el) return;
+  const depts = deptFilter==='ALL' ? DEPT_KEYS : [deptFilter];
+  const dots = depts.map(d=>`<span class="legend-dot" style="background:var(--${d.toLowerCase()})"></span>`).join('');
+  const deptTxt = deptFilter==='ALL' ? 'ทุกฝั่ง' : DEPT_PLAIN[deptFilter];
+  let s = `${dots} กำลังดู · <b>${esc(deptTxt)}</b> · <b>${esc(rangeLabel())}</b> · ${closed.length} งาน`;
+  if (searchTerm) s += ` · ค้นหา "${esc(searchTerm)}"`;
+  el.innerHTML = s;
+}
+
+// per-department 7-day job counts, for the card sparklines
+function daySeries(dept){
+  const days = [...Array(7)].map((_,i)=>daysAgoISO(6-i));
+  return days.map(dt => jobs.filter(j => (j.details&&j.details.date)===dt && j.department===dept).length);
+}
+
+// One card per side (เข้า/ออก/สต๊อก): job count + unit output + trend.
+// Replaces the old dept bar list + unit-cards split panel.
+function renderSideCards(closed){
   const sums = { INB:{containers:0,vehicles:0}, OUT:{vehicles:0,issue:0}, INV:{pieces:0,boxes:0} };
   closed.forEach(j=>{
     const task = taskById(j.task_id); const d = j.details||{}; if (!task) return;
@@ -327,17 +377,45 @@ function renderUnitCards(closed){
     else if (task.unit==='boxes') sums.INV.boxes += num(d.qty);
     else if (task.unit==='pieces') sums.INV.pieces += num(d.qty);
   });
-  const cards = [
-    {dept:'INB', ic:DEPT_ICON.INB, t1:'ขาเข้า', t2:`${sums.INB.containers} ตู้`, n:sums.INB.vehicles+' คัน'},
-    {dept:'OUT', ic:DEPT_ICON.OUT, t1:'ขาออก', t2: sums.OUT.issue ? `พบปัญหา ${sums.OUT.issue} คัน` : 'ไม่พบปัญหา', n:sums.OUT.vehicles+' คัน'},
-    {dept:'INV', ic:DEPT_ICON.INV, t1:'สต๊อก', t2:`${sums.INV.pieces} ชิ้น`, n:sums.INV.boxes+' กล่อง'},
-  ];
-  document.getElementById('unitCards').innerHTML = cards.map(c=>`
-    <div class="unit-card">
-      <span class="ic" style="background:var(--${c.dept.toLowerCase()}-bg);color:var(--${c.dept.toLowerCase()})">${ICONS[c.ic]}</span>
-      <span class="txt"><span class="t1">${c.t1}</span><br><span class="t2">${c.t2}</span></span>
-      <span class="n num">${c.n}</span>
-    </div>`).join('');
+  // was any INB vehicle figure derived from a container multiplier (vs counted)?
+  const inbDerived = closed.some(j=>{
+    const t = taskById(j.task_id); const d = j.details||{};
+    return t && t.unit==='containers' && num(d.containers) && !num(d.vehicles);
+  });
+
+  const html = DEPT_KEYS.map(dept=>{
+    const count = closed.filter(j=>j.department===dept).length;
+    const series = daySeries(dept);
+    const smax = Math.max(1, ...series);
+    const spark = series.map(v=>`<i class="${v>0?'on':''}" style="height:${Math.max(2,Math.round(v/smax*26))}px"></i>`).join('');
+    let unit, cvt = '';
+    if (dept==='INB'){
+      if (num(sums.INB.containers)){
+        unit = `<span class="approx">${num(sums.INB.containers)} ตู้ ${inbDerived?'≈':'·'} ${num(sums.INB.vehicles)} คัน</span>`;
+        if (inbDerived) cvt = '(56 คัน/ตู้ — ประมาณ)';
+      } else {
+        unit = `${num(sums.INB.vehicles)} คัน`;
+      }
+    } else if (dept==='OUT'){
+      unit = `${num(sums.OUT.vehicles)} คัน`;
+    } else {
+      unit = `${num(sums.INV.pieces)} ชิ้น<br>${num(sums.INV.boxes)} กล่อง`;
+    }
+    const issue = (dept==='OUT' && num(sums.OUT.issue))
+      ? `<span class="badge issue sc-issue">มีปัญหา ${num(sums.OUT.issue)} คัน</span>` : '';
+    return `<div class="side-card" data-dept="${dept}">
+      <div class="sc-cap"></div>
+      <div class="sc-body">
+        <div class="sc-lab"><span class="dot" style="background:var(--${dept.toLowerCase()})"></span>${DEPT_PLAIN[dept]}</div>
+        <div class="sc-big num">${count}<span class="u">งาน</span></div>
+        <div class="sc-unit">${unit}</div>
+        ${cvt ? `<div class="sc-cvt">${cvt}</div>` : ''}
+        ${issue}
+      </div>
+      <div class="sc-spark">${spark}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('sideCards').innerHTML = html;
 }
 
 function renderDayChart(){
@@ -356,47 +434,48 @@ function renderDayChart(){
   }).join('');
 }
 
-function renderRecentTable(closed){
-  const rows = [...closed].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,10);
-  const tbody = document.querySelector('#recentTable tbody');
-  if (rows.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty-note">ยังไม่มีงานที่บันทึกในช่วงนี้</td></tr>`; return; }
-  tbody.innerHTML = rows.map(j=>{
-    const task = taskById(j.task_id); const d = j.details||{};
-    const status = j.status || 'approved';
-    return `<tr>
-      <td class="mono">${esc(d.date)} ${esc(d.end)}</td>
-      <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
-      <td class="td-task">${esc(task?task.label:j.task_id)}</td>
-      <td>${esc((j.crew||[]).join(', '))}</td>
-      <td class="mono">${esc(formatResult(d,task))}</td>
-      <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
-    </tr>`;
-  }).join('');
+// One row renderer, shared by the dashboard table and the "งานทั้งหมด" view —
+// they were two divergent tables (6 cols vs 9) before.
+function jobRowHTML(j){
+  const task = taskById(j.task_id); const d = j.details||{};
+  const status = j.status || 'approved';
+  const canAct = !isReadOnly() && status==='pending';
+  return `<tr>
+    <td class="mono">${esc(d.date)}</td>
+    <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
+    <td class="td-task">${esc(task?task.label:j.task_id)}</td>
+    <td>${esc((j.crew||[]).join(', '))}</td>
+    <td class="mono">${esc(d.start||'–')}–${esc(d.end||'–')}</td>
+    <td class="mono">${d.mins == null ? '–' : num(d.mins)}</td>
+    <td class="mono">${esc(formatResult(d,task))}</td>
+    <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
+    <td>${canAct ? `
+      <button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>
+      <button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
+    ` : '–'}</td>
+  </tr>`;
+}
+function renderJobRows(tbody, rows, emptyMsg){
+  if (!tbody) return;
+  tbody.innerHTML = rows.length
+    ? rows.map(jobRowHTML).join('')
+    : `<tr><td colspan="9" class="empty-note">${esc(emptyMsg||'ไม่พบรายการ')}</td></tr>`;
+}
+
+// Dashboard bottom table — filtered set, narrowed by the preset tabs, capped.
+function renderDashJobs(closed){
+  let rows = closed;
+  if (jobsPreset==='pending') rows = closed.filter(j=>(j.status||'approved')==='pending');
+  else if (jobsPreset==='today'){ const t = todayISO(); rows = closed.filter(j=>(j.details&&j.details.date)===t); }
+  rows = [...rows].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,12);
+  renderJobRows(document.querySelector('#dashJobsTable tbody'), rows,
+    jobsPreset==='pending' ? 'ไม่มีงานรออนุมัติในช่วงนี้' : 'ยังไม่มีงานที่บันทึกในช่วงนี้');
 }
 
 function renderDetailsTable(closed){
-  const rows = [...closed].sort((a,b)=>((b.details&&b.details.date)+((b.details&&b.details.start)||'')).localeCompare((a.details&&a.details.date)+((a.details&&a.details.start)||'')));
-  const tbody = document.querySelector('#detailsTable tbody');
-  if (rows.length===0){ tbody.innerHTML = `<tr><td colspan="9" class="empty-note">ไม่พบรายการที่ตรงกับตัวกรอง</td></tr>`; return; }
-  tbody.innerHTML = rows.map(j=>{
-    const task = taskById(j.task_id); const d = j.details||{};
-    const status = j.status || 'approved';
-    const canAct = !isReadOnly() && status==='pending';
-    return `<tr>
-      <td class="mono">${esc(d.date)}</td>
-      <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
-      <td class="td-task">${esc(task?task.label:j.task_id)}</td>
-      <td>${esc((j.crew||[]).join(', '))}</td>
-      <td class="mono">${esc(d.start||'–')}–${esc(d.end||'–')}</td>
-      <td class="mono">${d.mins == null ? '–' : num(d.mins)}</td>
-      <td class="mono">${esc(formatResult(d,task))}</td>
-      <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
-      <td>${canAct ? `
-        <button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>
-        <button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
-      ` : '–'}</td>
-    </tr>`;
-  }).join('');
+  const key = j => ((j.details&&j.details.date)||'') + ((j.details&&j.details.start)||'');
+  const rows = [...closed].sort((a,b)=>key(b).localeCompare(key(a)));
+  renderJobRows(document.querySelector('#detailsTable tbody'), rows, 'ไม่พบรายการที่ตรงกับตัวกรอง');
 }
 
 async function setJobStatus(jobId, status){
@@ -572,11 +651,10 @@ async function createUserFromForm(){
 function render(){
   const closed = filteredJobs();
   if (activeView==='dashboard'){
-    renderStats(closed); renderDeptBars(closed); renderUnitCards(closed); renderDayChart(); renderRecentTable(closed);
+    renderActionStrip(); renderScopeLine(closed); renderSideCards(closed); renderDayChart(); renderDashJobs(closed);
   } else if (activeView==='details'){
     renderDetailsTable(closed);
   } else if (activeView==='employees'){
-    renderStats(closed);
     renderEmployeesTable(closed);
   } else if (activeView==='users'){
     renderUsersTable();

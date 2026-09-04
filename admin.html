@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=7">
+<link rel="stylesheet" href="css/admin.css?v=8">
 </head>
 <body>
 
@@ -82,22 +82,10 @@
 
     <!-- ===== VIEW: DASHBOARD ===== -->
     <section class="view active" id="view-dashboard">
-      <div class="stat-grid" id="statGrid"></div>
+      <div class="action-strip" id="actionStrip" hidden></div>
+      <p class="scope-line" id="scopeLine"></p>
 
-      <div class="panel">
-        <div class="panel-grid">
-          <div>
-            <h2>งานที่เสร็จแยกตามฝั่ง</h2>
-            <p class="panel-sub">จำนวนงานที่บันทึกในช่วงเวลาที่เลือก</p>
-            <div class="barlist" id="deptBarList"></div>
-          </div>
-          <div>
-            <h2>ผลผลิตตามหน่วยของแต่ละฝั่ง</h2>
-            <p class="panel-sub">ยอดรวมตามหน่วยนับจริงของแต่ละงาน</p>
-            <div class="unit-cards" id="unitCards"></div>
-          </div>
-        </div>
-      </div>
+      <div class="side-cards" id="sideCards"></div>
 
       <div class="panel">
         <h2>งานที่บันทึกรายวัน</h2>
@@ -106,11 +94,16 @@
       </div>
 
       <div class="panel" style="padding-bottom:6px;">
-        <h2>งานล่าสุด</h2>
-        <p class="panel-sub">10 รายการล่าสุด</p>
+        <div class="table-toolbar">
+          <div class="chipgroup" id="jobsPresets">
+            <button type="button" class="preset" data-preset="all" aria-pressed="true">ทั้งหมด</button>
+            <button type="button" class="preset" data-preset="pending" aria-pressed="false">รออนุมัติ</button>
+            <button type="button" class="preset" data-preset="today" aria-pressed="false">วันนี้</button>
+          </div>
+        </div>
         <div class="table-wrap" style="border:none;">
-          <table id="recentTable">
-            <thead><tr><th>เวลา</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>ผลลัพธ์</th><th>สถานะ</th></tr></thead>
+          <table id="dashJobsTable">
+            <thead><tr><th>วันที่</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>เริ่ม–จบ</th><th>นาที</th><th>ผลลัพธ์</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -172,6 +165,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/admin.js?v=10"></script>
+<script src="js/admin.js?v=11"></script>
 </body>
 </html>

@@ -41,11 +41,31 @@ h1,h2,h3,.disp{font-family:'IBM Plex Sans Thai',sans-serif;font-weight:700;text-
 button{font:inherit;}
 :focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 
+/* nav shell: full sidebar >=960px, icon rail 640-960px, bottom tab bar <640px */
 .shell{display:grid;grid-template-columns:224px 1fr;min-height:100vh;}
-@media (max-width:860px){ .shell{grid-template-columns:1fr;} .sidebar{position:sticky;top:0;z-index:40;} }
-
 .sidebar{background:var(--surface);border-right:1px solid var(--line);padding:20px 16px;display:flex;flex-direction:column;gap:22px;}
-@media (max-width:860px){ .sidebar{border-right:none;border-bottom:1px solid var(--line);flex-direction:row;align-items:center;padding:12px 16px;gap:14px;} .sidebar .brand-sub, .sidebar .navlist, .sidebar .sync-box{display:none;} }
+.botnav{display:none;}
+
+@media (max-width:960px){
+  .shell{grid-template-columns:72px 1fr;}
+  .sidebar{padding:16px 8px;align-items:center;gap:16px;}
+  .sidebar .brand{gap:0;}
+  .sidebar .brand > div:not(.brand-mark), .sidebar .sync-box #syncText{display:none;}
+  .navbtn{justify-content:center;padding:10px;}
+  .navbtn .nav-tx{display:none;}
+  .sync-box{padding:8px;}
+}
+@media (max-width:640px){
+  .shell{grid-template-columns:1fr;}
+  .sidebar{display:none;}
+  .botnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--surface);
+    border-top:1px solid var(--line);justify-content:space-around;
+    padding:5px 4px calc(5px + env(safe-area-inset-bottom));}
+  .botbtn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;border:none;background:none;
+    color:var(--ink-dim);font-weight:600;font-size:10.5px;cursor:pointer;padding:6px 0;min-height:44px;}
+  .botbtn svg{width:20px;height:20px;}
+  .botbtn[aria-current="true"]{color:var(--accent);}
+}
 
 .brand{display:flex;align-items:center;gap:10px;}
 .brand-mark{width:36px;height:36px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex:none;}
@@ -64,7 +84,14 @@ button{font:inherit;}
 @media (prefers-reduced-motion: reduce){ .sync-dot{animation:none;} }
 
 .main{padding:26px 30px 60px;max-width:1280px;width:100%;}
-@media (max-width:640px){ .main{padding:18px 16px 44px;} }
+@media (max-width:640px){ .main{padding:18px 16px calc(84px + env(safe-area-inset-bottom));} }
+
+/* gear button in the page header — opens the ผู้ใช้งานระบบ view (admin-only) */
+.gear-btn{display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex:none;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:9px;color:var(--ink-dim);cursor:pointer;}
+.gear-btn svg{width:16px;height:16px;}
+.gear-btn:hover{color:var(--ink);}
+.gear-btn[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);}
 
 .pagehead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
 .pagehead h1{font-size:22px;font-weight:700;margin:0 0 3px;}

@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=8">
+<link rel="stylesheet" href="css/admin.css?v=9">
 </head>
 <body>
 
@@ -110,6 +110,12 @@
       </div>
     </section>
 
+    <!-- ===== VIEW: APPROVAL QUEUE ===== -->
+    <section class="view" id="view-queue">
+      <div class="q-batchbar" id="qBatchBar" hidden></div>
+      <div class="q-list" id="qList"></div>
+    </section>
+
     <!-- ===== VIEW: DETAILS ===== -->
     <section class="view" id="view-details">
       <div class="table-wrap">
@@ -165,6 +171,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/admin.js?v=11"></script>
+<script src="js/admin.js?v=12"></script>
 </body>
 </html>

@@ -41,6 +41,7 @@ const ICONS = {
   users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15.8 14.2c2.7.4 4.7 2.5 4.7 5.8"/></svg>',
   lock:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>',
   gear:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  queue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5h6a1 1 0 0 1 1 1V7H8V5.5a1 1 0 0 1 1-1z"/><rect x="4" y="6" width="16" height="15" rx="2"/><path d="M8.5 13.5l2.2 2.2 4.8-4.8"/></svg>',
   box:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
   inbound:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>',
   outbound: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>',
@@ -167,6 +168,7 @@ async function loadTasksFromDb(){
 // bottom tab bar. `short` is the bottom-bar label.
 const NAV = [
   {id:'dashboard',  label:'ภาพรวม',      short:'ภาพรวม', icon:'dash',  title:'ภาพรวม', sub:'สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก'},
+  {id:'queue',      label:'คิวอนุมัติ',   short:'คิว',    icon:'queue', title:'คิวอนุมัติ', sub:'งานที่รออนุมัติ เรียงตามความเร่งด่วน'},
   {id:'details',    label:'งานทั้งหมด',   short:'งาน',    icon:'list',  title:'งานทั้งหมด', sub:'รายการงานทุกชิ้นตามตัวกรองที่เลือก'},
   {id:'employees',  label:'พนักงาน',      short:'คน',     icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
 ];
@@ -228,11 +230,10 @@ document.addEventListener('click', e=>{
   const presetBtn = e.target.closest('#jobsPresets [data-preset]');
   if (presetBtn){ setJobsPreset(presetBtn.dataset.preset); return; }
 
-  if (e.target.closest('#actionStripBtn')){
-    setJobsPreset('pending');
-    document.getElementById('dashJobsTable').scrollIntoView({ behavior:'smooth', block:'center' });
-    return;
-  }
+  if (e.target.closest('#actionStripBtn')){ goView('queue'); return; }
+
+  const batchBtn = e.target.closest('[data-approve-dept]');
+  if (batchBtn){ approveDept(batchBtn.dataset.approveDept); return; }
 
   const approveBtn = e.target.closest('[data-approve-job]');
   if (approveBtn){ setJobStatus(approveBtn.dataset.approveJob, 'approved'); return; }
@@ -256,14 +257,20 @@ function groupJobs(rows){
   const map = new Map();
   rows.forEach(r=>{
     const key = [r.department, r.task_id, (r.details&&r.details.date)||'', (r.details&&r.details.start)||'', (r.created_at||'').slice(0,16)].join('|');
-    if (!map.has(key)) map.set(key, { ...r, crewNames: new Set() });
+    if (!map.has(key)) map.set(key, { ...r, crewNames: new Set(), rowIds: [] });
     const g = map.get(key);
+    g.rowIds.push(r.id);          // every DB row in this group — approve/reject must hit them all
     if (r.employee_name) g.crewNames.add(r.employee_name);
   });
   return [...map.values()].map(g=>({...g, crew: (g.details && g.details.crew && g.details.crew.length) ? g.details.crew : [...g.crewNames]}));
 }
 
 // ---------- filtering ----------
+function matchSearch(j){
+  if (!searchTerm) return true;
+  const task = taskById(j.task_id);
+  return (((task?task.label:'') + ' ' + (j.crew||[]).join(' ')).toLowerCase()).includes(searchTerm);
+}
 function filteredJobs(){
   const todayStr = todayISO();
   let fromStr = null;
@@ -276,12 +283,7 @@ function filteredJobs(){
     if (fromStr && d.date < fromStr) return false;
     if (dateRange==='today' && d.date !== todayStr) return false;
     if (deptFilter!=='ALL' && j.department!==deptFilter) return false;
-    if (searchTerm){
-      const task = taskById(j.task_id);
-      const hay = ((task?task.label:'')+' '+(j.crew||[]).join(' ')).toLowerCase();
-      if (!hay.includes(searchTerm)) return false;
-    }
-    return true;
+    return matchSearch(j);
   });
 }
 
@@ -479,11 +481,116 @@ function renderDetailsTable(closed){
 }
 
 async function setJobStatus(jobId, status){
+  // a "job" is a group of one-row-per-employee records — approve/reject them all
+  const j = jobs.find(x=>x.id===jobId);
+  const ids = (j && j.rowIds && j.rowIds.length) ? j.rowIds : [jobId];
   const { error } = await sb.from('jobs').update({
     status, approved_by: currentUser.id, approved_at: new Date().toISOString(),
-  }).eq('id', jobId);
+  }).in('id', ids);
   if (error){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
   await refreshJobs(); render();
+}
+
+// ===================== APPROVAL QUEUE (phase 3) =====================
+// Pending jobs in the current department scope, ignoring the date filter —
+// an old pending job still needs approving even while looking at "วันนี้".
+function queuePending(){
+  return jobs.filter(j => (j.status||'approved')==='pending'
+    && (deptFilter==='ALL' || j.department===deptFilter)
+    && matchSearch(j));
+}
+function isProblem(j){
+  const t = taskById(j.task_id);
+  return j.department==='OUT' && t && t.hasIssue && j.details && j.details.hasIssue;
+}
+function crewMatesPending(j, list){
+  const key = (j.crew||[]).join('|');
+  return list.filter(o => o!==j && (o.crew||[]).join('|')===key).length;
+}
+// urgency = age in hours, + a bump for jobs whose crew has other work waiting
+// (so a crew's jobs get reviewed together), + a big boost for flagged problems.
+function urgencyScore(j, list){
+  const ageH = (Date.now() - new Date(j.created_at || Date.now()).getTime()) / 3600000;
+  let s = ageH;
+  const mates = crewMatesPending(j, list);
+  if (mates) s += 6 + mates * 2;
+  if (isProblem(j)) s += 24;
+  return s;
+}
+function urgencyReason(j, list){
+  if (isProblem(j)) return { txt:'มีปัญหา', cls:'bad' };
+  const ageH = (Date.now() - new Date(j.created_at || Date.now()).getTime()) / 3600000;
+  if (ageH >= 24) return { txt:'ค้าง ' + Math.floor(ageH/24) + ' วัน', cls:'attention' };
+  const mates = crewMatesPending(j, list);
+  if (mates) return { txt:'รออีก ' + mates + ' งานของทีมนี้', cls:'note' };
+  if (ageH >= 1) return { txt:'ค้าง ' + Math.floor(ageH) + ' ชม.', cls:'attention' };
+  return { txt:'เพิ่งบันทึก', cls:'note' };
+}
+
+function renderQueue(){
+  const list = queuePending();
+  const scored = [...list].map(j=>({ j, s: urgencyScore(j, list) })).sort((a,b)=>b.s - a.s);
+  const ro = isReadOnly();
+
+  const bar = document.getElementById('qBatchBar');
+  const byDept = DEPT_KEYS.map(d=>({ d, n: list.filter(x=>x.department===d).length })).filter(x=>x.n);
+  if (ro || byDept.length < 1){
+    bar.hidden = true; bar.innerHTML = '';
+  } else {
+    bar.hidden = false;
+    bar.innerHTML = `<span class="q-batch-lbl">อนุมัติทั้งฝั่ง:</span>` +
+      byDept.map(({d,n})=>`<button type="button" class="btn-sm" data-approve-dept="${d}">${DEPT_PLAIN[d]} (${n})</button>`).join('');
+  }
+
+  const el = document.getElementById('qList');
+  if (!list.length){
+    el.innerHTML = `<div class="empty-note">ไม่มีงานรออนุมัติ${deptFilter!=='ALL' ? 'ในฝั่งนี้' : ''}</div>`;
+    return;
+  }
+  el.innerHTML = scored.map(({j})=>{
+    const task = taskById(j.task_id); const d = j.details || {};
+    const r = urgencyReason(j, list);
+    return `<div class="q-card" data-dept="${esc(j.department)}">
+      <div class="q-main">
+        <div class="q-top">
+          <span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span>
+          <span class="pill ${r.cls}">${esc(r.txt)}</span>
+        </div>
+        <div class="q-task">${esc(task ? task.label : j.task_id)}</div>
+        <div class="q-metaline mono">${esc(d.date||'')} · ${esc(d.start||'–')}–${esc(d.end||'–')} · ${d.mins == null ? '–' : num(d.mins)} นาที · ${esc(formatResult(d, task))}</div>
+        <div class="q-crew">${esc((j.crew||[]).join(', ')) || '–'}</div>
+      </div>
+      ${ro ? '' : `<div class="q-actions">
+        <button type="button" class="q-btn ok" data-approve-job="${esc(j.id)}">อนุมัติ</button>
+        <button type="button" class="q-btn no" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
+      </div>`}
+    </div>`;
+  }).join('');
+}
+
+async function approveDept(dept){
+  const list = queuePending().filter(j=>j.department===dept);
+  if (!list.length) return;
+  if (!confirm(`อนุมัติงานฝั่ง${DEPT_PLAIN[dept]}ทั้งหมด ${list.length} งาน?`)) return;
+  const ids = list.flatMap(j => (j.rowIds && j.rowIds.length) ? j.rowIds : [j.id]);
+  const { error } = await sb.from('jobs').update({
+    status: 'approved', approved_by: currentUser.id, approved_at: new Date().toISOString(),
+  }).in('id', ids);
+  if (error){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
+  await refreshJobs(); render();
+}
+
+// pending-count badge on the "คิวอนุมัติ" nav items (sidebar + bottom bar)
+function updatePendingBadges(){
+  const n = jobs.filter(j => (j.status||'approved')==='pending'
+    && (deptFilter==='ALL' || j.department===deptFilter)).length;
+  document.querySelectorAll('[data-view="queue"]').forEach(btn=>{
+    let b = btn.querySelector('.nav-badge');
+    if (n){
+      if (!b){ b = document.createElement('span'); b.className = 'nav-badge'; btn.appendChild(b); }
+      b.textContent = n;
+    } else if (b){ b.remove(); }
+  });
 }
 
 function renderEmployeesTable(closed){
@@ -650,8 +757,11 @@ async function createUserFromForm(){
 
 function render(){
   const closed = filteredJobs();
+  updatePendingBadges();
   if (activeView==='dashboard'){
     renderActionStrip(); renderScopeLine(closed); renderSideCards(closed); renderDayChart(); renderDashJobs(closed);
+  } else if (activeView==='queue'){
+    renderQueue();
   } else if (activeView==='details'){
     renderDetailsTable(closed);
   } else if (activeView==='employees'){

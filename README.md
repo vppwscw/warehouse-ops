@@ -47,9 +47,10 @@ npx serve -l 8000
 | อีเมล | รหัสผ่าน | สิทธิ์ | แผนก |
 |---|---|---|---|
 | admin.test@warehouse-ops.local | Wh0use-Test-2026! | ADMIN | ทุกแผนก |
-| assistant.test@warehouse-ops.local | Wh0use-Test-2026! | ASSISTANT | ทุกแผนก (อ่านอย่างเดียว) |
 | supervisor.test@warehouse-ops.local | Wh0use-Test-2026! | SUPERVISOR | OUT |
 | user.test@warehouse-ops.local | Wh0use-Test-2026! | USER | OUT |
+
+> `assistant.test@warehouse-ops.local` เคยสร้างไว้ทดสอบ ASSISTANT (2026-09-04) แล้วลบแถว `profiles` ทิ้ง — ตอนนี้ login ไม่ผ่าน (ขึ้น "ไม่พบข้อมูลผู้ใช้งานนี้ในระบบ"). auth user ยังค้างอยู่ใน `auth.users` (Management API ล่มตอนนั้น ลบผ่าน dashboard ไม่ได้) — ลบให้หมดทีหลังที่ Authentication → Users หรือ `delete from auth.users where email = 'assistant.test@warehouse-ops.local'`
 
 > รหัสผ่านนี้เป็นบัญชีทดสอบเท่านั้น แนะนำให้เปลี่ยน/ลบก่อนใช้งานจริงกับทีม แล้วสร้างบัญชีจริงของแต่ละคนแทน (สร้าง auth user ที่ Supabase Auth dashboard แล้ว insert แถวคู่กันใน `profiles` — ดูโครงสร้างด้านล่าง)
 
@@ -146,7 +147,7 @@ Helper functions (SQL, `SECURITY DEFINER`): `is_admin()`, `is_assistant()`, `is_
 - [x] admin.html: ASSISTANT login ได้ (read-only) + ADMIN อนุมัติ/ไม่อนุมัติงานได้
 - [x] index.html: USER เปิด/ปิดงานของตัวเองรายคน (กันปลอมแปลงชื่อ) + SUPERVISOR อนุมัติงาน/จัดการชนิดงาน
 - [x] เพิ่ม `employee_code` ให้ ADMIN ตั้งรหัสพนักงานเอง โชว์ในการ์ดอนุมัติกันชื่อซ้ำ
-- [x] สร้างบัญชีทดสอบครบ 4 role (เพิ่ม `assistant.test` เมื่อ 2026-09-04) + ทดสอบ end-to-end ทุก flow บน production ยืนยันจริง (เปิด/ปิดงาน, อนุมัติ+ไม่อนุมัติ ทั้ง SUPERVISOR และ ADMIN, จัดการชนิดงาน, ตั้ง `employee_code`)
+- [x] ทดสอบ end-to-end ทุก flow ครบ 4 role บน production ยืนยันจริง (เปิด/ปิดงาน, อนุมัติ+ไม่อนุมัติ ทั้ง SUPERVISOR และ ADMIN, จัดการชนิดงาน, ตั้ง `employee_code`, ASSISTANT read-only) — บัญชี `assistant.test` ที่ใช้ทดสอบถูกปิดใช้งานแล้ว (ลบแถว `profiles`)
 - [x] แก้ช่องโหว่ privilege escalation ใน `profiles` (S1) ด้วย trigger `trg_prevent_profile_privilege_change` — ดูหัวข้อ RLS
 - [x] แก้บั๊ก B1 (แท็บประวัติมือถือค้าง stale หลังปิดงาน) + G1 (admin แท็บ "พนักงาน" ไม่นับงานของบัญชี auth เพราะ match ชื่อกับ roster เก่า → เปลี่ยนเป็น union ชื่อ roster + ชื่อใน job crew)
 - [ ] สร้างบัญชีจริงให้พนักงานแต่ละคน (รอรายชื่อ-อีเมล-แผนก-สิทธิ์จากผู้ใช้งาน) แล้วลบ/เปลี่ยนรหัสบัญชีทดสอบ

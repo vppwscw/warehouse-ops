@@ -96,19 +96,44 @@ document.getElementById('loginPass').addEventListener('keydown', e=>{ if (e.key=
 document.getElementById('logoutBtn').addEventListener('click', doLogout);
 document.getElementById('deniedLogoutBtn').addEventListener('click', doLogout);
 
-document.getElementById('changePwBtn').addEventListener('click', async ()=>{
+// Inline password modal — replaces window.prompt()/alert(), which some browsers
+// and embedded webviews silently block. `onSubmit(pw)` returns an error string
+// to show in place, or null on success (then the modal closes itself).
+function askNewPassword(title, onSubmit){
+  const ov   = document.getElementById('pwModal');
+  const a    = document.getElementById('pwNew');
+  const b    = document.getElementById('pwNew2');
+  const hint = document.getElementById('pwModalHint');
+  const ok   = document.getElementById('pwConfirm');
+  const no   = document.getElementById('pwCancel');
+  document.getElementById('pwModalTitle').textContent = title || 'เปลี่ยนรหัสผ่าน';
+  a.value = ''; b.value = ''; hint.textContent = ''; ok.disabled = false;
+  ov.hidden = false;
+  setTimeout(()=>a.focus(), 30);
+
+  function close(){ ov.hidden = true; ok.removeEventListener('click', submit); no.removeEventListener('click', close); ov.removeEventListener('keydown', onKey); }
+  function onKey(e){ if (e.key === 'Enter') submit(); else if (e.key === 'Escape') close(); }
+  async function submit(){
+    const p = a.value, p2 = b.value;
+    if (p.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
+    if (p !== p2){ hint.textContent = 'รหัสผ่านสองครั้งไม่ตรงกัน'; return; }
+    ok.disabled = true; hint.textContent = 'กำลังบันทึก...';
+    const err = onSubmit ? await onSubmit(p) : null;
+    if (err){ ok.disabled = false; hint.textContent = err; return; }
+    hint.textContent = 'สำเร็จ';
+    setTimeout(close, 700);
+  }
+  ok.addEventListener('click', submit);
+  no.addEventListener('click', close);
+  ov.addEventListener('keydown', onKey);
+}
+
+document.getElementById('changePwBtn').addEventListener('click', ()=>{
   if (!currentUser) return;
-  const np = prompt('ตั้งรหัสผ่านใหม่ของคุณ (อย่างน้อย 8 ตัว):');
-  if (np === null) return;
-  if (np.length < 8){ alert('รหัสผ่านต้องอย่างน้อย 8 ตัว'); return; }
-  const np2 = prompt('พิมพ์รหัสผ่านใหม่อีกครั้งเพื่อยืนยัน:');
-  if (np2 === null) return;
-  if (np !== np2){ alert('รหัสผ่านสองครั้งไม่ตรงกัน'); return; }
-  try{
+  askNewPassword('เปลี่ยนรหัสผ่านของฉัน', async (np)=>{
     const { error } = await sb.auth.updateUser({ password: np });
-    if (error) throw error;
-    alert('เปลี่ยนรหัสผ่านเรียบร้อย ครั้งต่อไปใช้รหัสใหม่');
-  }catch(err){ alert('เปลี่ยนรหัสผ่านไม่สำเร็จ: ' + (err.message || err)); }
+    return error ? ('ไม่สำเร็จ: ' + (error.message || error)) : null;
+  });
 });
 
 async function doLogout(){
@@ -727,27 +752,26 @@ async function toggleUserActive(userId, next){
   }catch(err){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
 }
 
-async function resetUserPassword(userId){
+function resetUserPassword(userId){
   const u = users.find(x=>x.id===userId);
   const name = (u && u.full_name) || 'ผู้ใช้นี้';
-  const pw = prompt(`ตั้งรหัสผ่านใหม่สำหรับ "${name}" (อย่างน้อย 8 ตัว):`);
-  if (pw === null) return;
-  if (pw.length < 8){ alert('รหัสผ่านต้องอย่างน้อย 8 ตัว'); return; }
-  try{
-    const { data: { session } } = await sb.auth.getSession();
-    const res = await fetch(ADMIN_USERS_FN, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + session.access_token,
-        'apikey': SUPABASE_ANON_KEY,
-      },
-      body: JSON.stringify({ action: 'set-password', user_id: userId, password: pw }),
-    });
-    const out = await res.json().catch(()=>({}));
-    if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
-    alert(`ตั้งรหัสผ่านใหม่ให้ "${name}" แล้ว — แจ้งรหัสให้เจ้าตัวแล้วให้เปลี่ยนเองภายหลัง`);
-  }catch(err){ alert('รีเซ็ตรหัสไม่สำเร็จ: ' + err.message); }
+  askNewPassword(`ตั้งรหัสผ่านใหม่: ${name}`, async (pw)=>{
+    try{
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch(ADMIN_USERS_FN, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token,
+          'apikey': SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ action: 'set-password', user_id: userId, password: pw }),
+      });
+      const out = await res.json().catch(()=>({}));
+      if (!res.ok || out.error) return (out.error || ('HTTP ' + res.status));
+      return null;
+    }catch(err){ return 'รีเซ็ตรหัสไม่สำเร็จ: ' + (err.message || err); }
+  });
 }
 
 async function createUserFromForm(){

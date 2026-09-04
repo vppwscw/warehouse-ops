@@ -42,24 +42,18 @@ npx serve -l 8000
 
 **Workflow อนุมัติงาน**: ทุกงานที่ USER ปิด จะเข้าสถานะ `pending` ก่อน ต้องรอ SUPERVISOR (แผนกตัวเอง) หรือ ADMIN (ทุกแผนก) กดอนุมัติ/ไม่อนุมัติ ถึงจะกลายเป็น `approved`/`rejected`
 
-## บัญชีทดสอบ (Supabase Auth)
+## บัญชีทดสอบ
 
-| อีเมล | รหัสผ่าน | สิทธิ์ | แผนก |
-|---|---|---|---|
-| admin.test@warehouse-ops.local | Wh0use-Test-2026! | ADMIN | ทุกแผนก |
-| supervisor.test@warehouse-ops.local | Wh0use-Test-2026! | SUPERVISOR | OUT |
-| user.test@warehouse-ops.local | Wh0use-Test-2026! | USER | OUT |
+มีบัญชีทดสอบ 3 บัญชีในระบบ (ADMIN / SUPERVISOR / USER) — **อีเมลและรหัสผ่านไม่ได้เก็บไว้ในไฟล์นี้** ขอจากผู้ดูแลระบบ หรือดู/รีเซ็ตที่ Supabase dashboard → Authentication → Users
 
-> `assistant.test@warehouse-ops.local` เคยสร้างไว้ทดสอบ ASSISTANT (2026-09-04) แล้วลบแถว `profiles` ทิ้ง — ตอนนี้ login ไม่ผ่าน (ขึ้น "ไม่พบข้อมูลผู้ใช้งานนี้ในระบบ"). auth user ยังค้างอยู่ใน `auth.users` (Management API ล่มตอนนั้น ลบผ่าน dashboard ไม่ได้) — ลบให้หมดทีหลังที่ Authentication → Users หรือ `delete from auth.users where email = 'assistant.test@warehouse-ops.local'`
-
-> รหัสผ่านนี้เป็นบัญชีทดสอบเท่านั้น แนะนำให้เปลี่ยน/ลบก่อนใช้งานจริงกับทีม แล้วสร้างบัญชีจริงของแต่ละคนแทน (สร้าง auth user ที่ Supabase Auth dashboard แล้ว insert แถวคู่กันใน `profiles` — ดูโครงสร้างด้านล่าง)
+> ก่อนใช้งานจริงกับทีม: สร้างบัญชีจริงของแต่ละคน (ดูวิธีด้านล่าง) แล้วลบบัญชีทดสอบทิ้ง
 
 ### วิธีสร้างบัญชีใหม่
 
-**วิธีปกติ — จากหน้า admin.html (ต้อง deploy Edge Function ก่อน ดู "การจัดการผู้ใช้งาน" ด้านล่าง):**
+**วิธีปกติ — จากหน้า admin.html** (Edge Function `admin-users` deploy บน production แล้ว 2026-09-04):
 ADMIN → แท็บ "ผู้ใช้งานระบบ" → **＋ เพิ่มผู้ใช้ใหม่** → กรอกอีเมล / ชื่อ / รหัสผ่านชั่วคราว / สิทธิ์ / แผนก → สร้างบัญชี. ระบบสร้าง auth user (ยืนยันอีเมลให้อัตโนมัติ) + แถว `profiles` ให้พร้อมกัน. ผู้ใช้ login ด้วยรหัสชั่วคราวแล้วเปลี่ยนเองทีหลัง
 
-**วิธี manual (2 ขั้น) — ถ้ายังไม่ได้ deploy Edge Function:**
+**วิธี manual (2 ขั้น) — เผื่อกรณี Edge Function มีปัญหา / ตั้ง project ใหม่:**
 
 1. **Supabase dashboard → Authentication → Users → Add user** — กรอกอีเมล/รหัสผ่าน ติ๊ก **Auto Confirm User**
 2. **SQL Editor** — insert แถว `profiles` คู่กัน:
@@ -73,9 +67,9 @@ ADMIN → แท็บ "ผู้ใช้งานระบบ" → **＋ เ�
    ```
    (`department` = `null` สำหรับ ADMIN/ASSISTANT)
 
-> **ถ้า Management API ล่ม** (ปุ่ม Add user ใช้ไม่ได้) สร้าง auth user ตรงด้วย SQL ได้ แต่ต้อง set คอลัมน์ varchar token/change ให้เป็น `''` ไม่งั้น GoTrue login ฟ้อง `"Database error querying schema"` 500 — บัญชี `assistant.test` ถูกสร้างแบบนี้เมื่อ 2026-09-04:
+> **ถ้า Management API ล่ม** (ปุ่ม Add user ใช้ไม่ได้) สร้าง auth user ตรงด้วย SQL ได้ แต่ต้อง set คอลัมน์ varchar token/change ให้เป็น `''` ไม่งั้น GoTrue login ฟ้อง `"Database error querying schema"` 500:
 > ```sql
-> -- หลัง insert auth.users + auth.identities เอง
+> -- หลัง insert auth.users + auth.identities เอง (แทน <email>)
 > update auth.users set
 >   confirmation_token = coalesce(confirmation_token, ''),
 >   recovery_token = coalesce(recovery_token, ''),
@@ -85,7 +79,7 @@ ADMIN → แท็บ "ผู้ใช้งานระบบ" → **＋ เ�
 >   phone_change = coalesce(phone_change, ''),
 >   phone_change_token = coalesce(phone_change_token, ''),
 >   reauthentication_token = coalesce(reauthentication_token, '')
-> where email = 'assistant.test@warehouse-ops.local';
+> where email = '<email>';
 > ```
 
 ## Supabase project
@@ -98,7 +92,7 @@ ADMIN → แท็บ "ผู้ใช้งานระบบ" → **＋ เ�
 
 ## โครงสร้างฐานข้อมูล
 
-ตาราง (schema `public`), เปิด RLS ทุกตาราง, grant SELECT/INSERT/UPDATE/DELETE ให้ role `authenticated`:
+ตาราง (schema `public`), เปิด RLS ทุกตาราง. grant DML ให้ `authenticated` และ `service_role` (project นี้เดิม grant ให้แค่ `authenticated` — เพิ่ม `service_role` ใน `sql/2026-09-04-user-management.sql` เพราะ Edge Function ต้องใช้):
 
 - `profiles` — บัญชีผู้ใช้ (1:1 กับ `auth.users`)
   - `full_name`, `department` (enum `department`: INB/OUT/INV, ว่างสำหรับ ADMIN/ASSISTANT)
@@ -122,21 +116,21 @@ Helper functions (SQL, `SECURITY DEFINER`): `is_admin()`, `is_assistant()`, `is_
 - `jobs` update — เจ้าของงานเอง (ตอน `status='open'` เท่านั้น) หรือ SUPERVISOR/ADMIN (อนุมัติ/ไม่อนุมัติ)
 
 > SQL ที่ต้องรันบน Supabase (ไม่ auto-migrate — repo เป็น static site) เก็บไว้ที่ [`sql/`](sql/):
-> - `sql/2026-09-04-user-management.sql` — เพิ่มคอลัมน์ `active` + trigger `trg_prevent_profile_privilege_change` เวอร์ชันล่าสุด (กัน `role`/`department`/`employee_code`/`active` + ยอมให้ `service_role` ผ่าน)
+> - `sql/2026-09-04-user-management.sql` — (1) เพิ่มคอลัมน์ `profiles.active` (2) grant DML บน `public` ให้ `service_role` (3) trigger `trg_prevent_profile_privilege_change` เวอร์ชันล่าสุด (กัน `role`/`department`/`employee_code`/`active` + ยอมให้ `service_role` ผ่าน)
 >
-> รันไฟล์นี้ **ก่อน** deploy เว็บเวอร์ชันที่มีระบบจัดการผู้ใช้
+> รันไฟล์นี้ **ก่อน** deploy เว็บเวอร์ชันที่มีระบบจัดการผู้ใช้ (v ปัจจุบัน: mobile.js v10 / admin.js v7 / admin.css v6)
 
 ## การจัดการผู้ใช้งาน (ADMIN)
 
 ADMIN สร้าง/แก้สิทธิ์/ปิดใช้งานบัญชีได้จาก **admin.html → แท็บ "ผู้ใช้งานระบบ"**:
 
-- **＋ เพิ่มผู้ใช้ใหม่** — กรอกอีเมล / ชื่อ / รหัสผ่านชั่วคราว / สิทธิ์ / แผนก → เรียก Edge Function `admin-users` (`action: create`)
+- **＋ เพิ่มผู้ใช้ใหม่** — กรอกอีเมล / ชื่อ / รหัสผ่านชั่วคราว / สิทธิ์ / แผนก → Edge Function `admin-users` (`action: create`) สร้าง auth user (ยืนยันอีเมลอัตโนมัติ) + แถว `profiles` พร้อมกัน (ถ้า insert profiles พลาด rollback ลบ auth user ให้)
 - **แก้ราย row** — เปลี่ยน role / แผนก / รหัสพนักงาน แล้วกด "บันทึก" (เขียน `profiles` ตรงด้วย JWT ของ ADMIN — trigger ยอมให้ `is_admin()` ผ่าน)
 - **รีเซ็ตรหัส** — ปุ่มราย row → กรอกรหัสชั่วคราวใหม่ → Edge Function `admin-users` (`action: set-password` → `auth.admin.updateUserById`). แจ้งรหัสให้เจ้าตัวแล้วให้เปลี่ยนเอง
+- **ปิดใช้งาน / เปิดใช้งาน** — soft delete (`profiles.active`). บัญชีที่ปิดจะ login ไม่ได้ (`afterLogin` เตะออกทั้ง 2 แอป) แต่ประวัติงานยังอยู่ครบ. **ลบถาวร** (แถว `profiles` + auth user) ทำที่ Supabase — `profiles` ไม่มี DELETE policy ต้องลบใน SQL editor
+- ปิดใช้งาน / เปลี่ยนสิทธิ์บัญชี **ตัวเอง** ไม่ได้ (กัน ADMIN ล็อกตัวเองออก)
 
-**ผู้ใช้ทุกคนเปลี่ยนรหัสผ่านของตัวเองได้** — ปุ่ม "เปลี่ยนรหัสผ่าน" (admin.html ข้างปุ่มออกจากระบบ) หรือไอคอนกุญแจบน topbar (index.html) → กรอกรหัสใหม่ 2 ครั้ง → `sb.auth.updateUser({password})` ด้วย session ตัวเอง (ไม่ผ่าน Edge Function). ใช้หลังได้รหัสชั่วคราวจาก ADMIN
-- **ปิดใช้งาน / เปิดใช้งาน** — soft delete (`profiles.active`). บัญชีที่ปิดจะ login ไม่ได้ แต่ประวัติงานยังอยู่. ลบถาวรทำที่ Supabase dashboard เท่านั้น
-- ปิดใช้งาน/เปลี่ยนสิทธิ์บัญชี **ตัวเอง** ไม่ได้ (กัน ADMIN ล็อกตัวเองออก)
+**ผู้ใช้ทุก role เปลี่ยนรหัสผ่านของตัวเองได้** — ปุ่ม "เปลี่ยนรหัสผ่าน" (admin.html ข้างปุ่มออกจากระบบ) หรือไอคอนกุญแจบน topbar (index.html) → กรอกรหัสใหม่ 2 ครั้ง → `sb.auth.updateUser({password})` ด้วย session ตัวเอง (ไม่ผ่าน Edge Function). flow ปกติ: ADMIN สร้างบัญชี+รหัสชั่วคราว → พนักงาน login → กดเปลี่ยนรหัสตัวเอง
 
 **ทำไมต้องมี Edge Function:** การสร้าง/ลบ auth user ต้องใช้ `service_role` key ซึ่งห้ามฝังในหน้าเว็บ. Edge Function `admin-users` ถือ key ฝั่ง server, ตรวจว่าคนเรียกเป็น ADMIN ที่ active อยู่ก่อนทำงาน
 
@@ -144,27 +138,33 @@ ADMIN สร้าง/แก้สิทธิ์/ปิดใช้งานบ
 
 > ฟังก์ชันใช้ `service_role` **เฉพาะ** ฝั่ง `auth.users` (สร้าง auth user). แถว `profiles` เขียนด้วย JWT ของ ADMIN ที่เรียกมา (role `authenticated` มีสิทธิ์ INSERT + RLS เช็ค `is_admin()`) — project นี้ grant DML ให้แค่ `authenticated` ไม่ได้ให้ `service_role` เลยต้องเขียนวิธีนี้
 
-Deploy แล้ว verify: 2026-09-04 — สร้างบัญชีผ่านฟอร์มได้จริง, บัญชีใหม่ login ด้วยรหัสชั่วคราวได้, non-ADMIN เรียก → 403, อีเมลซ้ำ → 400 + ไม่มี orphan
+**Verify E2E (production, 2026-09-04) — ผ่านครบ:** create (validation + valid), บัญชีใหม่ login, เปลี่ยนรหัสตัวเอง + login ใหม่, non-ADMIN เรียกฟังก์ชัน → 403 (ทั้ง 2 action), self privilege-escalation → trigger บล็อก, ADMIN แก้ role/แผนก/รหัสพนักงาน, ADMIN reset-password + login, ปิดใช้งาน → login ถูกบล็อกทั้ง 2 แอป, เปิดใช้งานคืน → login ได้เต็ม (role/แผนกที่แก้มีผล)
 
-> Trigger เวอร์ชันก่อนหน้า (ยังไม่มี `active` / service_role bypass) เพิ่มเมื่อ 2026-09-04 — ดู `sql/2026-09-04-user-management.sql` สำหรับเวอร์ชันปัจจุบันที่ต้องใช้
+## สถานะโปรเจกต์ (อัปเดต 2026-09-04)
 
-## สถานะโปรเจกต์ (อัปเดตล่าสุด)
+### เสร็จแล้ว
 
-- [x] สร้าง Supabase project + schema + RLS policy ครบ
-- [x] เปลี่ยนระบบ login จากรหัสรวมต่อแผนก → บัญชีรายคนผ่าน Supabase Auth
-- [x] เขียนแอป production (index.html/admin.html) ต่อ Supabase จริง แยก HTML/CSS/JS เป็นชั้นๆ
-- [x] อัปโหลดขึ้น GitHub repo `vppwscw/warehouse-ops` + เปิด GitHub Pages ใช้งานจริง
-- [x] แก้บั๊กจากการทดสอบรอบแรก (RLS grant, login screen ค้าง, checkbox ไม่ติ๊ก, session ไม่ persist, ประวัติไม่ refresh)
-- [x] สร้างระบบ 4 role (ADMIN/ASSISTANT/SUPERVISOR/USER) + workflow ขออนุมัติงาน (`jobs.status`)
-- [x] admin.html: ASSISTANT login ได้ (read-only) + ADMIN อนุมัติ/ไม่อนุมัติงานได้
-- [x] index.html: USER เปิด/ปิดงานของตัวเองรายคน (กันปลอมแปลงชื่อ) + SUPERVISOR อนุมัติงาน/จัดการชนิดงาน
-- [x] เพิ่ม `employee_code` ให้ ADMIN ตั้งรหัสพนักงานเอง โชว์ในการ์ดอนุมัติกันชื่อซ้ำ
-- [x] ทดสอบ end-to-end ทุก flow ครบ 4 role บน production ยืนยันจริง (เปิด/ปิดงาน, อนุมัติ+ไม่อนุมัติ ทั้ง SUPERVISOR และ ADMIN, จัดการชนิดงาน, ตั้ง `employee_code`, ASSISTANT read-only) — บัญชี `assistant.test` ที่ใช้ทดสอบถูกปิดใช้งานแล้ว (ลบแถว `profiles`)
-- [x] แก้ช่องโหว่ privilege escalation ใน `profiles` (S1) ด้วย trigger `trg_prevent_profile_privilege_change` — ดูหัวข้อ RLS
-- [x] แก้บั๊ก B1 (แท็บประวัติมือถือค้าง stale หลังปิดงาน) + G1 (admin แท็บ "พนักงาน" ไม่นับงานของบัญชี auth เพราะ match ชื่อกับ roster เก่า → เปลี่ยนเป็น union ชื่อ roster + ชื่อใน job crew)
-- [x] ระบบจัดการผู้ใช้งานในหน้า admin.html — ADMIN สร้างบัญชี (ผ่าน Edge Function `admin-users`), แก้ role/แผนก/รหัสพนักงาน, ปิดใช้งาน (soft delete `profiles.active`) — ต้องรัน `sql/2026-09-04-user-management.sql` + deploy Edge Function ก่อน
-- [ ] สร้างบัญชีจริงให้พนักงานแต่ละคน (รอรายชื่อ-อีเมล-แผนก-สิทธิ์จากผู้ใช้งาน) แล้วลบ/เปลี่ยนรหัสบัญชีทดสอบ
-- [ ] ฟีเจอร์ "มอบหมายงานรายคน" โดย SUPERVISOR (ตอนนี้ USER เลือกงานจากรายการเองอิสระ ยังไม่มีการมอบหมายเจาะจงรายคน — ถ้าต้องการค่อยทำเพิ่ม)
+- [x] Supabase project + schema + RLS policy ครบทุกตาราง
+- [x] login รายคนผ่าน Supabase Auth (เลิกใช้รหัสรวมต่อแผนก)
+- [x] แอป production แยก HTML/CSS/JS — `index.html` (มือถือ) + `admin.html` (ERP) ต่อ Supabase จริง
+- [x] GitHub repo `vppwscw/warehouse-ops` + GitHub Pages
+- [x] 4 role (ADMIN/ASSISTANT/SUPERVISOR/USER) + workflow ขออนุมัติงาน (`jobs.status`: open → pending → approved/rejected)
+- [x] index.html: USER เปิด/ปิดงานรายคน (กันปลอมชื่อ) · SUPERVISOR อนุมัติ/ไม่อนุมัติ + จัดการชนิดงาน
+- [x] admin.html: ADMIN คุมทุกแผนก อนุมัติ/ไม่อนุมัติ · ASSISTANT read-only
+- [x] `employee_code` — ADMIN ตั้งรหัสพนักงาน โชว์ในการ์ดอนุมัติกันชื่อซ้ำ
+- [x] **ทดสอบ E2E ครบ 4 role บน production** — เปิด/ปิดงาน, อนุมัติ **และไม่อนุมัติ** ทั้ง SUPERVISOR และ ADMIN, จัดการชนิดงาน, ASSISTANT read-only
+- [x] **S1 (critical) — privilege escalation ใน `profiles`** — USER/SUPERVISOR/ASSISTANT ยิง `update profiles set role='ADMIN'` แถวตัวเองได้ → fix ด้วย trigger `trg_prevent_profile_privilege_change`
+- [x] **B1** — แท็บประวัติมือถือค้าง stale หลังปิดงาน → `goTab('history')` refresh jobs ก่อน render
+- [x] **G1** — admin แท็บ "พนักงาน" ไม่นับงานของบัญชี auth (match ชื่อ roster เก่า) → เปลี่ยนเป็น union ชื่อ roster + ชื่อใน job crew
+- [x] **ระบบจัดการผู้ใช้งาน (admin.html)** — ADMIN สร้างบัญชี (Edge Function `admin-users`), แก้ role/แผนก/รหัสพนักงาน, รีเซ็ตรหัส, ปิด/เปิดใช้งาน (soft delete `profiles.active`)
+- [x] **เปลี่ยนรหัสผ่านตัวเอง** — ทุก role ทำได้จากในแอป (`sb.auth.updateUser`)
+- [x] E2E re-test ระบบ user management เต็มรูปแบบ (ดูหัวข้อ "การจัดการผู้ใช้งาน")
+- [x] deploy Edge Function `admin-users` (Verify JWT OFF) + รัน `sql/2026-09-04-user-management.sql` บน Supabase production — **ทำแล้ว** (2026-09-04)
+
+### ค้าง
+
+- [ ] สร้างบัญชีจริงให้พนักงานแต่ละคน แล้วลบบัญชีทดสอบทิ้ง
+- [ ] ฟีเจอร์ "มอบหมายงานรายคน" โดย SUPERVISOR (ตอนนี้ USER เลือกงานเองอิสระ)
 - [ ] ทดสอบกับผู้ใช้งานจริงหน้างาน ก่อนเลิกใช้ระบบเดิม
 
 ## Repo

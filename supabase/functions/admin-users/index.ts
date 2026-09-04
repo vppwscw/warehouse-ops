@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
     if (userId !== user.id) {
       const { data: target } = await admin.from("profiles").select("role").eq("id", userId).single();
       if (target?.role === "ADMIN") {
-        return json({ error: "รีเซ็ตรหัสของ ADMIN คนอื่นทำที่ Supabase dashboard เท่านั้น" }, 403);
+        return json({ error: "reset another admin's password from the Supabase dashboard only" }, 403);
       }
     }
 

@@ -2,7 +2,6 @@
 
 const DEPT_KEYS = ['INB','OUT','INV'];
 const DEPT_PLAIN = { INB:'ขาเข้า', OUT:'ขาออก', INV:'สต๊อก' };
-const DEPT_ICON  = { INB:'inbound', OUT:'outbound', INV:'inventory' };
 const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
@@ -43,9 +42,6 @@ const ICONS = {
   gear:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   queue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5h6a1 1 0 0 1 1 1V7H8V5.5a1 1 0 0 1 1-1z"/><rect x="4" y="6" width="16" height="15" rx="2"/><path d="M8.5 13.5l2.2 2.2 4.8-4.8"/></svg>',
   box:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
-  inbound:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>',
-  outbound: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>',
-  inventory:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
 };
 
 let profile = null, currentUser = null;
@@ -242,7 +238,12 @@ document.addEventListener('click', e=>{
   if (batchBtn){ approveDept(batchBtn.dataset.approveDept); return; }
 
   const approveBtn = e.target.closest('[data-approve-job]');
-  if (approveBtn){ setJobStatus(approveBtn.dataset.approveJob, 'approved'); return; }
+  if (approveBtn){
+    const card = approveBtn.closest('.q-card');
+    if (card) card.classList.add('q-done');       // brief ✓ until the queue re-renders
+    setJobStatus(approveBtn.dataset.approveJob, 'approved');
+    return;
+  }
   const rejectBtn = e.target.closest('[data-reject-job]');
   if (rejectBtn){ setJobStatus(rejectBtn.dataset.rejectJob, 'rejected'); return; }
 

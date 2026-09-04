@@ -69,6 +69,8 @@ function mapAuthError(err){
 function mapDbError(err){
   if (!err) return 'unknown error';
   if (err.code === '42501' || /row-level security/i.test(err.message||'')) return 'ไม่มีสิทธิ์เข้าถึงข้อมูลนี้';
+  if (err.code === '23505' && /employee_code/.test(err.message||'')) return 'รหัสพนักงานนี้ถูกใช้ไปแล้ว';
+  if (err.code === '23505') return 'ข้อมูลซ้ำกับที่มีอยู่แล้ว';
   return err.message || err.code || 'unknown error';
 }
 function showScreen(id){

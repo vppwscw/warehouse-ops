@@ -136,6 +136,40 @@ document.getElementById('changePwBtn').addEventListener('click', ()=>{
   });
 });
 
+// Non-blocking toast — replaces alert(), which webviews and the
+// "prevent additional dialogs" checkbox both suppress.
+function toast(msg, kind){
+  let host = document.getElementById('toastHost');
+  if (!host){ host = document.createElement('div'); host.id = 'toastHost'; document.body.appendChild(host); }
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind === 'ok' ? 'toast-ok' : 'toast-err');
+  el.textContent = msg;
+  host.appendChild(el);
+  setTimeout(()=>{ el.classList.add('leaving'); setTimeout(()=>el.remove(), 220); }, kind === 'ok' ? 2600 : 4400);
+}
+
+// In-page confirm — replaces confirm(). Resolves true/false.
+function confirmModal(text, opts){
+  opts = opts || {};
+  return new Promise(resolve=>{
+    const ov  = document.getElementById('confirmModal');
+    const yes = document.getElementById('confirmYes');
+    const no  = document.getElementById('confirmNo');
+    document.getElementById('confirmText').textContent = text;
+    yes.textContent = opts.yes || 'ตกลง';
+    yes.className = 'btn-sm ' + (opts.danger ? 'danger' : 'primary');
+    ov.hidden = false;
+    setTimeout(()=>no.focus(), 30);
+    function done(v){ ov.hidden = true; yes.removeEventListener('click', onYes); no.removeEventListener('click', onNo); ov.removeEventListener('keydown', onKey); resolve(v); }
+    function onYes(){ done(true); }
+    function onNo(){ done(false); }
+    function onKey(e){ if (e.key === 'Escape') done(false); else if (e.key === 'Enter') done(true); }
+    yes.addEventListener('click', onYes);
+    no.addEventListener('click', onNo);
+    ov.addEventListener('keydown', onKey);
+  });
+}
+
 async function doLogout(){
   await sb.auth.signOut();
   profile = null; currentUser = null; jobs = []; roster = [];
@@ -533,7 +567,7 @@ async function setJobStatus(jobId, status){
   const { error } = await sb.from('jobs').update({
     status, approved_by: currentUser.id, approved_at: new Date().toISOString(),
   }).in('id', ids);
-  if (error){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
+  if (error){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
   await refreshJobs(); render();
 }
 
@@ -622,12 +656,14 @@ function renderQueue(){
 async function approveDept(dept){
   const list = queuePending().filter(j=>j.department===dept);
   if (!list.length) return;
-  if (!confirm(`อนุมัติงานฝั่ง${DEPT_PLAIN[dept]}ทั้งหมด ${list.length} งาน?`)) return;
+  const okGo = await confirmModal(`อนุมัติงานฝั่ง${DEPT_PLAIN[dept]}ทั้งหมด ${list.length} งาน?`, { yes:'อนุมัติทั้งหมด' });
+  if (!okGo) return;
   const ids = list.flatMap(j => (j.rowIds && j.rowIds.length) ? j.rowIds : [j.id]);
   const { error } = await sb.from('jobs').update({
     status: 'approved', approved_by: currentUser.id, approved_at: new Date().toISOString(),
   }).in('id', ids);
-  if (error){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
+  if (error){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
+  toast(`อนุมัติ ${list.length} งานแล้ว`, 'ok');
   await refreshJobs(); render();
 }
 
@@ -729,27 +765,31 @@ async function saveUserRow(userId){
   const noDept = role === 'ADMIN' || role === 'ASSISTANT';
   const department = noDept ? null : (row.querySelector('[data-u-dept]').value || null);
   const employee_code = row.querySelector('[data-u-code]').value.trim() || null;
-  if (!noDept && !department){ alert('SUPERVISOR / USER ต้องระบุแผนก'); return; }
+  if (!noDept && !department){ toast('SUPERVISOR / USER ต้องระบุแผนก'); return; }
   const btn = row.querySelector('[data-save-user]');
   const label = btn.textContent; btn.textContent = '...'; btn.disabled = true;
   try{
     const { error } = await sb.from('profiles').update({ role, department, employee_code }).eq('id', userId);
     if (error) throw error;
     await refreshUsers(); renderUsersTable();
+    toast('บันทึกแล้ว', 'ok');
   }catch(err){
-    alert('บันทึกไม่สำเร็จ: ' + mapDbError(err));
+    toast('บันทึกไม่สำเร็จ: ' + mapDbError(err));
     btn.textContent = label; btn.disabled = false;
   }
 }
 
 async function toggleUserActive(userId, next){
-  if (currentUser && userId === currentUser.id){ alert('ปิดใช้งานบัญชีตัวเองไม่ได้'); return; }
-  if (!next && !confirm('ปิดใช้งานบัญชีนี้? ผู้ใช้จะเข้าสู่ระบบไม่ได้ (ข้อมูลงานยังอยู่ครบ)')) return;
+  if (currentUser && userId === currentUser.id){ toast('ปิดใช้งานบัญชีตัวเองไม่ได้'); return; }
+  if (!next){
+    const go = await confirmModal('ปิดใช้งานบัญชีนี้? ผู้ใช้จะเข้าสู่ระบบไม่ได้ (ข้อมูลงานยังอยู่ครบ)', { danger:true, yes:'ปิดใช้งาน' });
+    if (!go) return;
+  }
   try{
     const { error } = await sb.from('profiles').update({ active: next }).eq('id', userId);
     if (error) throw error;
     await refreshUsers(); renderUsersTable();
-  }catch(err){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
+  }catch(err){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
 }
 
 function resetUserPassword(userId){

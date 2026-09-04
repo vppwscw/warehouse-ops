@@ -130,8 +130,9 @@ Helper functions (SQL, `SECURITY DEFINER`): `is_admin()`, `is_assistant()`, `is_
 
 ADMIN สร้าง/แก้สิทธิ์/ปิดใช้งานบัญชีได้จาก **admin.html → แท็บ "ผู้ใช้งานระบบ"**:
 
-- **＋ เพิ่มผู้ใช้ใหม่** — กรอกอีเมล / ชื่อ / รหัสผ่านชั่วคราว / สิทธิ์ / แผนก → เรียก Edge Function `admin-users`
+- **＋ เพิ่มผู้ใช้ใหม่** — กรอกอีเมล / ชื่อ / รหัสผ่านชั่วคราว / สิทธิ์ / แผนก → เรียก Edge Function `admin-users` (`action: create`)
 - **แก้ราย row** — เปลี่ยน role / แผนก / รหัสพนักงาน แล้วกด "บันทึก" (เขียน `profiles` ตรงด้วย JWT ของ ADMIN — trigger ยอมให้ `is_admin()` ผ่าน)
+- **รีเซ็ตรหัส** — ปุ่มราย row → กรอกรหัสชั่วคราวใหม่ → Edge Function `admin-users` (`action: set-password` → `auth.admin.updateUserById`). แจ้งรหัสให้เจ้าตัวแล้วให้เปลี่ยนเอง
 - **ปิดใช้งาน / เปิดใช้งาน** — soft delete (`profiles.active`). บัญชีที่ปิดจะ login ไม่ได้ แต่ประวัติงานยังอยู่. ลบถาวรทำที่ Supabase dashboard เท่านั้น
 - ปิดใช้งาน/เปลี่ยนสิทธิ์บัญชี **ตัวเอง** ไม่ได้ (กัน ADMIN ล็อกตัวเองออก)
 

@@ -6,6 +6,16 @@
 alter table public.profiles
   add column if not exists active boolean not null default true;
 
+-- 1b. This project only granted DML to `authenticated`, not `service_role`,
+--     so the admin-users Edge Function got "permission denied for table
+--     profiles". Restore the standard Supabase service_role grants.
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to service_role;
+alter default privileges in schema public
+  grant usage, select on sequences to service_role;
+
 -- 2. Rebuild the S1 privilege-escalation guard so it also:
 --    - protects the new `active` column from non-admin self-edits
 --    - lets the service_role (the admin-users Edge Function) through

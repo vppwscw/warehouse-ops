@@ -227,15 +227,32 @@ function formatResult(details, task){
 }
 
 // ---------- renderers ----------
+// The `employees` roster table is the legacy list; USER/SUPERVISOR jobs log
+// `employee_name` = the auth profile's full_name, which need not be on that
+// roster. So "people in scope" is the union of roster names and names that
+// actually appear in job crews — same approach as the mobile history/matrix.
+function peopleInScope(){
+  const inDept = d => deptFilter==='ALL' || d===deptFilter;
+  const byName = new Map(); // name -> department (roster wins, else first job's dept)
+  roster.forEach(r=>{ if (inDept(r.department)) byName.set(r.name, r.department); });
+  jobs.forEach(j=>{
+    if (!inDept(j.department)) return;
+    (j.crew||[]).forEach(n=>{ if (!byName.has(n)) byName.set(n, j.department); });
+  });
+  return [...byName.entries()]
+    .map(([name, department])=>({name, department}))
+    .sort((a,b)=>a.name.localeCompare(b.name,'th'));
+}
+
 function renderStats(closed){
   const totalMins = closed.reduce((s,j)=>s+((j.details&&j.details.mins)||0),0);
   const avgMins = closed.length ? Math.round(totalMins/closed.length) : 0;
-  const rosterScoped = deptFilter==='ALL' ? roster : roster.filter(r=>r.department===deptFilter);
+  const peopleCount = peopleInScope().length;
   const pendingCount = closed.filter(j=>(j.status||'approved')==='pending').length;
   document.getElementById('statGrid').innerHTML = `
     <div class="stat-tile accent"><div class="l">งานที่บันทึกแล้ว</div><div class="n num">${closed.length}<span class="unit">งาน</span></div></div>
     <div class="stat-tile"><div class="l">เวลาเฉลี่ยต่องาน</div><div class="n num">${avgMins}<span class="unit">นาที</span></div></div>
-    <div class="stat-tile"><div class="l">พนักงานในขอบเขตนี้</div><div class="n num">${rosterScoped.length}<span class="unit">คน</span></div></div>
+    <div class="stat-tile"><div class="l">พนักงานในขอบเขตนี้</div><div class="n num">${peopleCount}<span class="unit">คน</span></div></div>
     <div class="stat-tile${pendingCount?' warn':''}"><div class="l">รออนุมัติ</div><div class="n num">${pendingCount}<span class="unit">งาน</span></div></div>
   `;
 }
@@ -342,16 +359,19 @@ async function setJobStatus(jobId, status){
 }
 
 function renderEmployeesTable(closed){
-  const rosterScoped = (deptFilter==='ALL' ? roster : roster.filter(r=>r.department===deptFilter)).slice().sort((a,b)=>a.name.localeCompare(b.name,'th'));
+  const people = peopleInScope();
   const tbody = document.querySelector('#employeesTable tbody');
-  if (rosterScoped.length===0){ tbody.innerHTML = `<tr><td colspan="4" class="empty-note">ยังไม่มีพนักงานในขอบเขตนี้</td></tr>`; return; }
-  tbody.innerHTML = rosterScoped.map(r=>{
+  if (people.length===0){ tbody.innerHTML = `<tr><td colspan="4" class="empty-note">ยังไม่มีพนักงานในขอบเขตนี้</td></tr>`; return; }
+  tbody.innerHTML = people.map(r=>{
     const inRange = closed.filter(j=>(j.crew||[]).includes(r.name)).length;
     const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
     const initials = r.name.trim().slice(0,1);
+    const deptCell = r.department
+      ? `<span class="badge ${r.department}"><span class="dot"></span>${DEPT_PLAIN[r.department]}</span>`
+      : '<span class="td-sub">–</span>';
     return `<tr>
       <td><span class="emp-name-cell"><span class="emp-avatar">${initials}</span>${r.name}</span></td>
-      <td><span class="badge ${r.department}"><span class="dot"></span>${DEPT_PLAIN[r.department]}</span></td>
+      <td>${deptCell}</td>
       <td class="mono">${inRange}</td>
       <td class="mono">${total}</td>
     </tr>`;

@@ -32,6 +32,12 @@ const ALL_TASKS = () => DEPT_KEYS.flatMap(d => TASKS[d]);
 const taskById = id => ALL_TASKS().find(t=>t.id===id);
 const unitShort = u => ({containers:'ตู้', vehicles:'คัน', pieces:'ชิ้น', boxes:'กล่อง'})[u] || u;
 
+// Every value that ends up inside an innerHTML template must go through esc() —
+// full_name / employee_name, employee_code, task names, roster names and the
+// whole jobs.details blob are user-controlled and were an XSS vector before this.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = v => Number(v) || 0;
+
 const ICONS = {
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
   bolt:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
@@ -309,9 +315,9 @@ function renderStep1(){
 function renderStep2(){
   document.getElementById('step2Title').textContent = `งานฝั่ง${DEPT_PLAIN[oDeptVal]} — เลือกงาน`;
   document.getElementById('jobChoiceList').innerHTML = (TASKS[oDeptVal]||[]).map(t=>`
-    <button type="button" class="job-choice" data-pick-task="${t.id}">
-      <span class="jc-icon badge ${oDeptVal}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
-      <span><span class="jc-name">${t.label}</span><br><span class="jc-sub">${t.sub||''}</span></span>
+    <button type="button" class="job-choice" data-pick-task="${esc(t.id)}">
+      <span class="jc-icon badge ${esc(oDeptVal)}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
+      <span><span class="jc-name">${esc(t.label)}</span><br><span class="jc-sub">${esc(t.sub||'')}</span></span>
       <span class="t-chev">${ICONS.chev}</span>
     </button>`).join('');
 }
@@ -326,9 +332,9 @@ function renderStep3(){
     box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง${DEPT_PLAIN[oDeptVal]}<br>ไปเพิ่มที่แถบ "คนงาน" ด้านล่างก่อน</div>`;
   } else {
     box.innerHTML = list.map(r=>`
-      <button type="button" class="emp-check" data-pick-emp="${r.id}" aria-pressed="${crew.includes(String(r.id))}">
+      <button type="button" class="emp-check" data-pick-emp="${esc(r.id)}" aria-pressed="${crew.includes(String(r.id))}">
         <span class="ec-box">${crew.includes(String(r.id)) ? ICONS.checksm : ''}</span>
-        <span class="ec-name">${r.name}</span>
+        <span class="ec-name">${esc(r.name)}</span>
       </button>`).join('');
   }
   document.getElementById('d-date').value = document.getElementById('d-date').value || todayISO();
@@ -340,7 +346,7 @@ function renderStep3(){
 // ================= RESULT-FIELD BUILDER =================
 function buildResultFieldsHTML(task, prefix){
   let fields = `<div class="field" style="margin-bottom:14px;">
-      <label>${task.unitLabel}</label>
+      <label>${esc(task.unitLabel)}</label>
       <div class="stepper">
         <button type="button" data-step="-1" data-target="${prefix}-unit">−</button>
         <input id="${prefix}-unit" type="number" min="0" value="0" inputmode="numeric">
@@ -408,9 +414,9 @@ function renderWorkerTaskList(){
   const box = document.getElementById('workerTaskList');
   if (list.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของฝั่ง${DEPT_PLAIN[profile.department]}<br>ติดต่อหัวหน้างานให้เพิ่มชนิดงานก่อน</div>`; return; }
   box.innerHTML = list.map(t=>`
-    <button type="button" class="job-choice" data-open-task="${t.id}">
-      <span class="jc-icon badge ${profile.department}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
-      <span><span class="jc-name">${t.label}</span><br><span class="jc-sub">${t.sub||''}</span></span>
+    <button type="button" class="job-choice" data-open-task="${esc(t.id)}">
+      <span class="jc-icon badge ${esc(profile.department)}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
+      <span><span class="jc-name">${esc(t.label)}</span><br><span class="jc-sub">${esc(t.sub||'')}</span></span>
       <span class="t-chev">${ICONS.chev}</span>
     </button>`).join('');
 }
@@ -420,8 +426,8 @@ function renderActiveJobCard(){
     ? new Date(myOpenJob.started_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})
     : (myOpenJob.details&&myOpenJob.details.start) || '–';
   document.getElementById('activeJobCard').innerHTML = `
-    <div class="active-job-name">${task?task.label:myOpenJob.task_id}</div>
-    <div class="active-job-meta">เริ่มงานเวลา ${startedLocal} น.</div>
+    <div class="active-job-name">${esc(task?task.label:myOpenJob.task_id)}</div>
+    <div class="active-job-meta">เริ่มงานเวลา ${esc(startedLocal)} น.</div>
   `;
   document.getElementById('workerDoneFields').innerHTML = task ? buildResultFieldsHTML(task, 'w') : '';
   if (task) wireContainerAutofill(task, 'w');
@@ -501,17 +507,17 @@ function renderApproveQueue(){
     const code = j.requester && j.requester.employee_code;
     return `<div class="hist-card">
       <div class="hist-top"><div>
-        <div class="hist-task">${task?task.label:j.task_id}</div>
-        <div class="hist-crew">${j.employee_name||''}${code ? ` · รหัส ${code}` : ''}</div>
+        <div class="hist-task">${esc(task?task.label:j.task_id)}</div>
+        <div class="hist-crew">${esc(j.employee_name||'')}${code ? ` · รหัส ${esc(code)}` : ''}</div>
       </div></div>
       <div class="hist-meta">
-        <span>${d.date||''}</span>
-        <span>${d.start||''}–${d.end||'–'} (${d.mins ?? '–'} นาที)</span>
-        <span class="hist-result">${formatResult(d, task)}</span>
+        <span>${esc(d.date)}</span>
+        <span>${esc(d.start||'')}–${esc(d.end||'–')} (${d.mins == null ? '–' : num(d.mins)} นาที)</span>
+        <span class="hist-result">${esc(formatResult(d, task))}</span>
       </div>
       <div class="approve-actions">
-        <button type="button" class="mini-btn approve" data-approve-job="${j.id}">อนุมัติ</button>
-        <button type="button" class="mini-btn reject" data-reject-job="${j.id}">ไม่อนุมัติ</button>
+        <button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>
+        <button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
       </div>
     </div>`;
   }).join('');
@@ -542,8 +548,8 @@ function renderTaskManager(){
   if (deptTasks.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของแผนกนี้</div>`; return; }
   box.innerHTML = deptTasks.map(t=>`
     <div class="task-row">
-      <span class="t-name ${t.active?'':'t-inactive'}">${t.name}</span>
-      <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${t.id}" data-next-active="${t.active?'false':'true'}">
+      <span class="t-name ${t.active?'':'t-inactive'}">${esc(t.name)}</span>
+      <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${esc(t.id)}" data-next-active="${t.active?'false':'true'}">
         ${t.active?'ปิดใช้งาน':'เปิดใช้งาน'}
       </button>
     </div>`).join('');
@@ -761,7 +767,7 @@ function renderRosterManager(){
     const isOpen = openRosterDept===d;
     const rows = list.length===0
       ? `<p class="empty-roster">ยังไม่มีคนงานฝั่งนี้</p>`
-      : list.map(r=>`<div class="roster-row"><span class="rr-name"><span class="badge ${d}"><span class="dot"></span>${DEPT_PLAIN[d]}</span>${r.name}</span><button type="button" class="icon-btn" data-roster-del="${r.id}">${ICONS.x}</button></div>`).join('');
+      : list.map(r=>`<div class="roster-row"><span class="rr-name"><span class="badge ${d}"><span class="dot"></span>${DEPT_PLAIN[d]}</span>${esc(r.name)}</span><button type="button" class="icon-btn" data-roster-del="${esc(r.id)}">${ICONS.x}</button></div>`).join('');
     return `<div class="matrix-emp ${isOpen?'open':''}">
       <div class="matrix-emp-head" data-roster-dept="${d}">
         <span class="name">${DEPT_PLAIN[d]}</span>
@@ -806,9 +812,9 @@ document.getElementById('searchBox').addEventListener('input', e=>{ searchTerm=e
 
 function formatResult(details, task){
   if (!task || !details) return '–';
-  if (task.unit==='containers') return `${details.containers ?? details.qty ?? 0} ตู้ / ${details.vehicles ?? ((details.containers||0)*(task.vehiclesPerContainer||56))} คัน`;
-  let s = `${details.qty ?? 0} ${unitShort(task.unit)}`;
-  if (task.hasIssue && details.hasIssue) s += ` · มีปัญหา ${details.issueCount||0} คัน`;
+  if (task.unit==='containers') return `${num(details.containers) || num(details.qty)} ตู้ / ${num(details.vehicles) || (num(details.containers)*(task.vehiclesPerContainer||56))} คัน`;
+  let s = `${num(details.qty)} ${unitShort(task.unit)}`;
+  if (task.hasIssue && details.hasIssue) s += ` · มีปัญหา ${num(details.issueCount)} คัน`;
   return s;
 }
 
@@ -844,14 +850,14 @@ function renderMatrix(){
     const isOpen = openMatrixEmp===emp;
     const rowsHtml = rows.map(({t,n})=>`
       <div class="skill-row">
-        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-flex;width:15px;height:15px;">${ICONS[t.icon]||ICONS.box}</span>${t.label}</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-flex;width:15px;height:15px;">${ICONS[t.icon]||ICONS.box}</span>${esc(t.label)}</span>
         <span class="skill-count" style="color:${n>0?'var(--'+t.dept.toLowerCase()+')':'var(--ink-faint)'}">${n||'–'}</span>
       </div>`).join('');
     return `
     <div class="matrix-emp ${isOpen?'open':''}">
-      <div class="matrix-emp-head" data-matrix-emp="${emp}">
-        <span class="name">${emp}</span>
-        <span class="total">${total} ครั้ง</span>
+      <div class="matrix-emp-head" data-matrix-emp="${esc(emp)}">
+        <span class="name">${esc(emp)}</span>
+        <span class="total">${num(total)} ครั้ง</span>
         <span class="chev">${ICONS.chev}</span>
       </div>
       <div class="matrix-emp-body">${rowsHtml}</div>
@@ -869,7 +875,7 @@ function renderHistory(){
   const emps = [...new Set([...rosterNames, ...logNames])].sort((a,b)=>a.localeCompare(b,'th'));
   const ef = document.getElementById('empFilter');
   const prevVal = ef.value;
-  ef.innerHTML = '<option value="">พนักงานทั้งหมด</option>' + emps.map(n=>`<option value="${n}">${n}</option>`).join('');
+  ef.innerHTML = '<option value="">พนักงานทั้งหมด</option>' + emps.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
   ef.value = prevVal;
 
   const todayStr = todayISO();
@@ -900,16 +906,16 @@ function renderHistory(){
     <div class="hist-card">
       <div class="hist-top">
         <div>
-          <span class="badge ${j.department}"><span class="dot"></span>${DEPT_PLAIN[j.department]}</span>
-          <span class="status-badge ${status}">${STATUS_LABEL[status]||status}</span>
-          <div class="hist-task">${task?('<span style=\"display:inline-flex;vertical-align:-3px;width:15px;height:15px;margin-right:4px;\">'+(ICONS[task.icon]||ICONS.box)+'</span>'+task.label):j.task_id}</div>
-          <div class="hist-crew">${(j.crew||[]).join(', ')}</div>
+          <span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span>
+          <span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span>
+          <div class="hist-task">${task?('<span style=\"display:inline-flex;vertical-align:-3px;width:15px;height:15px;margin-right:4px;\">'+(ICONS[task.icon]||ICONS.box)+'</span>'+esc(task.label)):esc(j.task_id)}</div>
+          <div class="hist-crew">${esc((j.crew||[]).join(', '))}</div>
         </div>
       </div>
       <div class="hist-meta">
-        <span>${d.date||''}</span>
-        <span>${d.start||''}–${d.end||'–'} (${d.mins ?? '–'} นาที)</span>
-        <span class="hist-result">${formatResult(d, task)}</span>
+        <span>${esc(d.date)}</span>
+        <span>${esc(d.start||'')}–${esc(d.end||'–')} (${d.mins == null ? '–' : num(d.mins)} นาที)</span>
+        <span class="hist-result">${esc(formatResult(d, task))}</span>
         ${issueBadge}
       </div>
     </div>`;

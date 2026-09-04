@@ -190,6 +190,8 @@ document.addEventListener('click', e=>{
   if (saveUserBtn){ saveUserRow(saveUserBtn.dataset.saveUser); return; }
   const toggleUserBtn = e.target.closest('[data-toggle-user]');
   if (toggleUserBtn){ toggleUserActive(toggleUserBtn.dataset.toggleUser, toggleUserBtn.dataset.nextActive === 'true'); return; }
+  const resetPassBtn = e.target.closest('[data-reset-pass]');
+  if (resetPassBtn){ resetUserPassword(resetPassBtn.dataset.resetPass); return; }
   if (e.target.closest('#toggleAddUserBtn')){ const f = document.getElementById('addUserForm'); f.hidden = !f.hidden; return; }
   if (e.target.closest('#cancelAddUserBtn')){ document.getElementById('addUserForm').hidden = true; return; }
   if (e.target.closest('#createUserBtn')){ createUserFromForm(); return; }
@@ -440,7 +442,10 @@ function renderUsersTable(){
       <td><input type="text" class="code-input" data-u-code value="${u.employee_code||''}" placeholder="รหัส"></td>
       <td>${isSelf ? statusBadge
         : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${u.id}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}</td>
-      <td><button type="button" class="mini-btn approve" data-save-user="${u.id}">บันทึก</button></td>
+      <td>
+        <button type="button" class="mini-btn approve" data-save-user="${u.id}">บันทึก</button>
+        <button type="button" class="mini-btn" data-reset-pass="${u.id}">รีเซ็ตรหัส</button>
+      </td>
     </tr>`;
   }).join('');
 }
@@ -473,6 +478,29 @@ async function toggleUserActive(userId, next){
     if (error) throw error;
     await refreshUsers(); renderUsersTable();
   }catch(err){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
+}
+
+async function resetUserPassword(userId){
+  const u = users.find(x=>x.id===userId);
+  const name = (u && u.full_name) || 'ผู้ใช้นี้';
+  const pw = prompt(`ตั้งรหัสผ่านใหม่สำหรับ "${name}" (อย่างน้อย 8 ตัว):`);
+  if (pw === null) return;
+  if (pw.length < 8){ alert('รหัสผ่านต้องอย่างน้อย 8 ตัว'); return; }
+  try{
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch(ADMIN_USERS_FN, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ action: 'set-password', user_id: userId, password: pw }),
+    });
+    const out = await res.json().catch(()=>({}));
+    if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
+    alert(`ตั้งรหัสผ่านใหม่ให้ "${name}" แล้ว — แจ้งรหัสให้เจ้าตัวแล้วให้เปลี่ยนเองภายหลัง`);
+  }catch(err){ alert('รีเซ็ตรหัสไม่สำเร็จ: ' + err.message); }
 }
 
 async function createUserFromForm(){

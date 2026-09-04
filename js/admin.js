@@ -86,6 +86,21 @@ document.getElementById('loginPass').addEventListener('keydown', e=>{ if (e.key=
 document.getElementById('logoutBtn').addEventListener('click', doLogout);
 document.getElementById('deniedLogoutBtn').addEventListener('click', doLogout);
 
+document.getElementById('changePwBtn').addEventListener('click', async ()=>{
+  if (!currentUser) return;
+  const np = prompt('ตั้งรหัสผ่านใหม่ของคุณ (อย่างน้อย 8 ตัว):');
+  if (np === null) return;
+  if (np.length < 8){ alert('รหัสผ่านต้องอย่างน้อย 8 ตัว'); return; }
+  const np2 = prompt('พิมพ์รหัสผ่านใหม่อีกครั้งเพื่อยืนยัน:');
+  if (np2 === null) return;
+  if (np !== np2){ alert('รหัสผ่านสองครั้งไม่ตรงกัน'); return; }
+  try{
+    const { error } = await sb.auth.updateUser({ password: np });
+    if (error) throw error;
+    alert('เปลี่ยนรหัสผ่านเรียบร้อย ครั้งต่อไปใช้รหัสใหม่');
+  }catch(err){ alert('เปลี่ยนรหัสผ่านไม่สำเร็จ: ' + (err.message || err)); }
+});
+
 async function doLogout(){
   await sb.auth.signOut();
   profile = null; currentUser = null; jobs = []; roster = [];

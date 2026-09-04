@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>สมุดทักษะคลัง</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/mobile.css?v=3">
+<link rel="stylesheet" href="css/mobile.css?v=4">
 </head>
 <body>
 
@@ -165,9 +165,21 @@
   <p class="hint" id="taskHint"></p>
 </div>
 
+<div class="modal-backdrop" id="pwBackdrop"></div>
+<div class="modal-card" id="pwModal">
+  <div class="modal-title">เปลี่ยนรหัสผ่าน</div>
+  <div class="field" style="margin-bottom:12px;"><label for="pwNew">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label><input id="pwNew" type="password" autocomplete="new-password"></div>
+  <div class="field" style="margin-bottom:12px;"><label for="pwNew2">พิมพ์อีกครั้ง</label><input id="pwNew2" type="password" autocomplete="new-password"></div>
+  <p class="hint" id="pwHint" style="text-align:left;margin:0 0 12px;"></p>
+  <button type="button" class="btn" id="pwConfirm" style="margin-bottom:6px;">บันทึก</button>
+  <button type="button" class="btn ghost" id="pwCancel">ยกเลิก</button>
+</div>
+
+<div id="toastHost"></div>
+
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/mobile.js?v=12"></script>
+<script src="js/mobile.js?v=13"></script>
 </body>
 </html>

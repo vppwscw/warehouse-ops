@@ -1,0 +1,547 @@
+<title>ERP Dashboard Wireframe</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --paper:#FBFBFA; --panel:#FFFFFF; --box:#E7E9E8; --box-2:#EFF1F0; --box-3:#DDE0DF;
+    --ink:#23262B; --ink-dim:#6B7075; --ink-faint:#9CA1A4; --line:#D3D6D6; --line-firm:#B9BDBC;
+    --note:#33638C; --note-bg:#E1EAF1;
+    --attention:#A97A3C; --attention-bg:#F0E7D7;
+    --good:#3D7A5E; --good-bg:#DCE9E1; --bad:#A9463F; --bad-bg:#F0DFDD;
+    --inb:#A97A3C; --out:#3D7A5E; --inv:#6C5D93;
+    --radius:10px;
+    --shadow:0 4px 16px rgba(20,22,26,.08);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#141519; --panel:#1C1E23; --box:#2A2D33; --box-2:#232529; --box-3:#33373D;
+      --ink:#E6E7E7; --ink-dim:#969A9F; --ink-faint:#63676C; --line:#2E3137; --line-firm:#454A50;
+      --note:#7CAAD0; --note-bg:#1E2A34;
+      --attention:#C79A5D; --attention-bg:#2C2418;
+      --good:#6FAE90; --good-bg:#182620; --bad:#C17873; --bad-bg:#2C1E1D;
+      --inb:#C79A5D; --out:#6FAE90; --inv:#9C90BE;
+      --shadow:0 6px 20px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#141519; --panel:#1C1E23; --box:#2A2D33; --box-2:#232529; --box-3:#33373D;
+    --ink:#E6E7E7; --ink-dim:#969A9F; --ink-faint:#63676C; --line:#2E3137; --line-firm:#454A50;
+    --note:#7CAAD0; --note-bg:#1E2A34;
+    --attention:#C79A5D; --attention-bg:#2C2418;
+    --good:#6FAE90; --good-bg:#182620; --bad:#C17873; --bad-bg:#2C1E1D;
+    --inb:#C79A5D; --out:#6FAE90; --inv:#9C90BE;
+    --shadow:0 6px 20px rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:'IBM Plex Sans Thai',system-ui,sans-serif;line-height:1.55;
+    -webkit-font-smoothing:antialiased;}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+  h1,h2,h3{font-weight:700;text-wrap:balance;margin:0;}
+
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 28px 96px;}
+
+  /* ---- page header ---- */
+  .masthead{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;
+    flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:12px;}
+  .masthead h1{font-size:23px;letter-spacing:-.01em;}
+  .masthead .kick{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--note);margin-bottom:8px;}
+  .masthead p{margin:6px 0 0;color:var(--ink-dim);font-size:13.5px;max-width:56ch;}
+  .themebtn{font:inherit;font-size:12px;font-weight:600;color:var(--ink-dim);
+    background:var(--box-2);border:1px solid var(--line);border-radius:100px;
+    padding:7px 15px;cursor:pointer;white-space:nowrap;}
+  .themebtn:hover{color:var(--ink);}
+  :focus-visible{outline:2px solid var(--note);outline-offset:2px;}
+
+  /* ---- legend ---- */
+  .legend{display:flex;flex-wrap:wrap;gap:16px 24px;padding:14px 0 32px;
+    font-size:11.5px;color:var(--ink-dim);}
+  .legend span{display:flex;align-items:center;gap:7px;}
+  .swatch{width:22px;height:13px;border-radius:3px;flex:none;}
+  .swatch.box{background:var(--box);border:1px solid var(--line);}
+  .swatch.dash{background:repeating-linear-gradient(45deg,var(--box-2) 0 4px,transparent 4px 8px);
+    border:1px dashed var(--line-firm);}
+  .swatch.amber{background:var(--attention-bg);border-left:3px solid var(--attention);}
+  .num-badge{width:17px;height:17px;border-radius:50%;background:var(--note);color:#fff;
+    font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+    display:inline-flex;align-items:center;justify-content:center;flex:none;}
+  :root[data-theme="dark"] .num-badge,
+  :root:not([data-theme="light"]) .num-badge{color:#0E1216;}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .num-badge{color:#0E1216;}}
+
+  /* ---- frame block ---- */
+  .frame{margin:0 0 46px;}
+  .frame-head{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
+  .frame-head h2{font-size:15px;}
+  .frame-head .tag{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-faint);}
+  .layout{display:grid;grid-template-columns:1fr 232px;gap:22px;align-items:start;}
+  @media (max-width:860px){.layout{grid-template-columns:1fr;}}
+
+  .device{background:var(--panel);border:1px solid var(--line-firm);border-radius:12px;
+    padding:16px;overflow:hidden;}
+  .device.phone{max-width:340px;}
+
+  /* annotation rail */
+  .notes{display:flex;flex-direction:column;gap:12px;position:sticky;top:20px;}
+  .note{display:grid;grid-template-columns:17px 1fr;gap:9px;font-size:12px;color:var(--ink-dim);}
+  .note b{color:var(--ink);font-weight:600;}
+  .note code{font-family:'IBM Plex Mono',monospace;font-size:10.5px;background:var(--box-2);
+    padding:1px 4px;border-radius:3px;color:var(--ink-dim);}
+  @media (max-width:860px){.notes{position:static;}}
+
+  /* ---- generic wireframe primitives ---- */
+  .ph{background:var(--box);border-radius:5px;}
+  .ph.dash{background:repeating-linear-gradient(45deg,var(--box-2) 0 5px,transparent 5px 10px);
+    border:1px dashed var(--line-firm);}
+  .bar{height:9px;border-radius:4px;background:var(--box-3);}
+  .bar.sm{height:7px;}
+  .t-line{height:8px;border-radius:3px;background:var(--box);}
+  .t-line.w40{width:40%;} .t-line.w55{width:55%;} .t-line.w70{width:70%;} .t-line.w85{width:85%;}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;
+    padding:3px 8px;border-radius:100px;font-family:'IBM Plex Mono',monospace;}
+  .pill.attention{background:var(--attention-bg);color:var(--attention);}
+  .pill.good{background:var(--good-bg);color:var(--good);}
+  .pill.bad{background:var(--bad-bg);color:var(--bad);}
+  .pill.note{background:var(--note-bg);color:var(--note);}
+  .anno{position:absolute;top:-8px;right:-8px;}
+
+  /* ---- desktop dashboard mock ---- */
+  .erp{display:grid;grid-template-columns:52px 1fr;gap:14px;}
+  .rail{background:var(--box-2);border-radius:8px;padding:10px 0;display:flex;flex-direction:column;
+    align-items:center;gap:14px;}
+  .rail i{width:20px;height:20px;border-radius:6px;background:var(--box-3);display:block;}
+  .rail i.on{background:var(--note);}
+  .stage{min-width:0;display:flex;flex-direction:column;gap:12px;}
+
+  .row{display:flex;align-items:center;gap:10px;}
+  .row.between{justify-content:space-between;}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;}
+  .chip{height:20px;border-radius:100px;background:var(--box);padding:0 12px;
+    display:flex;align-items:center;font-size:9.5px;color:var(--ink-faint);}
+  .chip.on{background:var(--note);color:#fff;}
+  :root[data-theme="dark"] .chip.on,:root:not([data-theme="light"]) .chip.on{color:#0E1216;}
+
+  .scope{position:relative;font-size:11px;color:var(--ink-dim);padding:6px 0;
+    border-bottom:1px dashed var(--line);display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .scope .dotc{width:7px;height:7px;border-radius:50%;}
+
+  .actionstrip{position:relative;background:var(--attention-bg);border-left:3px solid var(--attention);
+    border-radius:7px;padding:11px 13px;display:flex;justify-content:space-between;
+    align-items:center;gap:10px;box-shadow:var(--shadow);}
+  .actionstrip .txt{font-size:11.5px;color:var(--attention);font-weight:600;}
+  .actionstrip .cta{font-size:10px;font-weight:700;background:var(--attention);color:#fff;
+    border-radius:6px;padding:6px 11px;font-family:'IBM Plex Mono',monospace;}
+  :root[data-theme="dark"] .actionstrip .cta,:root:not([data-theme="light"]) .actionstrip .cta{color:#1a1206;}
+
+  .sidecards{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .scard{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:0 0 11px;
+    overflow:hidden;display:flex;flex-direction:column;gap:9px;}
+  .scard .cap{height:6px;}
+  .scard[data-d=inb] .cap{background:var(--inb);} .scard[data-d=out] .cap{background:var(--out);}
+  .scard[data-d=inv] .cap{background:var(--inv);}
+  .scard .body{padding:0 11px;display:flex;flex-direction:column;gap:8px;}
+  .scard .lab{font-size:9px;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;
+    letter-spacing:.08em;text-transform:uppercase;}
+  .scard .big{font-size:26px;font-weight:700;line-height:1;font-family:'IBM Plex Mono',monospace;}
+  .scard .unit{font-size:10.5px;color:var(--ink-dim);}
+  .scard .unit .approx{color:var(--ink);font-weight:600;}
+  .scard .cvt{font-size:8.5px;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;}
+  .spark{display:flex;align-items:flex-end;gap:3px;height:30px;padding:0 11px;}
+  .spark i{flex:1;background:var(--box-3);border-radius:2px;}
+
+  .tablemock{position:relative;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;overflow:hidden;}
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--line);}
+  .tabs span{font-size:9.5px;font-family:'IBM Plex Mono',monospace;padding:8px 12px;color:var(--ink-faint);}
+  .tabs span.on{color:var(--ink);border-bottom:2px solid var(--note);}
+  .trow{display:grid;grid-template-columns:64px 60px 1fr 74px 66px;gap:9px;align-items:center;
+    padding:9px 12px;border-bottom:1px solid var(--line);}
+  .trow:last-child{border-bottom:none;}
+  .trow.head .t-line{background:var(--box-3);height:6px;}
+  .trow.pending{background:var(--attention-bg);}
+
+  /* ---- approval queue mock ---- */
+  .queue{display:flex;flex-direction:column;gap:10px;position:relative;}
+  .qcard{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px;
+    display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;}
+  .qcard.top{border-color:var(--attention);}
+  .qmeta{display:flex;flex-direction:column;gap:7px;min-width:0;}
+  .qchips{display:flex;gap:5px;flex-wrap:wrap;}
+  .qbtns{display:flex;flex-direction:column;gap:6px;}
+  .qbtns b{font-size:10px;font-weight:700;font-family:'IBM Plex Mono',monospace;
+    padding:7px 14px;border-radius:6px;text-align:center;}
+  .qbtns b.ok{background:var(--good-bg);color:var(--good);}
+  .qbtns b.no{background:var(--bad-bg);color:var(--bad);}
+
+  /* ---- phone mock ---- */
+  .screen{display:flex;flex-direction:column;gap:10px;}
+  .seg{display:flex;background:var(--box-2);border-radius:7px;padding:3px;gap:3px;}
+  .seg span{flex:1;text-align:center;font-size:9px;padding:5px 0;border-radius:5px;color:var(--ink-faint);
+    font-family:'IBM Plex Mono',monospace;}
+  .seg span.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow);}
+  .bottombar{position:relative;display:flex;justify-content:space-around;align-items:center;
+    border-top:1px solid var(--line-firm);background:var(--panel);padding:9px 0 12px;
+    margin:6px -16px -16px;}
+  .bottombar div{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:8px;color:var(--ink-faint);
+    font-family:'IBM Plex Mono',monospace;}
+  .bottombar i{width:18px;height:18px;border-radius:5px;background:var(--box-3);}
+  .bottombar div.on i{background:var(--note);} .bottombar div.on{color:var(--note);}
+
+  /* ---- unit-treatment detail ---- */
+  .detailgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media (max-width:640px){.detailgrid{grid-template-columns:1fr;}}
+  .ucase{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:14px;}
+  .ucase .state{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink-faint);
+    text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;}
+  .ucase .val{font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;}
+  .ucase .cvt{font-size:11px;color:var(--ink-faint);font-family:'IBM Plex Mono',monospace;margin-top:3px;}
+  .ucase .why{font-size:11.5px;color:var(--ink-dim);margin-top:10px;border-top:1px dashed var(--line);
+    padding-top:9px;}
+
+  /* ---- motion notes ---- */
+  .motion{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;}
+  .mcard{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:14px 15px;}
+  .mcard h3{font-size:12.5px;margin-bottom:5px;}
+  .mcard p{margin:0;font-size:11.5px;color:var(--ink-dim);}
+  .mcard .spec{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--note);margin-top:7px;
+    display:block;}
+
+  .foot{margin-top:36px;border-top:1px solid var(--line);padding-top:16px;
+    font-size:11px;color:var(--ink-faint);}
+  .foot code{font-family:'IBM Plex Mono',monospace;}
+
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div>
+      <div class="kick">Warehouse Ops · Wireframe</div>
+      <h1>โครงหน้า ERP (admin.html)</h1>
+      <p>ผังโครงเน้น <b>ลำดับความสำคัญของ layout</b> และจุดที่ผู้ใช้เคยสับสน ยังไม่ลงสี/ฟอนต์จริง
+         กล่องเทา = โครงคงที่ · เส้นประ = ข้อมูลจาก DB · แถบเหลือง = สิ่งที่ต้องจัดการ</p>
+    </div>
+    <button class="themebtn" id="themebtn" type="button">สลับธีม</button>
+  </header>
+
+  <div class="legend">
+    <span><i class="swatch box"></i> โครงคงที่</span>
+    <span><i class="swatch dash"></i> ข้อมูลไดนามิกจาก Supabase</span>
+    <span><i class="swatch amber"></i> ต้องจัดการ / รออนุมัติ</span>
+    <span><i class="num-badge">1</i> หมายเลขโยงกับคำอธิบายด้านขวา</span>
+  </div>
+
+  <!-- ============ FRAME 1 — DESKTOP DASHBOARD ============ -->
+  <section class="frame">
+    <div class="frame-head">
+      <h2>1 · แดชบอร์ด — เดสก์ท็อป (≥ 960px)</h2>
+      <span class="tag">view: dashboard</span>
+    </div>
+    <div class="layout">
+      <div class="device">
+        <div class="erp">
+          <div class="rail">
+            <i class="on"></i><i></i><i></i><i></i>
+          </div>
+          <div class="stage">
+
+            <div class="row between">
+              <div style="display:flex;flex-direction:column;gap:5px;">
+                <div class="t-line w40" style="height:11px;"></div>
+                <div class="t-line w70"></div>
+              </div>
+              <div class="ph" style="width:74px;height:22px;"></div>
+            </div>
+
+            <div class="row" style="gap:8px;flex-wrap:wrap;">
+              <div class="chips">
+                <span class="chip on">วันนี้</span><span class="chip">7 วัน</span>
+                <span class="chip">30 วัน</span><span class="chip">ทั้งหมด</span>
+              </div>
+              <div class="chips">
+                <span class="chip on">ทุกฝั่ง</span><span class="chip">เข้า</span>
+                <span class="chip">ออก</span><span class="chip">สต๊อก</span>
+              </div>
+              <div class="ph dash" style="flex:1;min-width:90px;height:20px;"></div>
+            </div>
+
+            <div class="scope">
+              <span class="num-badge anno" style="position:static;">1</span>
+              <span class="dotc" style="background:var(--inb);"></span>
+              <span class="dotc" style="background:var(--out);"></span>
+              <span class="dotc" style="background:var(--inv);"></span>
+              กำลังดู · ทุกฝั่ง · วันนี้ (4 ก.ย.) · 12 งาน
+            </div>
+
+            <div class="actionstrip">
+              <span class="num-badge anno">2</span>
+              <span class="txt">⚠ มีงานรออนุมัติ 4 งาน · เก่าสุดค้าง 2 วัน</span>
+              <span class="cta">ดูคิวอนุมัติ →</span>
+            </div>
+
+            <div class="sidecards">
+              <span class="num-badge anno">3</span>
+              <div class="scard" data-d="inb">
+                <div class="cap"></div>
+                <div class="body">
+                  <div class="lab">ขาเข้า</div>
+                  <div class="big">7</div>
+                  <div class="unit"><span class="approx">3 ตู้ ≈ 168 คัน</span></div>
+                  <div class="cvt">(56 คัน/ตู้ — ประมาณ)</div>
+                </div>
+                <div class="spark"><i style="height:40%"></i><i style="height:65%"></i><i style="height:30%"></i><i style="height:80%"></i><i style="height:55%"></i><i style="height:95%"></i><i style="height:45%"></i></div>
+              </div>
+              <div class="scard" data-d="out">
+                <div class="cap"></div>
+                <div class="body">
+                  <div class="lab">ขาออก</div>
+                  <div class="big">4</div>
+                  <div class="unit">171 คัน · <span class="pill bad" style="font-size:8.5px;">ปัญหา 2</span></div>
+                  <div class="cvt">&nbsp;</div>
+                </div>
+                <div class="spark"><i style="height:50%"></i><i style="height:40%"></i><i style="height:70%"></i><i style="height:35%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:75%"></i></div>
+              </div>
+              <div class="scard" data-d="inv">
+                <div class="cap"></div>
+                <div class="body">
+                  <div class="lab">สต๊อก</div>
+                  <div class="big">1</div>
+                  <div class="unit">240 ชิ้น<br>12 กล่อง</div>
+                  <div class="cvt">&nbsp;</div>
+                </div>
+                <div class="spark"><i style="height:20%"></i><i style="height:30%"></i><i style="height:25%"></i><i style="height:15%"></i><i style="height:40%"></i><i style="height:20%"></i><i style="height:35%"></i></div>
+              </div>
+            </div>
+
+            <div class="tablemock">
+              <span class="num-badge anno">4</span>
+              <div class="tabs">
+                <span class="on">ทั้งหมด</span><span>รออนุมัติ</span><span>วันนี้</span>
+              </div>
+              <div class="trow head">
+                <div class="t-line"></div><div class="t-line"></div><div class="t-line w85"></div>
+                <div class="t-line"></div><div class="t-line"></div>
+              </div>
+              <div class="trow pending">
+                <div class="t-line w70 mono"></div><div class="bar sm" style="width:40px;background:var(--inb);"></div>
+                <div class="t-line w85"></div><div class="t-line w55"></div>
+                <span class="pill attention">รออนุมัติ</span>
+              </div>
+              <div class="trow">
+                <div class="t-line w70"></div><div class="bar sm" style="width:40px;background:var(--out);"></div>
+                <div class="t-line w70"></div><div class="t-line w40"></div>
+                <span class="pill good">อนุมัติ</span>
+              </div>
+              <div class="trow">
+                <div class="t-line w70"></div><div class="bar sm" style="width:40px;background:var(--inv);"></div>
+                <div class="t-line w85"></div><div class="t-line w55"></div>
+                <span class="pill good">อนุมัติ</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <aside class="notes">
+        <div class="note"><span class="num-badge">1</span><div><b>ประโยคบอก scope</b> — สร้างจากสถานะ filter เป็นภาษาไทย อยู่ใต้ filter เสมอ ผู้ใช้ไม่ต้องเดาว่ากำลังดูอะไร <code>§2b</code></div></div>
+        <div class="note"><span class="num-badge">2</span><div><b>Action strip</b> — โผล่เมื่อ <code>pendingCount &gt; 0</code> เท่านั้น มีเงา = จุดเดียวที่ต้อง "ลงมือ" ว่างเมื่อไม่มีงานค้าง <code>§2a</code></div></div>
+        <div class="note"><span class="num-badge">3</span><div><b>การ์ด 3 ฝั่ง</b> — รวม bar list + unit cards เดิม ตัวเลขงานใหญ่ + หน่วยผลผลิต + sparkline 7 วันในการ์ด <code>§2c</code></div></div>
+        <div class="note"><span class="num-badge">4</span><div><b>ตารางเดียว</b> — รวม "งานล่าสุด" + "รายละเอียดทั้งหมด" preset <code>ทั้งหมด / รออนุมัติ / วันนี้</code> แถวรออนุมัติดันขึ้นบนสุด <code>§2d</code></div></div>
+        <div class="note"><span class="num-badge" style="background:var(--ink-faint);">i</span><div>ซ้ายมือ = sidebar ย่อเป็น icon rail ที่ 640–960px</div></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ FRAME 2 — APPROVAL QUEUE ============ -->
+  <section class="frame">
+    <div class="frame-head">
+      <h2>2 · คิวอนุมัติ — view ใหม่</h2>
+      <span class="tag">view: queue</span>
+    </div>
+    <div class="layout">
+      <div class="device">
+        <div class="queue">
+          <span class="num-badge anno" style="top:-8px;right:-8px;">5</span>
+          <div class="qcard top">
+            <div class="qmeta">
+              <div class="row" style="gap:7px;">
+                <span class="bar sm" style="width:42px;background:var(--out);"></span>
+                <div class="t-line w55" style="height:10px;"></div>
+              </div>
+              <div class="t-line w85"></div>
+              <div class="qchips">
+                <span class="pill bad">มีปัญหา</span>
+                <span class="pill attention">ค้าง 2 วัน</span>
+              </div>
+            </div>
+            <div class="qbtns"><b class="ok">อนุมัติ</b><b class="no">ไม่อนุมัติ</b></div>
+          </div>
+          <div class="qcard">
+            <div class="qmeta">
+              <div class="row" style="gap:7px;">
+                <span class="bar sm" style="width:42px;background:var(--inb);"></span>
+                <div class="t-line w40" style="height:10px;"></div>
+              </div>
+              <div class="t-line w70"></div>
+              <div class="qchips"><span class="pill note">รออีก 3 งานของทีมนี้</span></div>
+            </div>
+            <div class="qbtns"><b class="ok">อนุมัติ</b><b class="no">ไม่อนุมัติ</b></div>
+          </div>
+          <div class="qcard">
+            <div class="qmeta">
+              <div class="row" style="gap:7px;">
+                <span class="bar sm" style="width:42px;background:var(--inv);"></span>
+                <div class="t-line w40" style="height:10px;"></div>
+              </div>
+              <div class="t-line w55"></div>
+              <div class="qchips"><span class="pill attention">ค้าง 4 ชม.</span></div>
+            </div>
+            <div class="qbtns"><b class="ok">อนุมัติ</b><b class="no">ไม่อนุมัติ</b></div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="num-badge">5</span><div><b>จัดอันดับด้วย <code>urgencyScore()</code></b> — อายุงาน + จับกลุ่มทีมเดียวกัน + งาน OUT ที่มีปัญหามาก่อน แต่ละการ์ดโชว์ <b>เหตุผลบนสุด</b>เป็น chip → ลำดับไม่ลึกลับ <code>§5</code></div></div>
+        <div class="note"><span class="num-badge" style="background:var(--ink-faint);">?</span><div>ปุ่ม "อนุมัติทั้งฝั่งนี้" (batch) — รอคุณตัดสินใจ <code>§13.3</code></div></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ FRAME 3 — MOBILE ============ -->
+  <section class="frame">
+    <div class="frame-head">
+      <h2>3 · มือถือ (&lt; 640px)</h2>
+      <span class="tag">ตอนนี้ nav หายทั้งหมด</span>
+    </div>
+    <div class="layout">
+      <div class="device phone">
+        <div class="screen">
+          <div class="row between">
+            <div class="t-line w40" style="height:11px;"></div>
+            <div class="ph" style="width:20px;height:20px;border-radius:6px;"></div>
+          </div>
+          <div class="chips">
+            <span class="chip on">วันนี้</span><span class="chip">7 วัน</span><span class="chip">30 วัน</span>
+          </div>
+          <div class="seg">
+            <span class="on">ทุกฝั่ง</span><span>เข้า</span><span>ออก</span><span>สต๊อก</span>
+          </div>
+          <div class="scope" style="border:none;padding:2px 0;">กำลังดู · ทุกฝั่ง · วันนี้ · 12 งาน</div>
+          <div class="actionstrip" style="box-shadow:none;">
+            <span class="txt" style="font-size:10.5px;">⚠ รออนุมัติ 4 งาน</span>
+            <span class="cta">ดูคิว</span>
+          </div>
+          <div class="scard" data-d="inb" style="border-radius:9px;">
+            <div class="cap"></div>
+            <div class="body">
+              <div class="lab">ขาเข้า</div>
+              <div class="row between"><div class="big">7</div><div class="unit approx">3 ตู้ ≈ 168 คัน</div></div>
+            </div>
+            <div class="spark"><i style="height:40%"></i><i style="height:65%"></i><i style="height:30%"></i><i style="height:80%"></i><i style="height:55%"></i><i style="height:95%"></i><i style="height:45%"></i></div>
+          </div>
+          <div class="scard" data-d="out" style="border-radius:9px;">
+            <div class="cap"></div>
+            <div class="body">
+              <div class="lab">ขาออก</div>
+              <div class="row between"><div class="big">4</div><div class="unit">171 คัน</div></div>
+            </div>
+          </div>
+
+          <div class="bottombar">
+            <span class="num-badge anno" style="top:-9px;left:50%;right:auto;transform:translateX(-50%);">6</span>
+            <div class="on"><i></i>ภาพรวม</div>
+            <div><i></i>คิว</div>
+            <div><i></i>งาน</div>
+            <div><i></i>คน</div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="num-badge">6</span><div><b>Bottom tab bar</b> (56px + safe-area) แทน sidebar ที่ยุบแล้วหายไป 4 ปุ่ม: ภาพรวม / คิว / งาน / คน <code>§3</code></div></div>
+        <div class="note"><span class="num-badge" style="background:var(--ink-faint);">·</span><div>dept เป็น segmented control · search ยุบเป็นไอคอนกดขยาย · ปุ่มแตะ ≥ 44px · "ผู้ใช้งานระบบ" ย้ายไปไอคอนเฟือง</div></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ FRAME 4 — UNIT TREATMENT ============ -->
+  <section class="frame">
+    <div class="frame-head">
+      <h2>4 · ตู้ ↔ คัน — ทำให้เห็นการคำนวณ</h2>
+      <span class="tag">describeUnit()</span>
+    </div>
+    <div class="layout">
+      <div class="device">
+        <div class="detailgrid">
+          <div class="ucase">
+            <div class="state">คำนวณจากตัวคูณ</div>
+            <div class="val">3 ตู้ <span style="color:var(--ink-faint);">≈</span> 168 คัน</div>
+            <div class="cvt">(56 คัน/ตู้)</div>
+            <div class="why"><b>≈</b> + คำอธิบายตัวเล็ก = "นี่คือค่าประมาณจากตัวคูณ ไม่ใช่ค่าที่นับจริง"</div>
+          </div>
+          <div class="ucase">
+            <div class="state">นับจริง (กรอก vehicles เอง)</div>
+            <div class="val">3 ตู้ <span style="color:var(--ink-faint);">·</span> 171 คัน</div>
+            <div class="cvt">&nbsp;</div>
+            <div class="why"><b>·</b> + ไม่มีคำอธิบาย = "ทั้งสองเลขถูกนับมาแล้ว"</div>
+          </div>
+        </div>
+      </div>
+      <aside class="notes">
+        <div class="note"><span class="num-badge">7</span><div><b>ปัญหาเดิม:</b> <code>3 ตู้ / 168 คัน</code> — <code>×56</code> ซ่อนอยู่ ผู้ใช้เห็นเลขที่ "บวกไม่ลง"</div></div>
+        <div class="note"><span class="num-badge" style="background:var(--note);">✓</span><div>unit card วางสองหน่วยเรียง <b>บน–ล่าง</b> มีเครื่องหมายความสัมพันธ์คั่น ไม่วางข้างกันเป็นสองเลขไม่เกี่ยวกัน <code>§4</code></div></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ FRAME 5 — MOTION ============ -->
+  <section class="frame">
+    <div class="frame-head">
+      <h2>5 · Physics — อธิบายการเปลี่ยนแปลง (ภาพนิ่งแสดงไม่ได้)</h2>
+      <span class="tag">js/anim.js</span>
+    </div>
+    <div class="motion">
+      <div class="mcard">
+        <h3>ตัวเลขวิ่ง old → new</h3>
+        <p>เปลี่ยน filter หรือ realtime อัปเดต → ตัวเลข stat วิ่งด้วย damped spring ผู้ใช้เห็นว่า "อะไรเปลี่ยน" โดยไม่ต้องอ่านใหม่ทั้งจอ</p>
+        <span class="spec">STIFFNESS≈120 · DAMPING≈18 · แทบไม่ overshoot</span>
+      </div>
+      <div class="mcard">
+        <h3>bar โตจาก 0</h3>
+        <p>dept bar / sparkline โตขึ้นแบบ spring stagger ~40ms ต่อแท่ง ตาไล่ซ้าย→ขวา อ่าน "รูปทรง" ของข้อมูลได้</p>
+        <span class="spec">STIFFNESS≈90 · DAMPING≈16</span>
+      </div>
+      <div class="mcard">
+        <h3>แถวขยับ (FLIP)</h3>
+        <p>approve/reject แล้วงานออกจากคิว หรือตาราง re-sort → แถวเลื่อนไปตำแหน่งใหม่ ~250ms ผู้ใช้ไม่หลงว่าอะไรหายไปไหน</p>
+        <span class="spec">JS วัด delta · CSS เล่น transform — กัน stutter</span>
+      </div>
+      <div class="mcard">
+        <h3>micro-interaction</h3>
+        <p>ปุ่ม/chip กดแล้ว scale 0.97 · hover 1.03 · อนุมัติสำเร็จเด้ง checkmark แบบ elastic = ยืนยันการกด</p>
+        <span class="spec">ทุกอย่างเคารพ prefers-reduced-motion → snap ทันที</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    โยงกับ <code>docs/erp-redesign-plan.md</code> · phase การทำอยู่ใน §12 · ต้องตัดสินใจ 4 ข้อใน §13
+  </div>
+
+</div>
+
+<script>
+  (function(){
+    var btn=document.getElementById('themebtn');
+    var root=document.documentElement;
+    btn.addEventListener('click',function(){
+      var cur=root.getAttribute('data-theme');
+      var next=cur==='dark'?'light':(cur==='light'?'dark':
+        (matchMedia('(prefers-color-scheme: dark)').matches?'light':'dark'));
+      root.setAttribute('data-theme',next);
+    });
+  })();
+</script>

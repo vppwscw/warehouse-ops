@@ -200,3 +200,16 @@ input[type=time],input[type=date]{font-family:'IBM Plex Mono',monospace;}
 .success-flash .ok-text{font-family:'IBM Plex Sans Thai',sans-serif;font-weight:700;font-size:18px;}
 .success-flash .ok-sub{font-size:13px;color:var(--ink-dim);}
 footer.build-footer{font-size:10.5px;color:var(--ink-faint);text-align:center;padding:8px 0 14px;}
+
+/* toasts — non-blocking feedback (replaces alert()) */
+#toastHost{position:fixed;left:0;right:0;top:calc(12px + env(safe-area-inset-top));z-index:120;
+  display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;padding:0 16px;}
+.toast{pointer-events:auto;max-width:340px;font-size:12.5px;font-weight:600;padding:10px 15px;
+  border-radius:11px;box-shadow:0 4px 16px rgba(15,17,20,.18);border:1px solid var(--line);
+  animation:toastIn .2s ease-out;}
+.toast.leaving{animation:toastOut .22s ease-in forwards;}
+.toast-ok{background:var(--good-bg);color:var(--good);border-color:var(--good);}
+.toast-err{background:var(--danger-bg);color:var(--danger);border-color:var(--danger);}
+@keyframes toastIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:none;}}
+@keyframes toastOut{to{opacity:0;transform:translateY(-8px);}}
+@media (prefers-reduced-motion: reduce){ .toast{animation:none;} .toast.leaving{animation:none;opacity:0;} }

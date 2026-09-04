@@ -137,7 +137,11 @@ ADMIN สร้าง/แก้สิทธิ์/ปิดใช้งานบ
 
 **ทำไมต้องมี Edge Function:** การสร้าง/ลบ auth user ต้องใช้ `service_role` key ซึ่งห้ามฝังในหน้าเว็บ. Edge Function `admin-users` ถือ key ฝั่ง server, ตรวจว่าคนเรียกเป็น ADMIN ที่ active อยู่ก่อนทำงาน
 
-**Deploy Edge Function:** Supabase dashboard → Edge Functions → Deploy a new function ชื่อ `admin-users` → paste เนื้อหา [`supabase/functions/admin-users/index.ts`](supabase/functions/admin-users/index.ts) → Deploy. Secret (`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`) Supabase ใส่ให้อัตโนมัติ ไม่ต้องตั้งเอง
+**Deploy Edge Function:** Supabase dashboard → Edge Functions → Deploy a new function ชื่อ `admin-users` → paste เนื้อหา [`supabase/functions/admin-users/index.ts`](supabase/functions/admin-users/index.ts) → Deploy. Secret (`SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`) Supabase ใส่ให้อัตโนมัติ ไม่ต้องตั้งเอง. ที่ **Settings → Verify JWT** ปิดไว้ (ฟังก์ชันเช็ค ADMIN เอง + ต้องให้ CORS preflight ผ่าน)
+
+> ฟังก์ชันใช้ `service_role` **เฉพาะ** ฝั่ง `auth.users` (สร้าง auth user). แถว `profiles` เขียนด้วย JWT ของ ADMIN ที่เรียกมา (role `authenticated` มีสิทธิ์ INSERT + RLS เช็ค `is_admin()`) — project นี้ grant DML ให้แค่ `authenticated` ไม่ได้ให้ `service_role` เลยต้องเขียนวิธีนี้
+
+Deploy แล้ว verify: 2026-09-04 — สร้างบัญชีผ่านฟอร์มได้จริง, บัญชีใหม่ login ด้วยรหัสชั่วคราวได้, non-ADMIN เรียก → 403, อีเมลซ้ำ → 400 + ไม่มี orphan
 
 > Trigger เวอร์ชันก่อนหน้า (ยังไม่มี `active` / service_role bypass) เพิ่มเมื่อ 2026-09-04 — ดู `sql/2026-09-04-user-management.sql` สำหรับเวอร์ชันปัจจุบันที่ต้องใช้
 

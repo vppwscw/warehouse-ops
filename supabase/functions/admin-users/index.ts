@@ -73,6 +73,10 @@ Deno.serve(async (req) => {
     return json({ error: "SUPERVISOR / USER ต้องระบุแผนก" }, 400);
   }
 
+  // service_role is only used for the auth.users side (GoTrue admin API);
+  // the profiles row is written with the caller's ADMIN JWT so it needs no
+  // extra grant — `authenticated` already has INSERT and the RLS check is
+  // `is_admin()`.
   const admin = createClient(url, serviceKey);
 
   // 3. create the auth user (already confirmed — temp password from the form)
@@ -84,7 +88,7 @@ Deno.serve(async (req) => {
   }
 
   // 4. paired profiles row; roll the auth user back if this fails
-  const { error: profErr } = await admin.from("profiles").insert({
+  const { error: profErr } = await asCaller.from("profiles").insert({
     id: created.user.id,
     full_name: fullName,
     role,

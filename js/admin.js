@@ -2,7 +2,6 @@
 
 const DEPT_KEYS = ['INB','OUT','INV'];
 const DEPT_PLAIN = { INB:'ขาเข้า', OUT:'ขาออก', INV:'สต๊อก' };
-const DEPT_ICON  = { INB:'inbound', OUT:'outbound', INV:'inventory' };
 const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
@@ -40,16 +39,19 @@ const ICONS = {
   list:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="3.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="3.5" cy="18" r="1.4" fill="currentColor" stroke="none"/></svg>',
   users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15.8 14.2c2.7.4 4.7 2.5 4.7 5.8"/></svg>',
   lock:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg>',
+  gear:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  queue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5h6a1 1 0 0 1 1 1V7H8V5.5a1 1 0 0 1 1-1z"/><rect x="4" y="6" width="16" height="15" rx="2"/><path d="M8.5 13.5l2.2 2.2 4.8-4.8"/></svg>',
   box:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
-  inbound:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>',
-  outbound: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>',
-  inventory:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
 };
 
 let profile = null, currentUser = null;
 let jobs = [], roster = [], users = [];
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
+let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
+let prevSideCounts = {}; // last-rendered side-card job counts, for the counter animation
+let firstLoad = true;    // true until the first successful data load (drives the skeleton)
+let loadError = null;    // set when the initial jobs load fails (drives the error card)
 
 // ASSISTANT sees everything ADMIN sees but can't approve/reject jobs
 const isReadOnly = () => !profile || profile.role !== 'ADMIN';
@@ -161,33 +163,56 @@ async function loadTasksFromDb(){
 }
 
 // ---------- nav ----------
+// Primary nav — shown in the sidebar (desktop / tablet rail) and the mobile
+// bottom tab bar. `short` is the bottom-bar label.
 const NAV = [
-  {id:'dashboard',  label:'ภาพรวม (Dashboard)', icon:'dash', title:'ภาพรวม', sub:'สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก'},
-  {id:'details',    label:'รายละเอียดทั้งหมด',   icon:'list', title:'รายละเอียดทั้งหมด', sub:'รายการงานทุกชิ้นตามตัวกรองที่เลือก'},
-  {id:'employees',  label:'พนักงาน',             icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
-  {id:'users',      label:'ผู้ใช้งานระบบ',        icon:'lock', title:'ผู้ใช้งานระบบ', sub:'รายชื่อบัญชีผู้ใช้งาน (อ่านอย่างเดียว)'},
+  {id:'dashboard',  label:'ภาพรวม',      short:'ภาพรวม', icon:'dash',  title:'ภาพรวม', sub:'สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก'},
+  {id:'queue',      label:'คิวอนุมัติ',   short:'คิว',    icon:'queue', title:'คิวอนุมัติ', sub:'งานที่รออนุมัติ เรียงตามความเร่งด่วน'},
+  {id:'details',    label:'งานทั้งหมด',   short:'งาน',    icon:'list',  title:'งานทั้งหมด', sub:'รายการงานทุกชิ้นตามตัวกรองที่เลือก'},
+  {id:'employees',  label:'พนักงาน',      short:'คน',     icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
 ];
+// Secondary — reached via the gear icon in the header, not the main nav.
+const SECONDARY = [
+  {id:'users', label:'ผู้ใช้งานระบบ', icon:'lock', title:'ผู้ใช้งานระบบ', sub:'รายชื่อบัญชีผู้ใช้งาน'},
+];
+const ALL_NAV = [...NAV, ...SECONDARY];
+
 document.getElementById('navList').innerHTML = NAV.map(n=>`
   <button type="button" class="navbtn" data-view="${n.id}" aria-current="${n.id==='dashboard'}">
-    <span class="nav-ic"></span><span>${n.label}</span>
+    <span class="nav-ic">${ICONS[n.icon]}</span><span class="nav-tx">${n.label}</span>
   </button>`).join('');
-document.querySelectorAll('.navbtn').forEach((btn,i)=>{ btn.querySelector('.nav-ic').innerHTML = ICONS[NAV[i].icon]; });
+document.getElementById('botNav').innerHTML = NAV.map(n=>`
+  <button type="button" class="botbtn" data-view="${n.id}" aria-current="${n.id==='dashboard'}">
+    ${ICONS[n.icon]}<span>${n.short}</span>
+  </button>`).join('');
+document.getElementById('gearBtn').innerHTML = ICONS.gear;
 document.getElementById('loginLockIcon').innerHTML = ICONS.lock;
 document.getElementById('deniedLockIcon').innerHTML = ICONS.lock;
 document.getElementById('brandMark').innerHTML = ICONS.box;
 
 function goView(id){
   activeView = id;
-  document.querySelectorAll('.navbtn').forEach(b=>b.setAttribute('aria-current', b.dataset.view===id));
+  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current', b.dataset.view===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
-  const n = NAV.find(x=>x.id===id);
+  const n = ALL_NAV.find(x=>x.id===id) || NAV[0];
   document.getElementById('pageTitle').textContent = n.title;
   document.getElementById('pageSub').textContent = n.sub;
   if (id==='users') renderUsersTable();
   render();
 }
+
+function setJobsPreset(preset){
+  jobsPreset = preset;
+  document.querySelectorAll('#jobsPresets .preset').forEach(p=>
+    p.setAttribute('aria-pressed', p.dataset.preset===preset));
+  if (activeView!=='dashboard') goView('dashboard'); else render();
+}
+
 document.addEventListener('click', e=>{
+  if (e.target.closest('#retryBtn')){ refreshAll(); return; }
+  if (e.target.closest('[data-clear-filters]')){ clearFilters(); return; }
+
   const navBtn = e.target.closest('[data-view]');
   if (navBtn){ goView(navBtn.dataset.view); return; }
 
@@ -204,8 +229,21 @@ document.addEventListener('click', e=>{
     deptFilter = deptChip.dataset.dept; render(); return;
   }
 
+  const presetBtn = e.target.closest('#jobsPresets [data-preset]');
+  if (presetBtn){ setJobsPreset(presetBtn.dataset.preset); return; }
+
+  if (e.target.closest('#actionStripBtn')){ goView('queue'); return; }
+
+  const batchBtn = e.target.closest('[data-approve-dept]');
+  if (batchBtn){ approveDept(batchBtn.dataset.approveDept); return; }
+
   const approveBtn = e.target.closest('[data-approve-job]');
-  if (approveBtn){ setJobStatus(approveBtn.dataset.approveJob, 'approved'); return; }
+  if (approveBtn){
+    const card = approveBtn.closest('.q-card');
+    if (card) card.classList.add('q-done');       // brief ✓ until the queue re-renders
+    setJobStatus(approveBtn.dataset.approveJob, 'approved');
+    return;
+  }
   const rejectBtn = e.target.closest('[data-reject-job]');
   if (rejectBtn){ setJobStatus(rejectBtn.dataset.rejectJob, 'rejected'); return; }
 
@@ -226,14 +264,20 @@ function groupJobs(rows){
   const map = new Map();
   rows.forEach(r=>{
     const key = [r.department, r.task_id, (r.details&&r.details.date)||'', (r.details&&r.details.start)||'', (r.created_at||'').slice(0,16)].join('|');
-    if (!map.has(key)) map.set(key, { ...r, crewNames: new Set() });
+    if (!map.has(key)) map.set(key, { ...r, crewNames: new Set(), rowIds: [] });
     const g = map.get(key);
+    g.rowIds.push(r.id);          // every DB row in this group — approve/reject must hit them all
     if (r.employee_name) g.crewNames.add(r.employee_name);
   });
   return [...map.values()].map(g=>({...g, crew: (g.details && g.details.crew && g.details.crew.length) ? g.details.crew : [...g.crewNames]}));
 }
 
 // ---------- filtering ----------
+function matchSearch(j){
+  if (!searchTerm) return true;
+  const task = taskById(j.task_id);
+  return (((task?task.label:'') + ' ' + (j.crew||[]).join(' ')).toLowerCase()).includes(searchTerm);
+}
 function filteredJobs(){
   const todayStr = todayISO();
   let fromStr = null;
@@ -246,12 +290,7 @@ function filteredJobs(){
     if (fromStr && d.date < fromStr) return false;
     if (dateRange==='today' && d.date !== todayStr) return false;
     if (deptFilter!=='ALL' && j.department!==deptFilter) return false;
-    if (searchTerm){
-      const task = taskById(j.task_id);
-      const hay = ((task?task.label:'')+' '+(j.crew||[]).join(' ')).toLowerCase();
-      if (!hay.includes(searchTerm)) return false;
-    }
-    return true;
+    return matchSearch(j);
   });
 }
 
@@ -281,31 +320,63 @@ function peopleInScope(){
     .sort((a,b)=>a.name.localeCompare(b.name,'th'));
 }
 
-function renderStats(closed){
-  const totalMins = closed.reduce((s,j)=>s+((j.details&&j.details.mins)||0),0);
-  const avgMins = closed.length ? Math.round(totalMins/closed.length) : 0;
-  const peopleCount = peopleInScope().length;
-  const pendingCount = closed.filter(j=>(j.status||'approved')==='pending').length;
-  document.getElementById('statGrid').innerHTML = `
-    <div class="stat-tile accent"><div class="l">งานที่บันทึกแล้ว</div><div class="n num">${closed.length}<span class="unit">งาน</span></div></div>
-    <div class="stat-tile"><div class="l">เวลาเฉลี่ยต่องาน</div><div class="n num">${avgMins}<span class="unit">นาที</span></div></div>
-    <div class="stat-tile"><div class="l">พนักงานในขอบเขตนี้</div><div class="n num">${peopleCount}<span class="unit">คน</span></div></div>
-    <div class="stat-tile${pendingCount?' warn':''}"><div class="l">รออนุมัติ</div><div class="n num">${pendingCount}<span class="unit">งาน</span></div></div>
-  `;
+// ---- dashboard: month names + age formatting (Asia/Bangkok) ----
+const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function rangeLabel(){
+  if (dateRange==='today'){ const n = nowBkk(); return `วันนี้ (${n.getDate()} ${TH_MONTHS[n.getMonth()]})`; }
+  if (dateRange==='week') return '7 วันล่าสุด';
+  if (dateRange==='month') return '30 วันล่าสุด';
+  return 'ทั้งหมด';
+}
+function ageText(iso){
+  if (!iso) return '–';
+  const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3600000);
+  if (h < 1) return 'ไม่ถึงชั่วโมง';
+  if (h < 24) return h + ' ชม.';
+  return Math.floor(h / 24) + ' วัน';
 }
 
-function renderDeptBars(closed){
-  const counts = DEPT_KEYS.map(d=>({d, n: closed.filter(j=>j.department===d).length}));
-  const max = Math.max(1, ...counts.map(c=>c.n));
-  document.getElementById('deptBarList').innerHTML = counts.map(({d,n})=>`
-    <div class="barrow">
-      <span class="lbl"><span class="dot" style="background:var(--${d.toLowerCase()})"></span>${DEPT_PLAIN[d]}</span>
-      <span class="track"><span class="fill" style="width:${(n/max*100).toFixed(1)}%;background:var(--${d.toLowerCase()})"></span></span>
-      <span class="val num">${n}</span>
-    </div>`).join('');
+// Amber strip = the ADMIN's one "act now". Counts pending jobs in the current
+// department scope but ignores the date filter — a job stuck pending for days
+// should still show even while looking at "วันนี้".
+function renderActionStrip(){
+  const el = document.getElementById('actionStrip');
+  if (!el) return;
+  const pend = jobs.filter(j => (j.status||'approved')==='pending'
+    && (deptFilter==='ALL' || j.department===deptFilter));
+  el.hidden = false;
+  if (!pend.length){
+    el.className = 'action-strip ok';
+    el.innerHTML = `<span class="as-text">✓ ไม่มีงานค้างอนุมัติ</span>`;
+    return;
+  }
+  const oldest = pend.reduce((m,j)=> (j.created_at||'') && (j.created_at < m) ? j.created_at : m, pend[0].created_at || '');
+  el.className = 'action-strip';
+  el.innerHTML = `<span class="as-text">⚠ มีงานรออนุมัติ ${pend.length} งาน · เก่าสุดค้าง ${esc(ageText(oldest))}</span>
+    <button type="button" class="as-cta" id="actionStripBtn">ดูรายการ</button>`;
 }
 
-function renderUnitCards(closed){
+// Plain-Thai restatement of the active filters, so the scope is never ambiguous.
+function renderScopeLine(closed){
+  const el = document.getElementById('scopeLine');
+  if (!el) return;
+  const depts = deptFilter==='ALL' ? DEPT_KEYS : [deptFilter];
+  const dots = depts.map(d=>`<span class="legend-dot" style="background:var(--${d.toLowerCase()})"></span>`).join('');
+  const deptTxt = deptFilter==='ALL' ? 'ทุกฝั่ง' : DEPT_PLAIN[deptFilter];
+  let s = `${dots} กำลังดู · <b>${esc(deptTxt)}</b> · <b>${esc(rangeLabel())}</b> · ${closed.length} งาน`;
+  if (searchTerm) s += ` · ค้นหา "${esc(searchTerm)}"`;
+  el.innerHTML = s;
+}
+
+// per-department 7-day job counts, for the card sparklines
+function daySeries(dept){
+  const days = [...Array(7)].map((_,i)=>daysAgoISO(6-i));
+  return days.map(dt => jobs.filter(j => (j.details&&j.details.date)===dt && j.department===dept).length);
+}
+
+// One card per side (เข้า/ออก/สต๊อก): job count + unit output + trend.
+// Replaces the old dept bar list + unit-cards split panel.
+function renderSideCards(closed){
   const sums = { INB:{containers:0,vehicles:0}, OUT:{vehicles:0,issue:0}, INV:{pieces:0,boxes:0} };
   closed.forEach(j=>{
     const task = taskById(j.task_id); const d = j.details||{}; if (!task) return;
@@ -315,17 +386,54 @@ function renderUnitCards(closed){
     else if (task.unit==='boxes') sums.INV.boxes += num(d.qty);
     else if (task.unit==='pieces') sums.INV.pieces += num(d.qty);
   });
-  const cards = [
-    {dept:'INB', ic:DEPT_ICON.INB, t1:'ขาเข้า', t2:`${sums.INB.containers} ตู้`, n:sums.INB.vehicles+' คัน'},
-    {dept:'OUT', ic:DEPT_ICON.OUT, t1:'ขาออก', t2: sums.OUT.issue ? `พบปัญหา ${sums.OUT.issue} คัน` : 'ไม่พบปัญหา', n:sums.OUT.vehicles+' คัน'},
-    {dept:'INV', ic:DEPT_ICON.INV, t1:'สต๊อก', t2:`${sums.INV.pieces} ชิ้น`, n:sums.INV.boxes+' กล่อง'},
-  ];
-  document.getElementById('unitCards').innerHTML = cards.map(c=>`
-    <div class="unit-card">
-      <span class="ic" style="background:var(--${c.dept.toLowerCase()}-bg);color:var(--${c.dept.toLowerCase()})">${ICONS[c.ic]}</span>
-      <span class="txt"><span class="t1">${c.t1}</span><br><span class="t2">${c.t2}</span></span>
-      <span class="n num">${c.n}</span>
-    </div>`).join('');
+  // was any INB vehicle figure derived from a container multiplier (vs counted)?
+  const inbDerived = closed.some(j=>{
+    const t = taskById(j.task_id); const d = j.details||{};
+    return t && t.unit==='containers' && num(d.containers) && !num(d.vehicles);
+  });
+
+  const counts = {};
+  const html = DEPT_KEYS.map(dept=>{
+    const count = closed.filter(j=>j.department===dept).length;
+    counts[dept] = count;
+    const series = daySeries(dept);
+    const smax = Math.max(1, ...series);
+    const spark = series.map(v=>`<i class="${v>0?'on':''}" style="height:${Math.max(2,Math.round(v/smax*26))}px"></i>`).join('');
+    let unit, cvt = '';
+    if (dept==='INB'){
+      if (num(sums.INB.containers)){
+        unit = `<span class="approx">${num(sums.INB.containers)} ตู้ ${inbDerived?'≈':'·'} ${num(sums.INB.vehicles)} คัน</span>`;
+        if (inbDerived) cvt = '(56 คัน/ตู้ — ประมาณ)';
+      } else {
+        unit = `${num(sums.INB.vehicles)} คัน`;
+      }
+    } else if (dept==='OUT'){
+      unit = `${num(sums.OUT.vehicles)} คัน`;
+    } else {
+      unit = `${num(sums.INV.pieces)} ชิ้น<br>${num(sums.INV.boxes)} กล่อง`;
+    }
+    const issue = (dept==='OUT' && num(sums.OUT.issue))
+      ? `<span class="badge issue sc-issue">มีปัญหา ${num(sums.OUT.issue)} คัน</span>` : '';
+    return `<div class="side-card" data-dept="${dept}">
+      <div class="sc-cap"></div>
+      <div class="sc-body">
+        <div class="sc-lab"><span class="dot" style="background:var(--${dept.toLowerCase()})"></span>${DEPT_PLAIN[dept]}</div>
+        <div class="sc-big"><span class="sc-big-n num">${count}</span><span class="u">งาน</span></div>
+        <div class="sc-unit">${unit}</div>
+        ${cvt ? `<div class="sc-cvt">${cvt}</div>` : ''}
+        ${issue}
+      </div>
+      <div class="sc-spark">${spark}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('sideCards').innerHTML = html;
+  if (window.Anim) DEPT_KEYS.forEach(dept=>{
+    const card = document.querySelector(`.side-card[data-dept="${dept}"]`);
+    if (!card) return;
+    Anim.count(card.querySelector('.sc-big-n'), counts[dept], prevSideCounts[dept]);
+    Anim.bars(card.querySelector('.sc-spark'), 'i', { stiffness:90, damping:16, stagger:28 });
+  });
+  prevSideCounts = counts;
 }
 
 function renderDayChart(){
@@ -342,63 +450,179 @@ function renderDayChart(){
       <span class="daybar-lbl">${dow}</span>
     </div>`;
   }).join('');
+  if (window.Anim) Anim.bars(document.getElementById('dayChart'), '.daybar', { stiffness:90, damping:16, stagger:40 });
 }
 
-function renderRecentTable(closed){
-  const rows = [...closed].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,10);
-  const tbody = document.querySelector('#recentTable tbody');
-  if (rows.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty-note">ยังไม่มีงานที่บันทึกในช่วงนี้</td></tr>`; return; }
-  tbody.innerHTML = rows.map(j=>{
-    const task = taskById(j.task_id); const d = j.details||{};
-    const status = j.status || 'approved';
-    return `<tr>
-      <td class="mono">${esc(d.date)} ${esc(d.end)}</td>
-      <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
-      <td class="td-task">${esc(task?task.label:j.task_id)}</td>
-      <td>${esc((j.crew||[]).join(', '))}</td>
-      <td class="mono">${esc(formatResult(d,task))}</td>
-      <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
-    </tr>`;
-  }).join('');
+// One row renderer, shared by the dashboard table and the "งานทั้งหมด" view —
+// they were two divergent tables (6 cols vs 9) before.
+function jobRowHTML(j){
+  const task = taskById(j.task_id); const d = j.details||{};
+  const status = j.status || 'approved';
+  const canAct = !isReadOnly() && status==='pending';
+  return `<tr>
+    <td class="mono">${esc(d.date)}</td>
+    <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
+    <td class="td-task">${esc(task?task.label:j.task_id)}</td>
+    <td>${esc((j.crew||[]).join(', '))}</td>
+    <td class="mono">${esc(d.start||'–')}–${esc(d.end||'–')}</td>
+    <td class="mono">${d.mins == null ? '–' : num(d.mins)}</td>
+    <td class="mono">${esc(formatResult(d,task))}</td>
+    <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
+    <td>${canAct ? `
+      <button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>
+      <button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
+    ` : '–'}</td>
+  </tr>`;
+}
+function emptyRow(cols, msg){
+  const clr = isFiltered() ? ` · <button type="button" class="link-btn" data-clear-filters>ล้างตัวกรอง</button>` : '';
+  return `<tr><td colspan="${cols}" class="empty-note">${esc(msg)}${clr}</td></tr>`;
+}
+function renderJobRows(tbody, rows, emptyMsg){
+  if (!tbody) return;
+  tbody.innerHTML = rows.length
+    ? rows.map(jobRowHTML).join('')
+    : emptyRow(9, emptyMsg || 'ไม่พบรายการ');
+}
+
+// Dashboard bottom table — filtered set, narrowed by the preset tabs, capped.
+function renderDashJobs(closed){
+  let rows = closed;
+  if (jobsPreset==='pending') rows = closed.filter(j=>(j.status||'approved')==='pending');
+  else if (jobsPreset==='today'){ const t = todayISO(); rows = closed.filter(j=>(j.details&&j.details.date)===t); }
+  rows = [...rows].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,12);
+  renderJobRows(document.querySelector('#dashJobsTable tbody'), rows,
+    jobsPreset==='pending' ? 'ไม่มีงานรออนุมัติในช่วงนี้' : 'ยังไม่มีงานที่บันทึกในช่วงนี้');
 }
 
 function renderDetailsTable(closed){
-  const rows = [...closed].sort((a,b)=>((b.details&&b.details.date)+((b.details&&b.details.start)||'')).localeCompare((a.details&&a.details.date)+((a.details&&a.details.start)||'')));
-  const tbody = document.querySelector('#detailsTable tbody');
-  if (rows.length===0){ tbody.innerHTML = `<tr><td colspan="9" class="empty-note">ไม่พบรายการที่ตรงกับตัวกรอง</td></tr>`; return; }
-  tbody.innerHTML = rows.map(j=>{
-    const task = taskById(j.task_id); const d = j.details||{};
-    const status = j.status || 'approved';
-    const canAct = !isReadOnly() && status==='pending';
-    return `<tr>
-      <td class="mono">${esc(d.date)}</td>
-      <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
-      <td class="td-task">${esc(task?task.label:j.task_id)}</td>
-      <td>${esc((j.crew||[]).join(', '))}</td>
-      <td class="mono">${esc(d.start||'–')}–${esc(d.end||'–')}</td>
-      <td class="mono">${d.mins == null ? '–' : num(d.mins)}</td>
-      <td class="mono">${esc(formatResult(d,task))}</td>
-      <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
-      <td>${canAct ? `
-        <button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>
-        <button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
-      ` : '–'}</td>
-    </tr>`;
-  }).join('');
+  const key = j => ((j.details&&j.details.date)||'') + ((j.details&&j.details.start)||'');
+  const rows = [...closed].sort((a,b)=>key(b).localeCompare(key(a)));
+  renderJobRows(document.querySelector('#detailsTable tbody'), rows, 'ไม่พบรายการที่ตรงกับตัวกรอง');
 }
 
 async function setJobStatus(jobId, status){
+  // a "job" is a group of one-row-per-employee records — approve/reject them all
+  const j = jobs.find(x=>x.id===jobId);
+  const ids = (j && j.rowIds && j.rowIds.length) ? j.rowIds : [jobId];
   const { error } = await sb.from('jobs').update({
     status, approved_by: currentUser.id, approved_at: new Date().toISOString(),
-  }).eq('id', jobId);
+  }).in('id', ids);
   if (error){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
   await refreshJobs(); render();
+}
+
+// ===================== APPROVAL QUEUE (phase 3) =====================
+// Pending jobs in the current department scope, ignoring the date filter —
+// an old pending job still needs approving even while looking at "วันนี้".
+function queuePending(){
+  return jobs.filter(j => (j.status||'approved')==='pending'
+    && (deptFilter==='ALL' || j.department===deptFilter)
+    && matchSearch(j));
+}
+function isProblem(j){
+  const t = taskById(j.task_id);
+  return j.department==='OUT' && t && t.hasIssue && j.details && j.details.hasIssue;
+}
+function crewMatesPending(j, list){
+  const key = (j.crew||[]).join('|');
+  return list.filter(o => o!==j && (o.crew||[]).join('|')===key).length;
+}
+// urgency = age in hours, + a bump for jobs whose crew has other work waiting
+// (so a crew's jobs get reviewed together), + a big boost for flagged problems.
+function urgencyScore(j, list){
+  const ageH = (Date.now() - new Date(j.created_at || Date.now()).getTime()) / 3600000;
+  let s = ageH;
+  const mates = crewMatesPending(j, list);
+  if (mates) s += 6 + mates * 2;
+  if (isProblem(j)) s += 24;
+  return s;
+}
+function urgencyReason(j, list){
+  if (isProblem(j)) return { txt:'มีปัญหา', cls:'bad' };
+  const ageH = (Date.now() - new Date(j.created_at || Date.now()).getTime()) / 3600000;
+  if (ageH >= 24) return { txt:'ค้าง ' + Math.floor(ageH/24) + ' วัน', cls:'attention' };
+  const mates = crewMatesPending(j, list);
+  if (mates) return { txt:'รออีก ' + mates + ' งานของทีมนี้', cls:'note' };
+  if (ageH >= 1) return { txt:'ค้าง ' + Math.floor(ageH) + ' ชม.', cls:'attention' };
+  return { txt:'เพิ่งบันทึก', cls:'note' };
+}
+
+function renderQueue(){
+  const list = queuePending();
+  const scored = [...list].map(j=>({ j, s: urgencyScore(j, list) })).sort((a,b)=>b.s - a.s);
+  const ro = isReadOnly();
+
+  const bar = document.getElementById('qBatchBar');
+  const byDept = DEPT_KEYS.map(d=>({ d, n: list.filter(x=>x.department===d).length })).filter(x=>x.n);
+  if (ro || byDept.length < 1){
+    bar.hidden = true; bar.innerHTML = '';
+  } else {
+    bar.hidden = false;
+    bar.innerHTML = `<span class="q-batch-lbl">อนุมัติทั้งฝั่ง:</span>` +
+      byDept.map(({d,n})=>`<button type="button" class="btn-sm" data-approve-dept="${d}">${DEPT_PLAIN[d]} (${n})</button>`).join('');
+  }
+
+  const el = document.getElementById('qList');
+  if (!list.length){
+    const clr = (deptFilter!=='ALL' || searchTerm) ? ` · <button type="button" class="link-btn" data-clear-filters>ล้างตัวกรอง</button>` : '';
+    const emptyHTML = `<div class="empty-note">ไม่มีงานรออนุมัติ${deptFilter!=='ALL' ? 'ในฝั่งนี้' : ''}${clr}</div>`;
+    if (window.Anim) Anim.flipList(el, '.q-card', () => { el.innerHTML = emptyHTML; });
+    else el.innerHTML = emptyHTML;
+    return;
+  }
+  const html = scored.map(({j})=>{
+    const task = taskById(j.task_id); const d = j.details || {};
+    const r = urgencyReason(j, list);
+    return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}">
+      <div class="q-main">
+        <div class="q-top">
+          <span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span>
+          <span class="pill ${r.cls}">${esc(r.txt)}</span>
+        </div>
+        <div class="q-task">${esc(task ? task.label : j.task_id)}</div>
+        <div class="q-metaline mono">${esc(d.date||'')} · ${esc(d.start||'–')}–${esc(d.end||'–')} · ${d.mins == null ? '–' : num(d.mins)} นาที · ${esc(formatResult(d, task))}</div>
+        <div class="q-crew">${esc((j.crew||[]).join(', ')) || '–'}</div>
+      </div>
+      ${ro ? '' : `<div class="q-actions">
+        <button type="button" class="q-btn ok" data-approve-job="${esc(j.id)}">อนุมัติ</button>
+        <button type="button" class="q-btn no" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
+      </div>`}
+    </div>`;
+  }).join('');
+  if (window.Anim) Anim.flipList(el, '.q-card', () => { el.innerHTML = html; });
+  else el.innerHTML = html;
+}
+
+async function approveDept(dept){
+  const list = queuePending().filter(j=>j.department===dept);
+  if (!list.length) return;
+  if (!confirm(`อนุมัติงานฝั่ง${DEPT_PLAIN[dept]}ทั้งหมด ${list.length} งาน?`)) return;
+  const ids = list.flatMap(j => (j.rowIds && j.rowIds.length) ? j.rowIds : [j.id]);
+  const { error } = await sb.from('jobs').update({
+    status: 'approved', approved_by: currentUser.id, approved_at: new Date().toISOString(),
+  }).in('id', ids);
+  if (error){ alert('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
+  await refreshJobs(); render();
+}
+
+// pending-count badge on the "คิวอนุมัติ" nav items (sidebar + bottom bar)
+function updatePendingBadges(){
+  const n = jobs.filter(j => (j.status||'approved')==='pending'
+    && (deptFilter==='ALL' || j.department===deptFilter)).length;
+  document.querySelectorAll('[data-view="queue"]').forEach(btn=>{
+    let b = btn.querySelector('.nav-badge');
+    if (n){
+      if (!b){ b = document.createElement('span'); b.className = 'nav-badge'; btn.appendChild(b); }
+      b.textContent = n;
+    } else if (b){ b.remove(); }
+  });
 }
 
 function renderEmployeesTable(closed){
   const people = peopleInScope();
   const tbody = document.querySelector('#employeesTable tbody');
-  if (people.length===0){ tbody.innerHTML = `<tr><td colspan="4" class="empty-note">ยังไม่มีพนักงานในขอบเขตนี้</td></tr>`; return; }
+  if (people.length===0){ tbody.innerHTML = emptyRow(4, 'ยังไม่มีพนักงานในขอบเขตนี้'); return; }
   tbody.innerHTML = people.map(r=>{
     const inRange = closed.filter(j=>(j.crew||[]).includes(r.name)).length;
     const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
@@ -557,14 +781,56 @@ async function createUserFromForm(){
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
 }
 
+// ---------- view state: loading skeleton / load-error card ----------
+function isFiltered(){ return dateRange!=='all' || deptFilter!=='ALL' || !!searchTerm; }
+
+function clearFilters(){
+  dateRange = 'all'; deptFilter = 'ALL'; searchTerm = '';
+  const s = document.getElementById('searchInput'); if (s) s.value = '';
+  document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.range==='all'));
+  document.querySelectorAll('#deptChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.dept==='ALL'));
+  render();
+}
+
+function skeletonHTML(){
+  const b = n => Array(n).fill('<div class="sk sk-row"></div>').join('');
+  if (activeView==='dashboard')
+    return `<div class="sk sk-strip"></div>
+      <div class="sk-cards"><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-card"></div></div>
+      <div class="sk sk-chart"></div>${b(4)}`;
+  if (activeView==='queue')
+    return `<div class="sk sk-qcard"></div><div class="sk sk-qcard"></div><div class="sk sk-qcard"></div>`;
+  return b(7);
+}
+
+function showViewState(kind){
+  const vs = document.getElementById('viewState');
+  document.querySelector('.main').classList.toggle('has-state', !!kind);
+  if (!kind){ vs.hidden = true; vs.innerHTML = ''; return; }
+  vs.hidden = false;
+  vs.innerHTML = kind==='error'
+    ? `<div class="state-card">
+         <div class="state-ic">!</div>
+         <div class="state-title">โหลดข้อมูลไม่สำเร็จ</div>
+         <div class="state-sub">${esc(loadError || 'เชื่อมต่อฐานข้อมูลไม่ได้')}</div>
+         <button type="button" class="btn-sm primary" id="retryBtn">ลองใหม่</button>
+       </div>`
+    : skeletonHTML();
+}
+
 function render(){
+  if (loadError){ showViewState('error'); return; }
+  if (firstLoad){ showViewState('loading'); return; }
+  showViewState(null);
   const closed = filteredJobs();
+  updatePendingBadges();
   if (activeView==='dashboard'){
-    renderStats(closed); renderDeptBars(closed); renderUnitCards(closed); renderDayChart(); renderRecentTable(closed);
+    renderActionStrip(); renderScopeLine(closed); renderSideCards(closed); renderDayChart(); renderDashJobs(closed);
+  } else if (activeView==='queue'){
+    renderQueue();
   } else if (activeView==='details'){
     renderDetailsTable(closed);
   } else if (activeView==='employees'){
-    renderStats(closed);
     renderEmployeesTable(closed);
   } else if (activeView==='users'){
     renderUsersTable();
@@ -573,11 +839,9 @@ function render(){
 
 // ---------- data refresh ----------
 async function refreshJobs(){
-  try{
-    const { data, error } = await sb.from('jobs').select('*').order('created_at', { ascending:false }).limit(2000);
-    if (error) throw error;
-    jobs = groupJobs(data || []);
-  }catch(e){ document.getElementById('syncText').textContent = 'เชื่อมต่อข้อมูลงานไม่สำเร็จ ('+mapDbError(e)+')'; }
+  const { data, error } = await sb.from('jobs').select('*').order('created_at', { ascending:false }).limit(2000);
+  if (error) throw error;                 // jobs is critical — let refreshAll surface it
+  jobs = groupJobs(data || []);
 }
 async function refreshRoster(){
   try{
@@ -596,16 +860,30 @@ async function refreshUsers(){
 }
 async function refreshAll(){
   document.getElementById('syncText').textContent = 'กำลังโหลดข้อมูล...';
-  await Promise.all([refreshJobs(), refreshRoster(), refreshUsers()]);
+  loadError = null;
+  if (firstLoad) render();                        // paints the skeleton
+  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers()]);
+  if (jobsRes.status === 'rejected'){
+    loadError = mapDbError(jobsRes.reason);
+    document.getElementById('syncText').textContent = 'โหลดข้อมูลไม่สำเร็จ';
+    render();
+    return;
+  }
+  firstLoad = false;
   document.getElementById('syncText').textContent = 'ซิงก์สดกับแอปมือถือ';
   render();
 }
 
 function wireRealtime(){
   if (realtimeChannel) sb.removeChannel(realtimeChannel);
+  // realtime refreshes never blow away the view — a transient failure just
+  // notes it in the sync line; the full error state is for the initial load.
+  const softRefresh = fn => () => fn().then(render).catch(()=>{
+    document.getElementById('syncText').textContent = 'อัปเดตล่าสุดไม่สำเร็จ · จะลองใหม่';
+  });
   realtimeChannel = sb.channel('erp-jobs-changes-'+(currentUser?currentUser.id:'anon'))
-    .on('postgres_changes', {event:'*', schema:'public', table:'jobs'}, () => refreshJobs().then(render))
-    .on('postgres_changes', {event:'*', schema:'public', table:'employees'}, () => refreshRoster().then(render))
+    .on('postgres_changes', {event:'*', schema:'public', table:'jobs'}, softRefresh(refreshJobs))
+    .on('postgres_changes', {event:'*', schema:'public', table:'employees'}, softRefresh(refreshRoster))
     .subscribe();
 }
 

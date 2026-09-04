@@ -1,15 +1,17 @@
 // Edge Function: admin-users
-// Lets an ADMIN create new login accounts from admin.html without ever
-// exposing the service_role key to the browser.
+// Lets an ADMIN create accounts and reset passwords from admin.html without
+// ever exposing the service_role key to the browser.
 //
-// Deploy: Supabase dashboard -> Edge Functions -> new function "admin-users"
-// -> paste this file -> Deploy. SUPABASE_URL / SUPABASE_ANON_KEY /
-// SUPABASE_SERVICE_ROLE_KEY are injected automatically; no secrets to set.
+// Deploy: Supabase dashboard -> Edge Functions -> function "admin-users"
+// -> paste this file -> Deploy. Settings -> Verify JWT = OFF (this function
+// runs its own admin check and the CORS preflight must get through).
+// SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are injected.
 //
-// Editing role / department / employee_code / active on an existing account
-// is done straight from admin.js with the ADMIN's own JWT (the profiles
-// RLS + prevent_profile_privilege_change trigger already allow is_admin()),
-// so this function only handles account creation.
+// Editing role / department / employee_code / active is done straight from
+// admin.js with the ADMIN's own JWT (RLS + the profiles trigger allow
+// is_admin()). This function covers the two ops that need service_role:
+//   { action: "create",       email, password, full_name, role, department }
+//   { action: "set-password", user_id, password }
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -37,7 +39,7 @@ Deno.serve(async (req) => {
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  // 1. identify the caller from their bearer token
+  // identify the caller from their bearer token
   const authHeader = req.headers.get("Authorization") ?? "";
   const asCaller = createClient(url, anonKey, {
     global: { headers: { Authorization: authHeader } },
@@ -45,7 +47,7 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authErr } = await asCaller.auth.getUser();
   if (authErr || !user) return json({ error: "unauthorized" }, 401);
 
-  // 2. caller must be an active ADMIN
+  // caller must be an active ADMIN
   const { data: me, error: meErr } = await asCaller
     .from("profiles").select("role, active").eq("id", user.id).single();
   if (meErr || !me || me.role !== "ADMIN" || me.active === false) {
@@ -55,50 +57,60 @@ Deno.serve(async (req) => {
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
 
-  if (body.action !== "create") return json({ error: "unknown action" }, 400);
-
-  const email = String(body.email ?? "").trim().toLowerCase();
-  const password = String(body.password ?? "");
-  const fullName = String(body.full_name ?? "").trim();
-  const role = String(body.role ?? "");
-  const department = DEPTS.includes(String(body.department))
-    ? String(body.department) : null;
-
-  if (!email || !password || !fullName || !role) {
-    return json({ error: "ต้องกรอก อีเมล / รหัสผ่าน / ชื่อ / สิทธิ์ ให้ครบ" }, 400);
-  }
-  if (!ROLES.includes(role)) return json({ error: "สิทธิ์ไม่ถูกต้อง" }, 400);
-  if (password.length < 8) return json({ error: "รหัสผ่านต้องอย่างน้อย 8 ตัว" }, 400);
-  if ((role === "SUPERVISOR" || role === "USER") && !department) {
-    return json({ error: "SUPERVISOR / USER ต้องระบุแผนก" }, 400);
-  }
-
-  // service_role is only used for the auth.users side (GoTrue admin API);
-  // the profiles row is written with the caller's ADMIN JWT so it needs no
-  // extra grant — `authenticated` already has INSERT and the RLS check is
-  // `is_admin()`.
+  // service_role only touches auth.users (GoTrue admin API)
   const admin = createClient(url, serviceKey);
 
-  // 3. create the auth user (already confirmed — temp password from the form)
-  const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    email, password, email_confirm: true,
-  });
-  if (createErr || !created?.user) {
-    return json({ error: "สร้างบัญชีไม่สำเร็จ: " + (createErr?.message ?? "unknown") }, 400);
+  if (body.action === "set-password") {
+    const userId = String(body.user_id ?? "");
+    const password = String(body.password ?? "");
+    if (!userId) return json({ error: "user_id required" }, 400);
+    if (password.length < 8) return json({ error: "password must be >= 8 chars" }, 400);
+    const { error } = await admin.auth.admin.updateUserById(userId, { password });
+    if (error) return json({ error: "reset failed: " + error.message }, 400);
+    return json({ ok: true });
   }
 
-  // 4. paired profiles row; roll the auth user back if this fails
-  const { error: profErr } = await asCaller.from("profiles").insert({
-    id: created.user.id,
-    full_name: fullName,
-    role,
-    department: role === "ADMIN" || role === "ASSISTANT" ? null : department,
-    active: true,
-  });
-  if (profErr) {
-    await admin.auth.admin.deleteUser(created.user.id);
-    return json({ error: "บันทึกโปรไฟล์ไม่สำเร็จ: " + profErr.message }, 400);
+  if (body.action === "create") {
+    const email = String(body.email ?? "").trim().toLowerCase();
+    const password = String(body.password ?? "");
+    const fullName = String(body.full_name ?? "").trim();
+    const role = String(body.role ?? "");
+    const department = DEPTS.includes(String(body.department))
+      ? String(body.department) : null;
+
+    if (!email || !password || !fullName || !role) {
+      return json({ error: "missing fields" }, 400);
+    }
+    if (!ROLES.includes(role)) return json({ error: "bad role" }, 400);
+    if (password.length < 8) return json({ error: "password must be >= 8 chars" }, 400);
+    if ((role === "SUPERVISOR" || role === "USER") && !department) {
+      return json({ error: "SUPERVISOR / USER needs a department" }, 400);
+    }
+
+    const { data: created, error: createErr } = await admin.auth.admin.createUser({
+      email, password, email_confirm: true,
+    });
+    if (createErr || !created?.user) {
+      return json({ error: "create failed: " + (createErr?.message ?? "unknown") }, 400);
+    }
+
+    // profiles row written with the caller's ADMIN JWT (authenticated has
+    // INSERT; RLS check is is_admin()) — this project never granted DML to
+    // service_role. Roll the auth user back if the insert fails.
+    const { error: profErr } = await asCaller.from("profiles").insert({
+      id: created.user.id,
+      full_name: fullName,
+      role,
+      department: role === "ADMIN" || role === "ASSISTANT" ? null : department,
+      active: true,
+    });
+    if (profErr) {
+      await admin.auth.admin.deleteUser(created.user.id);
+      return json({ error: "profile insert failed: " + profErr.message }, 400);
+    }
+
+    return json({ ok: true, id: created.user.id, email });
   }
 
-  return json({ ok: true, id: created.user.id, email });
+  return json({ error: "unknown action" }, 400);
 });

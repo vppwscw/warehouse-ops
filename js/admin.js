@@ -660,10 +660,11 @@ async function setJobStatus(jobId, status){
 async function deleteJob(jobId){
   const j = jobs.find(x=>x.id===jobId);
   const ids = (j && j.rowIds && j.rowIds.length) ? j.rowIds : [jobId];
-  const task = j && taskById(j.task_id);
+  const task = (j && taskById(j.task_id)) || (j && taskList.find(t=>t.id===j.task_id));
+  const name = task ? (task.label || task.name) : (j && j.task_id) || '';
   const when = (j && j.details && j.details.date) ? ` (${j.details.date})` : '';
   const go = await confirmModal(
-    `ลบงาน "${task ? task.label : (j && j.task_id) || ''}"${when} ถาวร?\nลบ ${ids.length} แถว · กู้คืนไม่ได้`,
+    `ลบงาน "${name}"${when} ถาวร?\nลบ ${ids.length} แถว · กู้คืนไม่ได้`,
     { danger:true, yes:'ลบถาวร' });
   if (!go) return;
   const { error } = await sb.from('jobs').delete().in('id', ids);
@@ -821,7 +822,7 @@ function renderTasksAdmin(){
   const ro = isReadOnly();
   const tb = document.querySelector('#tasksTable tbody');
   if (!tb) return;
-  if (!taskList.length){ tb.innerHTML = emptyRow(ro?3:4, 'ยังไม่มีชนิดงาน — หัวหน้างานเพิ่มได้จากแอปมือถือ'); return; }
+  if (!taskList.length){ tb.innerHTML = `<tr><td colspan="${ro?3:4}" class="empty-note">ยังไม่มีชนิดงาน — หัวหน้างานเพิ่มได้จากแอปมือถือ</td></tr>`; return; }
   tb.innerHTML = taskList.map(t=>{
     const on = t.active !== false;
     const linked = jobs.reduce((n,j)=> n + (j.task_id===t.id ? ((j.rowIds&&j.rowIds.length)||1) : 0), 0);

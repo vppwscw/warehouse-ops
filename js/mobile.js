@@ -138,6 +138,16 @@ async function loadProfile(user){
   return data;
 }
 
+// Which app(s) this account may open. An explicit profiles.apps wins; otherwise
+// the role default. 'erp' = admin.html, 'mobile' = index.html.
+function allowedApps(p){
+  if (p && Array.isArray(p.apps) && p.apps.length) return p.apps;
+  if (!p) return [];
+  if (p.role === 'ADMIN') return ['erp','mobile'];
+  if (p.role === 'ASSISTANT') return ['erp'];
+  return ['mobile'];
+}
+
 async function afterLogin(user){
   currentUser = user;
   try{
@@ -149,6 +159,12 @@ async function afterLogin(user){
   }
   if (profile.active === false){
     document.getElementById('loginHint').textContent = 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+    await sb.auth.signOut();
+    profile = null;
+    return;
+  }
+  if (!allowedApps(profile).includes('mobile')){
+    document.getElementById('loginHint').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้แอปมือถือ (ใช้ได้เฉพาะระบบ ERP)';
     await sb.auth.signOut();
     profile = null;
     return;

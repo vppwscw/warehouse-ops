@@ -180,6 +180,16 @@ async function doLogout(){
   showScreen('login');
 }
 
+// Which app(s) this account may open. An explicit profiles.apps wins; otherwise
+// the role default. 'erp' = admin.html, 'mobile' = index.html.
+function allowedApps(p){
+  if (p && Array.isArray(p.apps) && p.apps.length) return p.apps;
+  if (!p) return [];
+  if (p.role === 'ADMIN') return ['erp','mobile'];
+  if (p.role === 'ASSISTANT') return ['erp'];
+  return ['mobile'];
+}
+
 async function afterLogin(user){
   currentUser = user;
   const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
@@ -194,7 +204,8 @@ async function afterLogin(user){
     showScreen('denied');
     return;
   }
-  if (!['ADMIN','ASSISTANT'].includes(profile.role)){
+  if (!allowedApps(profile).includes('erp')){
+    document.getElementById('deniedText').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้ระบบ ERP';
     showScreen('denied');
     return;
   }
@@ -293,6 +304,7 @@ document.addEventListener('click', e=>{
   if (presetBtn){ setJobsPreset(presetBtn.dataset.preset); return; }
 
   if (e.target.closest('#actionStripBtn')){ goView('queue'); return; }
+  if (e.target.closest('#exportCsvBtn')){ exportJobsCsv(); return; }
 
   const batchBtn = e.target.closest('[data-approve-dept]');
   if (batchBtn){ approveDept(batchBtn.dataset.approveDept); return; }
@@ -362,6 +374,43 @@ function filteredJobs(){
     if (deptFilter!=='ALL' && j.department!==deptFilter) return false;
     return matchSearch(j);
   });
+}
+
+// ---------- CSV export (current filter) ----------
+function csvCell(v){
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function exportJobsCsv(){
+  const rows = filteredJobs();
+  const head = ['วันที่','ฝั่ง','งาน','ทีม','เริ่ม','จบ','นาที','จำนวน','หน่วย','มีปัญหา','สถานะ'];
+  const lines = [head.join(',')];
+  rows.forEach(j=>{
+    const d = j.details || {};
+    const task = taskById(j.task_id);
+    const unit = task ? (task.unit==='containers' ? 'ตู้/คัน' : (task.unitLabel||'')) : '';
+    const qty = task && task.unit==='containers'
+      ? (num(d.vehicles) || num(d.containers)*(task.vehiclesPerContainer||56))
+      : num(d.qty);
+    lines.push([
+      d.date||'', DEPT_PLAIN[j.department]||j.department||'',
+      task ? task.label : (j.task_id||''),
+      (j.crew||[]).join(' / '),
+      d.start||'', d.end||'', (d.mins==null?'':num(d.mins)),
+      qty, unit,
+      (task && task.hasIssue && d.hasIssue) ? num(d.issueCount) : '',
+      STATUS_LABEL[j.status||'approved'] || j.status || '',
+    ].map(csvCell).join(','));
+  });
+  const scope = deptFilter==='ALL' ? 'ทุกฝั่ง' : (DEPT_PLAIN[deptFilter]||deptFilter);
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `warehouse-jobs_${scope}_${dateRange}_${todayISO()}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast(`ส่งออก ${rows.length} รายการ`, 'ok');
 }
 
 function formatResult(details, task){
@@ -801,6 +850,13 @@ function deptCheckboxes(selected, cls){
     `<label class="dept-cb"><input type="checkbox" class="${cls}" value="${d}" ${set.has(d)?'checked':''}> ${esc(DEPT_PLAIN[d]||d)}</label>`
   ).join('') + `</span>`;
 }
+const APP_LABEL = { erp:'ERP', mobile:'มือถือ' };
+function appCheckboxes(selected, cls){
+  const set = new Set(selected || []);
+  return `<span class="dept-cb-row">` + ['erp','mobile'].map(a=>
+    `<label class="dept-cb"><input type="checkbox" class="${cls}" value="${a}" ${set.has(a)?'checked':''}> ${APP_LABEL[a]}</label>`
+  ).join('') + `</span>`;
+}
 
 function renderUsersTable(){
   const tbody = document.querySelector('#usersTable tbody');
@@ -819,9 +875,12 @@ function renderUsersTable(){
     const cbs = document.getElementById('nuDeptCbs');
     if (cbs) cbs.innerHTML = DEPT_KEYS.map(d=>
       `<label class="dept-cb"><input type="checkbox" class="nu-dept-cb" value="${d}"> ${esc(DEPT_PLAIN[d]||d)}</label>`).join('');
+    const acbs = document.getElementById('nuAppCbs');
+    if (acbs) acbs.innerHTML = ['erp','mobile'].map(a=>
+      `<label class="dept-cb"><input type="checkbox" class="nu-app-cb" value="${a}"> ${APP_LABEL[a]}</label>`).join('');
   }
 
-  if (users.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</td></tr>`; return; }
+  if (users.length===0){ tbody.innerHTML = `<tr><td colspan="7" class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</td></tr>`; return; }
   tbody.innerHTML = users.map(u=>{
     const active = u.active !== false;
     const isSelf = currentUser && u.id === currentUser.id;
@@ -830,11 +889,16 @@ function renderUsersTable(){
       ? uDepts.map(d=>`<span class="badge ${esc(d)}"><span class="dot"></span>${DEPT_PLAIN[d]||esc(d)}</span>`).join(' ')
       : '<span class="td-sub">ทุกแผนก</span>';
     const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
+    const effApps = allowedApps(u);
+    const appsBadge = (Array.isArray(u.apps) && u.apps.length)
+      ? effApps.map(a=>`<span class="badge role">${APP_LABEL[a]||esc(a)}</span>`).join(' ')
+      : `<span class="td-sub">${effApps.map(a=>APP_LABEL[a]||a).join(' + ')} (ตาม role)</span>`;
     if (ro){
       return `<tr>
         <td>${esc(u.full_name||'–')}</td>
         <td><span class="badge role">${ROLE_LABEL[u.role]||esc(u.role)}</span></td>
         <td>${deptBadge}</td>
+        <td>${appsBadge}</td>
         <td>${esc(u.employee_code || '–')}</td>
         <td>${statusBadge}</td>
         <td></td>
@@ -844,6 +908,7 @@ function renderUsersTable(){
       <td>${esc(u.full_name||'–')}</td>
       <td><select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select></td>
       <td>${deptCheckboxes(uDepts, 'u-dept-cb')}</td>
+      <td>${appCheckboxes(effApps, 'u-app-cb')}</td>
       <td><input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส"></td>
       <td>${isSelf ? statusBadge
         : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}</td>
@@ -865,10 +930,13 @@ async function saveUserRow(userId){
   const department = departments && departments.length ? departments[0] : null;
   const employee_code = row.querySelector('[data-u-code]').value.trim() || null;
   if (!noDept && (!departments || !departments.length)){ toast('SUPERVISOR / USER ต้องเลือกอย่างน้อย 1 ฝั่ง'); return; }
+  const appsChecked = [...row.querySelectorAll('.u-app-cb:checked')].map(c=>c.value);
+  if (!appsChecked.length){ toast('เลือกระบบที่ใช้ได้อย่างน้อย 1 ระบบ (ERP / มือถือ)'); return; }
+  const apps = appsChecked;
   const btn = row.querySelector('[data-save-user]');
   const label = btn.textContent; btn.textContent = '...'; btn.disabled = true;
   try{
-    const { error } = await sb.from('profiles').update({ role, department, departments, employee_code }).eq('id', userId);
+    const { error } = await sb.from('profiles').update({ role, department, departments, employee_code, apps }).eq('id', userId);
     if (error) throw error;
     await refreshUsers(); renderUsersTable();
     toast('บันทึกแล้ว', 'ok');
@@ -920,6 +988,7 @@ async function createUserFromForm(){
   const password = document.getElementById('nuPass').value;
   const role = document.getElementById('nuRole').value;
   const departments = [...document.querySelectorAll('#nuDeptCbs .nu-dept-cb:checked')].map(c=>c.value);
+  const apps = [...document.querySelectorAll('#nuAppCbs .nu-app-cb:checked')].map(c=>c.value);
   if (!email || !full_name || !password){ hint.textContent = 'กรอก อีเมล / ชื่อ / รหัสผ่าน ให้ครบ'; return; }
   if (password.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
   if ((role === 'SUPERVISOR' || role === 'USER') && !departments.length){ hint.textContent = 'SUPERVISOR / USER ต้องเลือกอย่างน้อย 1 ฝั่ง'; return; }
@@ -933,13 +1002,13 @@ async function createUserFromForm(){
         'Authorization': 'Bearer ' + session.access_token,
         'apikey': SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ action: 'create', email, password, full_name, role, departments }),
+      body: JSON.stringify({ action: 'create', email, password, full_name, role, departments, apps }),
     });
     const out = await res.json().catch(()=>({}));
     if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
     hint.textContent = `สร้างบัญชี ${email} แล้ว`;
     ['nuEmail','nuName','nuPass'].forEach(id=>{ document.getElementById(id).value = ''; });
-    document.querySelectorAll('#nuDeptCbs .nu-dept-cb:checked').forEach(c=>{ c.checked = false; });
+    document.querySelectorAll('#nuDeptCbs .nu-dept-cb:checked, #nuAppCbs .nu-app-cb:checked').forEach(c=>{ c.checked = false; });
     await refreshUsers(); renderUsersTable();
     setTimeout(()=>{ document.getElementById('addUserForm').hidden = true; hint.textContent = ''; }, 1400);
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }

@@ -54,6 +54,7 @@
         <p class="sub" id="pageSub">สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก</p>
       </div>
       <div class="pagehead-actions">
+        <button type="button" class="btn-sm" id="exportCsvBtn" title="ดาวน์โหลดข้อมูลงานตามตัวกรองปัจจุบันเป็นไฟล์ CSV">⬇ ส่งออก CSV</button>
         <button type="button" class="gear-btn" id="gearBtn" data-view="users" title="ผู้ใช้งานระบบ" aria-label="ผู้ใช้งานระบบ"></button>
         <button type="button" class="btn-sm" id="changePwBtn">เปลี่ยนรหัสผ่าน</button>
         <button type="button" class="logout-btn" id="logoutBtn">ออกจากระบบ</button>
@@ -171,6 +172,7 @@
           <div class="field"><label for="nuPass">รหัสผ่านชั่วคราว</label><input type="text" id="nuPass" placeholder="อย่างน้อย 8 ตัว" autocomplete="off"></div>
           <div class="field"><label for="nuRole">สิทธิ์</label><select id="nuRole"></select></div>
           <div class="field"><label>ฝั่ง (เลือกได้หลายฝั่ง)</label><div id="nuDeptCbs" class="dept-cb-row"></div></div>
+          <div class="field"><label>ระบบที่ใช้ได้ (เว้นว่าง = ตาม role)</label><div id="nuAppCbs" class="dept-cb-row"></div></div>
         </div>
         <div class="auf-actions">
           <button type="button" class="btn-sm primary" id="createUserBtn">สร้างบัญชี</button>
@@ -181,7 +183,7 @@
       <p class="sub" id="usersViewNote" style="margin:0 0 14px;">รายชื่อผู้ใช้งานในระบบ</p>
       <div class="table-wrap">
         <table id="usersTable">
-          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>ฝั่ง</th><th>รหัสพนักงาน</th><th>สถานะ</th><th></th></tr></thead>
+          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>ฝั่ง</th><th>ระบบที่ใช้ได้</th><th>รหัสพนักงาน</th><th>สถานะ</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -223,6 +225,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=20"></script>
+<script src="js/admin.js?v=21"></script>
 </body>
 </html>

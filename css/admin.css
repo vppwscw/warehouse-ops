@@ -311,12 +311,43 @@ tbody tr:hover{background:var(--surface-2);}
 .dept-cb-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 .dept-cb{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--ink-dim);cursor:pointer;white-space:nowrap;}
 .dept-cb input{accent-color:var(--accent);width:15px;height:15px;}
+.field-wide{grid-column:1/-1;}
+
+/* warehouse tag — neutral, sits next to the coloured dept badge */
+.wh-tag{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:4px 9px;border-radius:100px;
+  background:var(--surface-3);color:var(--ink-dim);white-space:nowrap;}
+
+/* staff_scope grid — warehouse × department checkboxes in the users view */
+.scope-grid{border-collapse:collapse;font-size:11.5px;}
+.scope-grid th{font-weight:700;color:var(--ink-dim);padding:3px 8px;text-align:center;background:none;}
+.scope-grid tbody th{text-align:right;white-space:nowrap;}
+.scope-grid td{padding:3px 8px;text-align:center;}
+.scope-grid input{accent-color:var(--accent);width:16px;height:16px;cursor:pointer;}
+.scope-cell{min-width:150px;}
+.scope-sum{display:inline-block;font-size:11.5px;color:var(--ink-dim);margin-right:8px;}
+.scope-sum b{color:var(--ink);}
+
 tbody tr.row-inactive{opacity:.5;}
 .pagehead-actions{display:flex;gap:8px;align-items:center;flex:none;}
 
-/* login screen (full-page, reused lock-panel style) */
-.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
-.denied-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+/* login screen */
+.login-wrap{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--app-bg);}
+.denied-wrap{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;}
+
+.login-col{width:100%;max-width:352px;}
+.login-brand{display:flex;align-items:center;gap:9px;margin:0 2px 16px;}
+.login-logo{width:26px;height:26px;flex:none;color:var(--accent);display:flex;align-items:center;justify-content:center;}
+.login-logo svg{width:22px;height:22px;}
+.login-wordmark{font-family:'IBM Plex Sans Thai',sans-serif;font-weight:700;font-size:16px;letter-spacing:.1px;color:var(--ink);}
+.login-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:26px 24px 22px;box-shadow:var(--shadow-sm);}
+.login-h{font-size:17px;margin:0 0 3px;}
+.login-p{font-size:12px;color:var(--ink-dim);margin:0 0 20px;}
+.login-card .field + .field{margin-top:13px;}
+.login-card .field input{padding:11px 12px;border-radius:8px;}
+.login-card .field input::placeholder{color:var(--ink-faint);}
+.login-card .btn{margin-top:18px;}
+.login-card .form-hint:not(:empty){color:var(--danger);}
+.login-foot{font-size:11px;color:var(--ink-faint);text-align:center;margin:14px 0 0;}
 footer.build-footer{font-size:10.5px;color:var(--ink-faint);text-align:center;padding:18px 0 8px;}
 
 /* password modal (inline replacement for window.prompt) */

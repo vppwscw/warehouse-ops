@@ -2,6 +2,8 @@
 
 const DEPT_KEYS = ['INB','OUT','INV'];
 const DEPT_PLAIN = { INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' };
+const WH_KEYS = ['A','B'];
+const WH_PLAIN = { A:'คลัง A', B:'คลัง B' };
 const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
@@ -42,12 +44,13 @@ const ICONS = {
   gear:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   queue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5h6a1 1 0 0 1 1 1V7H8V5.5a1 1 0 0 1 1-1z"/><rect x="4" y="6" width="16" height="15" rx="2"/><path d="M8.5 13.5l2.2 2.2 4.8-4.8"/></svg>',
   box:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
+  matrix:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1.4"/><rect x="14.5" y="3.5" width="6" height="6" rx="1.4"/><rect x="3.5" y="14.5" width="6" height="6" rx="1.4"/><rect x="14.5" y="14.5" width="6" height="6" rx="1.4"/></svg>',
 };
 
 let profile = null, currentUser = null;
-let jobs = [], roster = [], users = [], allEmployees = [], taskList = [];
+let jobs = [], roster = [], users = [], allEmployees = [], taskList = [], scopes = [];
 let realtimeChannel = null;
-let dateRange = 'today', deptFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
+let dateRange = 'today', deptFilter = 'ALL', whFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
 let prevSideCounts = {}; // last-rendered side-card job counts, for the counter animation
 let firstLoad = true;    // true until the first successful data load (drives the skeleton)
@@ -205,7 +208,7 @@ async function afterLogin(user){
     return;
   }
   if (!allowedApps(profile).includes('erp')){
-    document.getElementById('deniedText').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้ระบบ ERP';
+    document.getElementById('deniedText').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้ Skill Matrix';
     showScreen('denied');
     return;
   }
@@ -258,9 +261,9 @@ document.getElementById('botNav').innerHTML = NAV.map(n=>`
     ${ICONS[n.icon]}<span>${n.short}</span>
   </button>`).join('');
 document.getElementById('gearBtn').innerHTML = ICONS.gear;
-document.getElementById('loginLockIcon').innerHTML = ICONS.lock;
+document.getElementById('loginLockIcon').innerHTML = ICONS.matrix;
 document.getElementById('deniedLockIcon').innerHTML = ICONS.lock;
-document.getElementById('brandMark').innerHTML = ICONS.box;
+document.getElementById('brandMark').innerHTML = ICONS.matrix;
 
 function goView(id){
   activeView = id;
@@ -270,7 +273,7 @@ function goView(id){
   const n = ALL_NAV.find(x=>x.id===id) || NAV[0];
   document.getElementById('pageTitle').textContent = n.title;
   document.getElementById('pageSub').textContent = n.sub;
-  if (id==='users') renderUsersTable();
+  if (id==='users') Promise.all([refreshUsers(), refreshScopes()]).then(renderUsersTable);
   if (id==='tasks') refreshTasksAdmin().then(render);
   if (id==='employees') refreshEmployeesAll().then(render);
   render();
@@ -295,6 +298,12 @@ document.addEventListener('click', e=>{
     document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
     rangeChip.setAttribute('aria-pressed','true');
     dateRange = rangeChip.dataset.range; render(); return;
+  }
+  const whChip = e.target.closest('#whChips [data-wh]');
+  if (whChip){
+    document.querySelectorAll('#whChips .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
+    whChip.setAttribute('aria-pressed','true');
+    whFilter = whChip.dataset.wh; render(); return;
   }
   const deptChip = e.target.closest('#deptChips [data-dept]');
   if (deptChip){
@@ -370,6 +379,12 @@ function matchSearch(j){
   const task = taskById(j.task_id);
   return (((task?task.label:'') + ' ' + (j.crew||[]).join(' ')).toLowerCase()).includes(searchTerm);
 }
+// warehouse + department chip filters — every jobs list runs through this
+function matchScope(j){
+  if (whFilter!=='ALL' && j.warehouse!==whFilter) return false;
+  if (deptFilter!=='ALL' && j.department!==deptFilter) return false;
+  return true;
+}
 function filteredJobs(){
   const todayStr = todayISO();
   let fromStr = null;
@@ -381,7 +396,7 @@ function filteredJobs(){
     const d = j.details || {};
     if (fromStr && d.date < fromStr) return false;
     if (dateRange==='today' && d.date !== todayStr) return false;
-    if (deptFilter!=='ALL' && j.department!==deptFilter) return false;
+    if (!matchScope(j)) return false;
     return matchSearch(j);
   });
 }
@@ -393,7 +408,7 @@ function csvCell(v){
 }
 function exportJobsCsv(){
   const rows = filteredJobs();
-  const head = ['วันที่','ฝั่ง','งาน','ทีม','เริ่ม','จบ','นาที','จำนวน','หน่วย','มีปัญหา','สถานะ'];
+  const head = ['วันที่','คลัง','ฝั่ง','งาน','ทีม','เริ่ม','จบ','นาที','จำนวน','หน่วย','มีปัญหา','สถานะ'];
   const lines = [head.join(',')];
   rows.forEach(j=>{
     const d = j.details || {};
@@ -403,7 +418,8 @@ function exportJobsCsv(){
       ? (num(d.vehicles) || num(d.containers)*(task.vehiclesPerContainer||56))
       : num(d.qty);
     lines.push([
-      d.date||'', DEPT_PLAIN[j.department]||j.department||'',
+      d.date||'', WH_PLAIN[j.warehouse]||j.warehouse||'',
+      DEPT_PLAIN[j.department]||j.department||'',
       task ? task.label : (j.task_id||''),
       (j.crew||[]).join(' / '),
       d.start||'', d.end||'', (d.mins==null?'':num(d.mins)),
@@ -413,11 +429,12 @@ function exportJobsCsv(){
     ].map(csvCell).join(','));
   });
   const scope = deptFilter==='ALL' ? 'ทุกฝั่ง' : (DEPT_PLAIN[deptFilter]||deptFilter);
+  const whScope = whFilter==='ALL' ? 'ทุกคลัง' : (WH_PLAIN[whFilter]||whFilter);
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `warehouse-jobs_${scope}_${dateRange}_${todayISO()}.csv`;
+  a.download = `warehouse-jobs_${whScope}_${scope}_${dateRange}_${todayISO()}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
   toast(`ส่งออก ${rows.length} รายการ`, 'ok');
@@ -438,10 +455,11 @@ function formatResult(details, task){
 // actually appear in job crews — same approach as the mobile history/matrix.
 function peopleInScope(){
   const inDept = d => deptFilter==='ALL' || d===deptFilter;
+  const inWh = w => whFilter==='ALL' || w===whFilter;
   const byName = new Map(); // name -> department (roster wins, else first job's dept)
-  roster.forEach(r=>{ if (inDept(r.department)) byName.set(r.name, r.department); });
+  roster.forEach(r=>{ if (inDept(r.department) && inWh(r.warehouse)) byName.set(r.name, r.department); });
   jobs.forEach(j=>{
-    if (!inDept(j.department)) return;
+    if (!inDept(j.department) || !inWh(j.warehouse)) return;
     (j.crew||[]).forEach(n=>{ if (!byName.has(n)) byName.set(n, j.department); });
   });
   return [...byName.entries()]
@@ -471,8 +489,7 @@ function ageText(iso){
 function renderActionStrip(){
   const el = document.getElementById('actionStrip');
   if (!el) return;
-  const pend = jobs.filter(j => (j.status||'approved')==='pending'
-    && (deptFilter==='ALL' || j.department===deptFilter));
+  const pend = jobs.filter(j => (j.status||'approved')==='pending' && matchScope(j));
   el.hidden = false;
   if (!pend.length){
     el.className = 'action-strip ok';
@@ -492,7 +509,8 @@ function renderScopeLine(closed){
   const depts = deptFilter==='ALL' ? DEPT_KEYS : [deptFilter];
   const dots = depts.map(d=>`<span class="legend-dot" style="background:var(--${d.toLowerCase()})"></span>`).join('');
   const deptTxt = deptFilter==='ALL' ? 'ทุกฝั่ง' : DEPT_PLAIN[deptFilter];
-  let s = `${dots} กำลังดู · <b>${esc(deptTxt)}</b> · <b>${esc(rangeLabel())}</b> · ${closed.length} งาน`;
+  const whTxt = whFilter==='ALL' ? 'ทุกคลัง' : WH_PLAIN[whFilter];
+  let s = `${dots} กำลังดู · <b>${esc(whTxt)}</b> · <b>${esc(deptTxt)}</b> · <b>${esc(rangeLabel())}</b> · ${closed.length} งาน`;
   if (searchTerm) s += ` · ค้นหา "${esc(searchTerm)}"`;
   el.innerHTML = s;
 }
@@ -500,7 +518,8 @@ function renderScopeLine(closed){
 // per-department 7-day job counts, for the card sparklines
 function daySeries(dept){
   const days = [...Array(7)].map((_,i)=>daysAgoISO(6-i));
-  return days.map(dt => jobs.filter(j => (j.details&&j.details.date)===dt && j.department===dept).length);
+  const inWh = j => whFilter==='ALL' || j.warehouse===whFilter;
+  return days.map(dt => jobs.filter(j => (j.details&&j.details.date)===dt && j.department===dept && inWh(j)).length);
 }
 
 // One card per side (เข้า/ออก/สต๊อก): job count + unit output + trend.
@@ -580,7 +599,7 @@ function renderSideCards(closed){
 
 function renderDayChart(){
   const days = [...Array(7)].map((_,i)=>daysAgoISO(6-i));
-  const counts = days.map(d=> jobs.filter(j=> (j.details&&j.details.date)===d && (deptFilter==='ALL'||j.department===deptFilter)).length);
+  const counts = days.map(d=> jobs.filter(j=> (j.details&&j.details.date)===d && matchScope(j)).length);
   const max = Math.max(1, ...counts);
   const wd = ['อา','จ','อ','พ','พฤ','ศ','ส'];
   document.getElementById('dayChart').innerHTML = days.map((d,i)=>{
@@ -603,6 +622,7 @@ function jobRowHTML(j){
   const canAct = !isReadOnly() && status==='pending';
   return `<tr>
     <td class="mono">${esc(d.date)}</td>
+    <td><span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span></td>
     <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
     <td class="td-task">${esc(task?task.label:j.task_id)}</td>
     <td>${esc((j.crew||[]).join(', '))}</td>
@@ -625,7 +645,7 @@ function renderJobRows(tbody, rows, emptyMsg){
   if (!tbody) return;
   tbody.innerHTML = rows.length
     ? rows.map(jobRowHTML).join('')
-    : emptyRow(9, emptyMsg || 'ไม่พบรายการ');
+    : emptyRow(10, emptyMsg || 'ไม่พบรายการ');
 }
 
 // Dashboard bottom table — filtered set, narrowed by the preset tabs, capped.
@@ -677,9 +697,7 @@ async function deleteJob(jobId){
 // Pending jobs in the current department scope, ignoring the date filter —
 // an old pending job still needs approving even while looking at "วันนี้".
 function queuePending(){
-  return jobs.filter(j => (j.status||'approved')==='pending'
-    && (deptFilter==='ALL' || j.department===deptFilter)
-    && matchSearch(j));
+  return jobs.filter(j => (j.status||'approved')==='pending' && matchScope(j) && matchSearch(j));
 }
 function isProblem(j){
   const t = taskById(j.task_id);
@@ -738,6 +756,7 @@ function renderQueue(){
     return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}">
       <div class="q-main">
         <div class="q-top">
+          <span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span>
           <span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span>
           <span class="pill ${r.cls}">${esc(r.txt)}</span>
         </div>
@@ -771,8 +790,7 @@ async function approveDept(dept){
 
 // pending-count badge on the "คิวอนุมัติ" nav items (sidebar + bottom bar)
 function updatePendingBadges(){
-  const n = jobs.filter(j => (j.status||'approved')==='pending'
-    && (deptFilter==='ALL' || j.department===deptFilter)).length;
+  const n = jobs.filter(j => (j.status||'approved')==='pending' && matchScope(j)).length;
   document.querySelectorAll('[data-view="queue"]').forEach(btn=>{
     let b = btn.querySelector('.nav-badge');
     if (n){
@@ -793,13 +811,17 @@ function renderEmpRoster(){
   if (ro){ const f = document.getElementById('addEmpForm'); if (f) f.hidden = true; return; }
   const neDept = document.getElementById('neDept');
   if (neDept && !neDept.options.length) neDept.innerHTML = deptOptions(DEPT_KEYS[0]);
+  const neWh = document.getElementById('neWh');
+  if (neWh && !neWh.options.length) neWh.innerHTML = WH_KEYS.map(w=>`<option value="${w}">${WH_PLAIN[w]}</option>`).join('');
   const tb = document.querySelector('#empRosterTable tbody');
   if (!tb) return;
-  if (!allEmployees.length){ tb.innerHTML = emptyRow(4, 'ยังไม่มีพนักงานในรายชื่อ — กด ＋ เพิ่มพนักงาน'); return; }
-  tb.innerHTML = allEmployees.map(em=>{
+  const list = allEmployees.filter(em => whFilter==='ALL' || em.warehouse===whFilter);
+  if (!list.length){ tb.innerHTML = emptyRow(5, 'ยังไม่มีพนักงานในรายชื่อ — กด ＋ เพิ่มพนักงาน'); return; }
+  tb.innerHTML = list.map(em=>{
     const on = em.active !== false;
     return `<tr class="${on?'':'row-inactive'}">
       <td>${esc(em.name)}</td>
+      <td><span class="wh-tag">${esc(WH_PLAIN[em.warehouse]||em.warehouse||'–')}</span></td>
       <td><span class="badge ${esc(em.department)}"><span class="dot"></span>${DEPT_PLAIN[em.department]||esc(em.department)}</span></td>
       <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
       <td>
@@ -820,14 +842,17 @@ async function refreshTasksAdmin(){
 }
 function renderTasksAdmin(){
   const ro = isReadOnly();
+  const cols = ro ? 4 : 5;
   const tb = document.querySelector('#tasksTable tbody');
   if (!tb) return;
-  if (!taskList.length){ tb.innerHTML = `<tr><td colspan="${ro?3:4}" class="empty-note">ยังไม่มีชนิดงาน — หัวหน้างานเพิ่มได้จากแอปมือถือ</td></tr>`; return; }
-  tb.innerHTML = taskList.map(t=>{
+  const list = taskList.filter(t => whFilter==='ALL' || t.warehouse===whFilter);
+  if (!list.length){ tb.innerHTML = `<tr><td colspan="${cols}" class="empty-note">ยังไม่มีชนิดงาน${whFilter!=='ALL'?'ในคลังนี้':''} — หัวหน้างานเพิ่มได้จากแอปมือถือ</td></tr>`; return; }
+  tb.innerHTML = list.map(t=>{
     const on = t.active !== false;
     const linked = jobs.reduce((n,j)=> n + (j.task_id===t.id ? ((j.rowIds&&j.rowIds.length)||1) : 0), 0);
     return `<tr class="${on?'':'row-inactive'}">
       <td>${esc(t.name)}${t.unit_label ? ` <span style="color:var(--ink-dim);font-size:12px;">· ${esc(t.unit_label)}</span>` : ''}</td>
+      <td><span class="wh-tag">${esc(WH_PLAIN[t.warehouse]||t.warehouse||'–')}</span></td>
       <td><span class="badge ${esc(t.department)}"><span class="dot"></span>${DEPT_PLAIN[t.department]||esc(t.department)}</span></td>
       <td class="mono">${linked || ''}</td>
       ${ro ? '' : `<td>
@@ -868,11 +893,12 @@ async function createEmpFromForm(){
   const hint = document.getElementById('addEmpHint');
   const name = document.getElementById('neName').value.trim();
   const department = document.getElementById('neDept').value;
+  const warehouse = document.getElementById('neWh').value;
   if (!name){ hint.textContent = 'พิมพ์ชื่อพนักงานก่อน'; return; }
-  if (allEmployees.some(e=>e.name===name && e.department===department)){ hint.textContent = `"${name}" มีอยู่ในรายชื่อฝั่งนี้แล้ว`; return; }
+  if (allEmployees.some(e=>e.name===name && e.department===department && e.warehouse===warehouse)){ hint.textContent = `"${name}" มีอยู่ในรายชื่อคลัง/ฝั่งนี้แล้ว`; return; }
   hint.textContent = 'กำลังเพิ่ม...';
   try{
-    const { error } = await sb.from('employees').insert({ name, department });
+    const { error } = await sb.from('employees').insert({ name, department, warehouse });
     if (error) throw error;
     hint.textContent = `เพิ่ม "${name}" แล้ว`;
     document.getElementById('neName').value = '';
@@ -946,7 +972,40 @@ function deptCheckboxes(selected, cls){
     `<label class="dept-cb"><input type="checkbox" class="${cls}" value="${d}" ${set.has(d)?'checked':''}> ${esc(DEPT_PLAIN[d]||d)}</label>`
   ).join('') + `</span>`;
 }
-const APP_LABEL = { erp:'ERP', mobile:'มือถือ' };
+
+// ---------- staff_scope: the (warehouse × department) grant grid ----------
+function userScopePairs(uid){
+  return scopes.filter(s=>s.profile_id===uid).map(s=>({ warehouse:s.warehouse, department:s.department }));
+}
+function scopeGridHTML(pairs, cls){
+  const set = new Set((pairs||[]).map(p=>p.warehouse+':'+p.department));
+  return `<table class="scope-grid"><thead><tr><th></th>${WH_KEYS.map(w=>`<th>${esc(WH_PLAIN[w])}</th>`).join('')}</tr></thead><tbody>`
+    + DEPT_KEYS.map(d=>`<tr><th>${esc(DEPT_PLAIN[d])}</th>` + WH_KEYS.map(w=>
+        `<td><input type="checkbox" class="${cls}" data-wh="${w}" data-dept="${d}"${set.has(w+':'+d)?' checked':''}></td>`
+      ).join('') + `</tr>`).join('')
+    + `</tbody></table>`;
+}
+function readScopeGrid(root, cls){
+  return [...root.querySelectorAll('.'+cls+':checked')].map(c=>({ warehouse:c.dataset.wh, department:c.dataset.dept }));
+}
+function scopeSummary(pairs){
+  if (!pairs.length) return '<span class="td-sub">ยังไม่กำหนด</span>';
+  return WH_KEYS.filter(w=>pairs.some(p=>p.warehouse===w)).map(w=>{
+    const ds = DEPT_KEYS.filter(d=>pairs.some(p=>p.warehouse===w && p.department===d));
+    return `<span class="scope-sum"><b>${esc(WH_PLAIN[w])}</b> ` + ds.map(d=>esc(DEPT_PLAIN[d])).join(', ') + `</span>`;
+  }).join(' ');
+}
+// desired vs current -> {add:[], del:[staff_scope rows]}
+function diffScope(uid, desired){
+  const cur = scopes.filter(s=>s.profile_id===uid);
+  const want = new Set(desired.map(p=>p.warehouse+':'+p.department));
+  const have = new Set(cur.map(s=>s.warehouse+':'+s.department));
+  return {
+    add: desired.filter(p=>!have.has(p.warehouse+':'+p.department)),
+    del: cur.filter(s=>!want.has(s.warehouse+':'+s.department)),
+  };
+}
+const APP_LABEL = { erp:'Skill Matrix', mobile:'มือถือ' };
 function appCheckboxes(selected, cls){
   const set = new Set(selected || []);
   return `<span class="dept-cb-row">` + ['erp','mobile'].map(a=>
@@ -968,9 +1027,8 @@ function renderUsersTable(){
   const nuRole = document.getElementById('nuRole');
   if (!ro && nuRole && !nuRole.options.length){
     nuRole.innerHTML = roleOptions('USER');
-    const cbs = document.getElementById('nuDeptCbs');
-    if (cbs) cbs.innerHTML = DEPT_KEYS.map(d=>
-      `<label class="dept-cb"><input type="checkbox" class="nu-dept-cb" value="${d}"> ${esc(DEPT_PLAIN[d]||d)}</label>`).join('');
+    const grid = document.getElementById('nuScopeGrid');
+    if (grid) grid.innerHTML = scopeGridHTML([], 'nu-scope-cb');
     const acbs = document.getElementById('nuAppCbs');
     if (acbs) acbs.innerHTML = ['erp','mobile'].map(a=>
       `<label class="dept-cb"><input type="checkbox" class="nu-app-cb" value="${a}"> ${APP_LABEL[a]}</label>`).join('');
@@ -980,10 +1038,14 @@ function renderUsersTable(){
   tbody.innerHTML = users.map(u=>{
     const active = u.active !== false;
     const isSelf = currentUser && u.id === currentUser.id;
-    const uDepts = userDepts(u);
-    const deptBadge = uDepts.length
-      ? uDepts.map(d=>`<span class="badge ${esc(d)}"><span class="dot"></span>${DEPT_PLAIN[d]||esc(d)}</span>`).join(' ')
-      : '<span class="td-sub">ทุกแผนก</span>';
+    const pairs = userScopePairs(u.id);
+    const scoped = u.role === 'SUPERVISOR' || u.role === 'ASSISTANT';
+    const deptBadge = u.role === 'ADMIN'
+      ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
+      : scoped ? scopeSummary(pairs)
+      : (userDepts(u).length
+          ? userDepts(u).map(d=>`<span class="badge ${esc(d)}"><span class="dot"></span>${DEPT_PLAIN[d]||esc(d)}</span>`).join(' ')
+          : '<span class="td-sub">–</span>');
     const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
     const effApps = allowedApps(u);
     const appsBadge = (Array.isArray(u.apps) && u.apps.length)
@@ -1000,10 +1062,13 @@ function renderUsersTable(){
         <td></td>
       </tr>`;
     }
+    const scopeCell = scoped ? scopeGridHTML(pairs, 'u-scope-cb')
+      : u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
+      : deptCheckboxes(userDepts(u), 'u-dept-cb');
     return `<tr data-user-row="${esc(u.id)}" class="${active?'':'row-inactive'}">
       <td>${esc(u.full_name||'–')}</td>
       <td><select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select></td>
-      <td>${deptCheckboxes(uDepts, 'u-dept-cb')}</td>
+      <td class="scope-cell">${scopeCell}</td>
       <td>${appCheckboxes(effApps, 'u-app-cb')}</td>
       <td><input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส"></td>
       <td>${isSelf ? statusBadge
@@ -1020,21 +1085,42 @@ async function saveUserRow(userId){
   const row = document.querySelector(`tr[data-user-row="${userId}"]`);
   if (!row) return;
   const role = row.querySelector('[data-u-role]').value;
-  const noDept = role === 'ADMIN' || role === 'ASSISTANT';
-  const departments = noDept ? null
-    : [...row.querySelectorAll('.u-dept-cb:checked')].map(c=>c.value);
-  const department = departments && departments.length ? departments[0] : null;
+  const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
   const employee_code = row.querySelector('[data-u-code]').value.trim() || null;
-  if (!noDept && (!departments || !departments.length)){ toast('SUPERVISOR / USER ต้องเลือกอย่างน้อย 1 ฝั่ง'); return; }
+
+  let desiredScope = [];
+  let departments = null;
+  if (scoped){
+    desiredScope = readScopeGrid(row, 'u-scope-cb');
+    if (!desiredScope.length){ toast('SUPERVISOR / ASSISTANT ต้องเลือกคลัง × แผนก อย่างน้อย 1 ช่อง'); return; }
+    departments = [...new Set(desiredScope.map(p=>p.department))];
+  } else if (role === 'USER'){
+    departments = [...row.querySelectorAll('.u-dept-cb:checked')].map(c=>c.value);
+    if (!departments.length){ toast('USER ต้องเลือกอย่างน้อย 1 ฝั่ง'); return; }
+  }
+  const department = departments && departments.length ? departments[0] : null;
+
   const appsChecked = [...row.querySelectorAll('.u-app-cb:checked')].map(c=>c.value);
-  if (!appsChecked.length){ toast('เลือกระบบที่ใช้ได้อย่างน้อย 1 ระบบ (ERP / มือถือ)'); return; }
+  if (!appsChecked.length){ toast('เลือกระบบที่ใช้ได้อย่างน้อย 1 ระบบ (Skill Matrix / มือถือ)'); return; }
   const apps = appsChecked;
+
   const btn = row.querySelector('[data-save-user]');
   const label = btn.textContent; btn.textContent = '...'; btn.disabled = true;
   try{
     const { error } = await sb.from('profiles').update({ role, department, departments, employee_code, apps }).eq('id', userId);
     if (error) throw error;
-    await refreshUsers(); renderUsersTable();
+    // staff_scope diff — ADMIN / USER end up with desiredScope = [] -> all rows removed
+    const { add, del } = diffScope(userId, desiredScope);
+    if (del.length){
+      const { error: dErr } = await sb.from('staff_scope').delete().in('id', del.map(s=>s.id));
+      if (dErr) throw dErr;
+    }
+    if (add.length){
+      const { error: aErr } = await sb.from('staff_scope').insert(
+        add.map(p=>({ profile_id: userId, warehouse: p.warehouse, department: p.department, created_by: currentUser.id })));
+      if (aErr) throw aErr;
+    }
+    await Promise.all([refreshUsers(), refreshScopes()]); renderUsersTable();
     toast('บันทึกแล้ว', 'ok');
   }catch(err){
     toast('บันทึกไม่สำเร็จ: ' + mapDbError(err));
@@ -1083,11 +1169,13 @@ async function createUserFromForm(){
   const full_name = document.getElementById('nuName').value.trim();
   const password = document.getElementById('nuPass').value;
   const role = document.getElementById('nuRole').value;
-  const departments = [...document.querySelectorAll('#nuDeptCbs .nu-dept-cb:checked')].map(c=>c.value);
+  const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
+  const grid = document.getElementById('nuScopeGrid');
+  const scope = readScopeGrid(grid, 'nu-scope-cb');
   const apps = [...document.querySelectorAll('#nuAppCbs .nu-app-cb:checked')].map(c=>c.value);
   if (!email || !full_name || !password){ hint.textContent = 'กรอก อีเมล / ชื่อ / รหัสผ่าน ให้ครบ'; return; }
   if (password.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
-  if ((role === 'SUPERVISOR' || role === 'USER') && !departments.length){ hint.textContent = 'SUPERVISOR / USER ต้องเลือกอย่างน้อย 1 ฝั่ง'; return; }
+  if (scoped && !scope.length){ hint.textContent = 'SUPERVISOR / ASSISTANT ต้องเลือกคลัง × แผนก อย่างน้อย 1 ช่อง'; return; }
   hint.textContent = 'กำลังสร้างบัญชี...';
   try{
     const { data: { session } } = await sb.auth.getSession();
@@ -1098,26 +1186,27 @@ async function createUserFromForm(){
         'Authorization': 'Bearer ' + session.access_token,
         'apikey': SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ action: 'create', email, password, full_name, role, departments, apps }),
+      body: JSON.stringify({ action: 'create', email, password, full_name, role, scope, apps }),
     });
     const out = await res.json().catch(()=>({}));
     if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
     hint.textContent = `สร้างบัญชี ${email} แล้ว`;
     ['nuEmail','nuName','nuPass'].forEach(id=>{ document.getElementById(id).value = ''; });
-    document.querySelectorAll('#nuDeptCbs .nu-dept-cb:checked, #nuAppCbs .nu-app-cb:checked').forEach(c=>{ c.checked = false; });
-    await refreshUsers(); renderUsersTable();
+    document.querySelectorAll('#nuScopeGrid .nu-scope-cb:checked, #nuAppCbs .nu-app-cb:checked').forEach(c=>{ c.checked = false; });
+    await Promise.all([refreshUsers(), refreshScopes()]); renderUsersTable();
     setTimeout(()=>{ document.getElementById('addUserForm').hidden = true; hint.textContent = ''; }, 1400);
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
 }
 
 // ---------- view state: loading skeleton / load-error card ----------
-function isFiltered(){ return dateRange!=='all' || deptFilter!=='ALL' || !!searchTerm; }
+function isFiltered(){ return dateRange!=='all' || deptFilter!=='ALL' || whFilter!=='ALL' || !!searchTerm; }
 
 function clearFilters(){
-  dateRange = 'all'; deptFilter = 'ALL'; searchTerm = '';
+  dateRange = 'all'; deptFilter = 'ALL'; whFilter = 'ALL'; searchTerm = '';
   const s = document.getElementById('searchInput'); if (s) s.value = '';
   document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.range==='all'));
   document.querySelectorAll('#deptChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.dept==='ALL'));
+  document.querySelectorAll('#whChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.wh==='ALL'));
   render();
 }
 
@@ -1198,11 +1287,18 @@ async function refreshUsers(){
     users = data || [];
   }catch(e){ /* admin-only view; ignore errors for non-critical panel */ }
 }
+async function refreshScopes(){
+  try{
+    const { data, error } = await sb.from('staff_scope').select('*');
+    if (error) throw error;
+    scopes = data || [];
+  }catch(e){ /* admin-only; non-critical */ }
+}
 async function refreshAll(){
   document.getElementById('syncText').textContent = 'กำลังโหลดข้อมูล...';
   loadError = null;
   if (firstLoad) render();                        // paints the skeleton
-  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshEmployeesAll(), refreshTasksAdmin()]);
+  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshScopes(), refreshEmployeesAll(), refreshTasksAdmin()]);
   if (jobsRes.status === 'rejected'){
     loadError = mapDbError(jobsRes.reason);
     document.getElementById('syncText').textContent = 'โหลดข้อมูลไม่สำเร็จ';
@@ -1225,6 +1321,7 @@ function wireRealtime(){
     .on('postgres_changes', {event:'*', schema:'public', table:'jobs'}, softRefresh(refreshJobs))
     .on('postgres_changes', {event:'*', schema:'public', table:'employees'}, softRefresh(()=>Promise.all([refreshRoster(), refreshEmployeesAll()])))
     .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, softRefresh(()=>Promise.all([refreshTasksAdmin(), loadTasksFromDb()])))
+    .on('postgres_changes', {event:'*', schema:'public', table:'staff_scope'}, softRefresh(refreshScopes))
     .subscribe();
 }
 

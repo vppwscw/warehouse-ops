@@ -120,7 +120,7 @@ function showLogin(){ document.getElementById('loginOverlay').style.display='fle
 function hideLogin(){ document.getElementById('loginOverlay').style.display='none'; }
 const ROLE_SHORT = { SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 function refreshRoleBadge(){
-  const label = isAdmin() ? 'ผู้ดูแลระบบ' : `${DEPT_PLAIN[profile.department]} · ${ROLE_SHORT[profile.role]||''} · ${profile.full_name||''}`;
+  const label = isAdmin() ? 'ผู้ดูแลระบบ' : `${DEPT_PLAIN[profile.department]} · ${ROLE_SHORT[profile.role]||''}`;
   document.getElementById('roleBadge').textContent = label;
 }
 

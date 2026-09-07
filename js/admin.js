@@ -45,7 +45,7 @@ const ICONS = {
 };
 
 let profile = null, currentUser = null;
-let jobs = [], roster = [], users = [], allEmployees = [];
+let jobs = [], roster = [], users = [], allEmployees = [], taskList = [];
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
@@ -240,6 +240,7 @@ const NAV = [
   {id:'dashboard',  label:'ภาพรวม',      short:'ภาพรวม', icon:'dash',  title:'ภาพรวม', sub:'สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก'},
   {id:'queue',      label:'คิวอนุมัติ',   short:'คิว',    icon:'queue', title:'คิวอนุมัติ', sub:'งานที่รออนุมัติ เรียงตามความเร่งด่วน'},
   {id:'details',    label:'งานทั้งหมด',   short:'งาน',    icon:'list',  title:'งานทั้งหมด', sub:'รายการงานทุกชิ้นตามตัวกรองที่เลือก'},
+  {id:'tasks',      label:'ชนิดงาน',      short:'ชนิด',   icon:'box',   title:'ชนิดงาน', sub:'ชนิดงานทั้งหมดของแต่ละฝั่ง — ปิดใช้งานหรือลบถาวรได้'},
   {id:'employees',  label:'พนักงาน',      short:'คน',     icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
 ];
 // Secondary — reached via the gear icon in the header, not the main nav.
@@ -270,6 +271,7 @@ function goView(id){
   document.getElementById('pageTitle').textContent = n.title;
   document.getElementById('pageSub').textContent = n.sub;
   if (id==='users') renderUsersTable();
+  if (id==='tasks') refreshTasksAdmin().then(render);
   if (id==='employees') refreshEmployeesAll().then(render);
   render();
 }
@@ -319,6 +321,13 @@ document.addEventListener('click', e=>{
   }
   const rejectBtn = e.target.closest('[data-reject-job]');
   if (rejectBtn){ setJobStatus(rejectBtn.dataset.rejectJob, 'rejected'); return; }
+  const delJobBtn = e.target.closest('[data-del-job]');
+  if (delJobBtn){ deleteJob(delJobBtn.dataset.delJob); return; }
+
+  const taskToggleBtn = e.target.closest('[data-task-toggle]');
+  if (taskToggleBtn){ toggleTaskActive(taskToggleBtn.dataset.taskToggle, taskToggleBtn.dataset.next === 'true'); return; }
+  const taskDelBtn = e.target.closest('[data-task-del]');
+  if (taskDelBtn){ deleteTask(taskDelBtn.dataset.taskDel); return; }
 
   const saveUserBtn = e.target.closest('[data-save-user]');
   if (saveUserBtn){ saveUserRow(saveUserBtn.dataset.saveUser); return; }
@@ -601,10 +610,11 @@ function jobRowHTML(j){
     <td class="mono">${d.mins == null ? '–' : num(d.mins)}</td>
     <td class="mono">${esc(formatResult(d,task))}</td>
     <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
-    <td>${canAct ? `
-      <button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>
-      <button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
-    ` : '–'}</td>
+    <td>${[
+      canAct ? `<button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>` : '',
+      canAct ? `<button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>` : '',
+      isReadOnly() ? '' : `<button type="button" class="mini-btn reject" data-del-job="${esc(j.id)}">ลบ</button>`,
+    ].filter(Boolean).join(' ') || '–'}</td>
   </tr>`;
 }
 function emptyRow(cols, msg){
@@ -643,6 +653,23 @@ async function setJobStatus(jobId, status){
   }).in('id', ids);
   if (error){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
   await refreshJobs(); render();
+}
+
+// Hard-delete a whole job group (one DB row per crew member). ADMIN only —
+// gated in the UI by isReadOnly() and in the DB by the jobs_delete_admin policy.
+async function deleteJob(jobId){
+  const j = jobs.find(x=>x.id===jobId);
+  const ids = (j && j.rowIds && j.rowIds.length) ? j.rowIds : [jobId];
+  const task = j && taskById(j.task_id);
+  const when = (j && j.details && j.details.date) ? ` (${j.details.date})` : '';
+  const go = await confirmModal(
+    `ลบงาน "${task ? task.label : (j && j.task_id) || ''}"${when} ถาวร?\nลบ ${ids.length} แถว · กู้คืนไม่ได้`,
+    { danger:true, yes:'ลบถาวร' });
+  if (!go) return;
+  const { error } = await sb.from('jobs').delete().in('id', ids);
+  if (error){ toast('ลบไม่สำเร็จ: ' + mapDbError(error)); return; }
+  await refreshJobs(); render();
+  toast('ลบแล้ว', 'ok');
 }
 
 // ===================== APPROVAL QUEUE (phase 3) =====================
@@ -780,6 +807,60 @@ function renderEmpRoster(){
       </td>
     </tr>`;
   }).join('');
+}
+
+// ---------- task types (ชนิดงาน view) ----------
+async function refreshTasksAdmin(){
+  try{
+    const { data, error } = await sb.from('tasks').select('*').order('department').order('name');
+    if (error) throw error;
+    taskList = data || [];
+  }catch(e){ /* non-critical panel */ }
+}
+function renderTasksAdmin(){
+  const ro = isReadOnly();
+  const tb = document.querySelector('#tasksTable tbody');
+  if (!tb) return;
+  if (!taskList.length){ tb.innerHTML = emptyRow(ro?3:4, 'ยังไม่มีชนิดงาน — หัวหน้างานเพิ่มได้จากแอปมือถือ'); return; }
+  tb.innerHTML = taskList.map(t=>{
+    const on = t.active !== false;
+    const linked = jobs.reduce((n,j)=> n + (j.task_id===t.id ? ((j.rowIds&&j.rowIds.length)||1) : 0), 0);
+    return `<tr class="${on?'':'row-inactive'}">
+      <td>${esc(t.name)}${t.unit_label ? ` <span style="color:var(--ink-dim);font-size:12px;">· ${esc(t.unit_label)}</span>` : ''}</td>
+      <td><span class="badge ${esc(t.department)}"><span class="dot"></span>${DEPT_PLAIN[t.department]||esc(t.department)}</span></td>
+      <td class="mono">${linked || ''}</td>
+      ${ro ? '' : `<td>
+        <button type="button" class="mini-btn ${on?'reject':'approve'}" data-task-toggle="${esc(t.id)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
+        <button type="button" class="mini-btn reject" data-task-del="${esc(t.id)}">ลบถาวร</button>
+      </td>`}
+    </tr>`;
+  }).join('');
+}
+async function toggleTaskActive(id, next){
+  try{
+    const { error } = await sb.from('tasks').update({ active: next }).eq('id', id);
+    if (error) throw error;
+    await refreshTasksAdmin(); await loadTasksFromDb(); render();
+  }catch(err){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
+}
+async function deleteTask(id){
+  const t = taskList.find(x=>String(x.id)===String(id));
+  const go = await confirmModal(
+    `ลบชนิดงาน "${(t&&t.name)||''}" ถาวร?\nถ้ามีงานที่บันทึกไว้แล้วผูกอยู่ จะลบไม่ได้ — ให้ใช้ "ปิดใช้งาน" แทน`,
+    { danger:true, yes:'ลบถาวร' });
+  if (!go) return;
+  try{
+    const { error } = await sb.from('tasks').delete().eq('id', id);
+    if (error) throw error;
+    await refreshTasksAdmin(); await loadTasksFromDb(); render();
+    toast('ลบแล้ว', 'ok');
+  }catch(err){
+    if (err.code === '23503' || /foreign key/i.test(err.message||'')){
+      toast('ชนิดงานนี้มีงานผูกอยู่ — ใช้ "ปิดใช้งาน" แทนการลบถาวร');
+    } else {
+      toast('ลบไม่สำเร็จ: ' + mapDbError(err));
+    }
+  }
 }
 
 async function createEmpFromForm(){
@@ -1080,6 +1161,8 @@ function render(){
   } else if (activeView==='employees'){
     renderEmpRoster();
     renderEmployeesTable(closed);
+  } else if (activeView==='tasks'){
+    renderTasksAdmin();
   } else if (activeView==='users'){
     renderUsersTable();
   }
@@ -1118,7 +1201,7 @@ async function refreshAll(){
   document.getElementById('syncText').textContent = 'กำลังโหลดข้อมูล...';
   loadError = null;
   if (firstLoad) render();                        // paints the skeleton
-  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshEmployeesAll()]);
+  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshEmployeesAll(), refreshTasksAdmin()]);
   if (jobsRes.status === 'rejected'){
     loadError = mapDbError(jobsRes.reason);
     document.getElementById('syncText').textContent = 'โหลดข้อมูลไม่สำเร็จ';
@@ -1140,6 +1223,7 @@ function wireRealtime(){
   realtimeChannel = sb.channel('erp-jobs-changes-'+(currentUser?currentUser.id:'anon'))
     .on('postgres_changes', {event:'*', schema:'public', table:'jobs'}, softRefresh(refreshJobs))
     .on('postgres_changes', {event:'*', schema:'public', table:'employees'}, softRefresh(()=>Promise.all([refreshRoster(), refreshEmployeesAll()])))
+    .on('postgres_changes', {event:'*', schema:'public', table:'tasks'}, softRefresh(()=>Promise.all([refreshTasksAdmin(), loadTasksFromDb()])))
     .subscribe();
 }
 

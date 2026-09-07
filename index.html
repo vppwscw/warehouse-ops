@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>สมุดทักษะคลัง</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/mobile.css?v=5">
+<link rel="stylesheet" href="css/mobile.css?v=6">
 </head>
 <body>
 
@@ -38,7 +38,8 @@
 
     <div class="screen active" id="screen-step1">
       <div class="stat-row" id="statRow"></div>
-      <p class="step-q">วันนี้จะทำงานฝั่งไหน?</p>
+      <div class="wh-pick" id="whPick" hidden></div>
+      <p class="step-q" id="step1Q">วันนี้จะทำงานฝั่งไหน?</p>
       <div class="tile-list" id="deptTiles"></div>
     </div>
 
@@ -171,6 +172,7 @@
 <div class="modal-backdrop" id="addEmpBackdrop"></div>
 <div class="modal-card" id="addEmpModal">
   <div class="modal-title">เพิ่มพนักงานใหม่</div>
+  <div class="field" id="r-wh-field" hidden style="margin-bottom:12px;"><label for="r-wh">คลัง</label><select id="r-wh"></select></div>
   <div class="field" id="r-dept-field" hidden style="margin-bottom:12px;"><label for="r-dept">ฝั่ง</label><select id="r-dept"></select></div>
   <div class="field" style="margin-bottom:12px;"><label for="r-name">ชื่อพนักงานคนใหม่</label><input id="r-name" placeholder="พิมพ์ชื่อ-นามสกุล"></div>
   <button type="button" class="btn ghost" id="rosterSubmitBtn" style="margin-bottom:6px;">+ เพิ่มเข้ารายชื่อ</button>
@@ -180,6 +182,7 @@
 <div class="modal-backdrop" id="addTaskBackdrop"></div>
 <div class="modal-card" id="addTaskModal">
   <div class="modal-title">เพิ่มชนิดงานใหม่</div>
+  <div class="field" id="t-wh-field" hidden style="margin-bottom:12px;"><label for="t-wh">คลัง</label><select id="t-wh"></select></div>
   <div class="field" id="t-dept-field" hidden style="margin-bottom:12px;"><label for="t-dept">ฝั่ง</label><select id="t-dept"></select></div>
   <div class="field" style="margin-bottom:12px;"><label for="t-name">ชื่องาน</label><input id="t-name" placeholder="เช่น ตรวจนับสต๊อกปลายวัน"></div>
   <div class="field" style="margin-bottom:12px;">
@@ -215,6 +218,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/mobile.js?v=19"></script>
+<script src="js/mobile.js?v=20"></script>
 </body>
 </html>

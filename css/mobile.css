@@ -65,6 +65,15 @@ button,input,select{font-family:inherit;}
 .stat-card .n{font-size:22px;font-weight:700;font-family:'IBM Plex Sans Thai',sans-serif;}
 .stat-card .l{font-size:10.5px;color:var(--ink-dim);margin-top:1px;}
 
+/* warehouse picker on step 1 */
+.wh-pick{display:flex;gap:10px;margin-bottom:16px;}
+.wh-btn{flex:1;font-family:'IBM Plex Sans Thai',sans-serif;font-weight:700;font-size:15px;padding:14px 10px;
+  border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink-dim);cursor:pointer;}
+.wh-btn.on{border-color:var(--accent);background:var(--accent);color:var(--accent-ink);}
+.wh-btn:active{transform:scale(.98);}
+.wh-tag{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 7px;border-radius:100px;
+  background:var(--surface-3);color:var(--ink-dim);white-space:nowrap;margin-right:4px;}
+
 .tile-list{display:flex;flex-direction:column;gap:12px;}
 .tile{display:flex;align-items:center;gap:14px;border:none;border-radius:12px;padding:20px;width:100%;cursor:pointer;text-align:left;box-shadow:var(--shadow-sm);}
 .tile:active{transform:scale(.98);}

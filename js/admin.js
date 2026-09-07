@@ -979,8 +979,8 @@ function userScopePairs(uid){
 }
 function scopeGridHTML(pairs, cls){
   const set = new Set((pairs||[]).map(p=>p.warehouse+':'+p.department));
-  return `<table class="scope-grid"><thead><tr><th></th>${WH_KEYS.map(w=>`<th>${esc(WH_PLAIN[w])}</th>`).join('')}</tr></thead><tbody>`
-    + DEPT_KEYS.map(d=>`<tr><th>${esc(DEPT_PLAIN[d])}</th>` + WH_KEYS.map(w=>
+  return `<table class="scope-grid"><thead><tr><th></th>${WH_KEYS.map(w=>`<th title="${esc(WH_PLAIN[w])}">${esc(w)}</th>`).join('')}</tr></thead><tbody>`
+    + DEPT_KEYS.map(d=>`<tr><th title="${esc(DEPT_PLAIN[d])}">${esc(d)}</th>` + WH_KEYS.map(w=>
         `<td><input type="checkbox" class="${cls}" data-wh="${w}" data-dept="${d}"${set.has(w+':'+d)?' checked':''}></td>`
       ).join('') + `</tr>`).join('')
     + `</tbody></table>`;

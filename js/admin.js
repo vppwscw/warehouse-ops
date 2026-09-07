@@ -45,7 +45,7 @@ const ICONS = {
 };
 
 let profile = null, currentUser = null;
-let jobs = [], roster = [], users = [];
+let jobs = [], roster = [], users = [], allEmployees = [];
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
@@ -258,6 +258,7 @@ function goView(id){
   document.getElementById('pageTitle').textContent = n.title;
   document.getElementById('pageSub').textContent = n.sub;
   if (id==='users') renderUsersTable();
+  if (id==='employees') refreshEmployeesAll().then(render);
   render();
 }
 
@@ -315,6 +316,14 @@ document.addEventListener('click', e=>{
   if (e.target.closest('#toggleAddUserBtn')){ const f = document.getElementById('addUserForm'); f.hidden = !f.hidden; return; }
   if (e.target.closest('#cancelAddUserBtn')){ document.getElementById('addUserForm').hidden = true; return; }
   if (e.target.closest('#createUserBtn')){ createUserFromForm(); return; }
+
+  const empToggle = e.target.closest('[data-emp-toggle]');
+  if (empToggle){ toggleEmpActive(empToggle.dataset.empToggle, empToggle.dataset.next === 'true'); return; }
+  const empDel = e.target.closest('[data-emp-del]');
+  if (empDel){ deleteEmp(empDel.dataset.empDel); return; }
+  if (e.target.closest('#toggleAddEmpBtn')){ const f = document.getElementById('addEmpForm'); f.hidden = !f.hidden; return; }
+  if (e.target.closest('#cancelAddEmpBtn')){ document.getElementById('addEmpForm').hidden = true; return; }
+  if (e.target.closest('#createEmpBtn')){ createEmpFromForm(); return; }
 });
 document.getElementById('searchInput').addEventListener('input', e=>{ searchTerm = e.target.value.trim().toLowerCase(); render(); });
 
@@ -682,6 +691,79 @@ function updatePendingBadges(){
   });
 }
 
+// ADMIN-only: manage the `employees` roster (add / deactivate / hard-delete).
+// Shown above the read-only analytics table on the พนักงาน view.
+function renderEmpRoster(){
+  const ro = isReadOnly();
+  const bar = document.getElementById('empAdminBar');
+  const wrap = document.getElementById('empRosterWrap');
+  if (bar) bar.hidden = ro;
+  if (wrap) wrap.hidden = ro;
+  if (ro){ const f = document.getElementById('addEmpForm'); if (f) f.hidden = true; return; }
+  const neDept = document.getElementById('neDept');
+  if (neDept && !neDept.options.length) neDept.innerHTML = deptOptions(DEPT_KEYS[0]);
+  const tb = document.querySelector('#empRosterTable tbody');
+  if (!tb) return;
+  if (!allEmployees.length){ tb.innerHTML = emptyRow(4, 'ยังไม่มีพนักงานในรายชื่อ — กด ＋ เพิ่มพนักงาน'); return; }
+  tb.innerHTML = allEmployees.map(em=>{
+    const on = em.active !== false;
+    return `<tr class="${on?'':'row-inactive'}">
+      <td>${esc(em.name)}</td>
+      <td><span class="badge ${esc(em.department)}"><span class="dot"></span>${DEPT_PLAIN[em.department]||esc(em.department)}</span></td>
+      <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
+      <td>
+        <button type="button" class="mini-btn ${on?'reject':'approve'}" data-emp-toggle="${esc(em.id)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
+        <button type="button" class="mini-btn reject" data-emp-del="${esc(em.id)}">ลบถาวร</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function createEmpFromForm(){
+  const hint = document.getElementById('addEmpHint');
+  const name = document.getElementById('neName').value.trim();
+  const department = document.getElementById('neDept').value;
+  if (!name){ hint.textContent = 'พิมพ์ชื่อพนักงานก่อน'; return; }
+  if (allEmployees.some(e=>e.name===name && e.department===department)){ hint.textContent = `"${name}" มีอยู่ในรายชื่อฝั่งนี้แล้ว`; return; }
+  hint.textContent = 'กำลังเพิ่ม...';
+  try{
+    const { error } = await sb.from('employees').insert({ name, department });
+    if (error) throw error;
+    hint.textContent = `เพิ่ม "${name}" แล้ว`;
+    document.getElementById('neName').value = '';
+    await Promise.all([refreshEmployeesAll(), refreshRoster()]); render();
+    setTimeout(()=>{ document.getElementById('addEmpForm').hidden = true; hint.textContent = ''; }, 1200);
+  }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + mapDbError(err); }
+}
+
+async function toggleEmpActive(id, next){
+  try{
+    const { error } = await sb.from('employees').update({ active: next }).eq('id', id);
+    if (error) throw error;
+    await Promise.all([refreshEmployeesAll(), refreshRoster()]); render();
+  }catch(err){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
+}
+
+async function deleteEmp(id){
+  const em = allEmployees.find(x=>String(x.id)===String(id));
+  const go = await confirmModal(
+    `ลบ "${(em&&em.name)||'พนักงานคนนี้'}" ออกจากรายชื่อถาวร?\nประวัติงานที่บันทึกชื่อไว้แล้วยังอยู่ครบ`,
+    { danger:true, yes:'ลบถาวร' });
+  if (!go) return;
+  try{
+    const { error } = await sb.from('employees').delete().eq('id', id);
+    if (error) throw error;
+    await Promise.all([refreshEmployeesAll(), refreshRoster()]); render();
+    toast('ลบแล้ว', 'ok');
+  }catch(err){
+    if (err.code === '23503' || /foreign key/i.test(err.message||'')){
+      toast('คนนี้มีประวัติงานผูกอยู่ — ใช้ "ปิดใช้งาน" แทนการลบถาวร');
+    } else {
+      toast('ลบไม่สำเร็จ: ' + mapDbError(err));
+    }
+  }
+}
+
 function renderEmployeesTable(closed){
   const people = peopleInScope();
   const tbody = document.querySelector('#employeesTable tbody');
@@ -706,8 +788,18 @@ function roleOptions(sel){
   return ROLE_ORDER.map(r=>`<option value="${r}" ${sel===r?'selected':''}>${ROLE_LABEL[r]}</option>`).join('');
 }
 function deptOptions(sel){
-  return `<option value="">— ไม่มีแผนก —</option>` +
-    DEPT_KEYS.map(d=>`<option value="${d}" ${sel===d?'selected':''}>${DEPT_PLAIN[d]}</option>`).join('');
+  return DEPT_KEYS.map(d=>`<option value="${d}" ${sel===d?'selected':''}>${DEPT_PLAIN[d]}</option>`).join('');
+}
+// A SUPERVISOR / USER may cover more than one department (profiles.departments).
+function userDepts(u){
+  if (Array.isArray(u.departments) && u.departments.length) return u.departments;
+  return u.department ? [u.department] : [];
+}
+function deptCheckboxes(selected, cls){
+  const set = new Set(selected || []);
+  return `<span class="dept-cb-row">` + DEPT_KEYS.map(d=>
+    `<label class="dept-cb"><input type="checkbox" class="${cls}" value="${d}" ${set.has(d)?'checked':''}> ${esc(DEPT_PLAIN[d]||d)}</label>`
+  ).join('') + `</span>`;
 }
 
 function renderUsersTable(){
@@ -724,15 +816,18 @@ function renderUsersTable(){
   const nuRole = document.getElementById('nuRole');
   if (!ro && nuRole && !nuRole.options.length){
     nuRole.innerHTML = roleOptions('USER');
-    document.getElementById('nuDept').innerHTML = deptOptions('');
+    const cbs = document.getElementById('nuDeptCbs');
+    if (cbs) cbs.innerHTML = DEPT_KEYS.map(d=>
+      `<label class="dept-cb"><input type="checkbox" class="nu-dept-cb" value="${d}"> ${esc(DEPT_PLAIN[d]||d)}</label>`).join('');
   }
 
   if (users.length===0){ tbody.innerHTML = `<tr><td colspan="6" class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</td></tr>`; return; }
   tbody.innerHTML = users.map(u=>{
     const active = u.active !== false;
     const isSelf = currentUser && u.id === currentUser.id;
-    const deptBadge = u.department
-      ? `<span class="badge ${esc(u.department)}"><span class="dot"></span>${DEPT_PLAIN[u.department]||esc(u.department)}</span>`
+    const uDepts = userDepts(u);
+    const deptBadge = uDepts.length
+      ? uDepts.map(d=>`<span class="badge ${esc(d)}"><span class="dot"></span>${DEPT_PLAIN[d]||esc(d)}</span>`).join(' ')
       : '<span class="td-sub">ทุกแผนก</span>';
     const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
     if (ro){
@@ -748,7 +843,7 @@ function renderUsersTable(){
     return `<tr data-user-row="${esc(u.id)}" class="${active?'':'row-inactive'}">
       <td>${esc(u.full_name||'–')}</td>
       <td><select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select></td>
-      <td><select class="mini-select" data-u-dept>${deptOptions(u.department)}</select></td>
+      <td>${deptCheckboxes(uDepts, 'u-dept-cb')}</td>
       <td><input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส"></td>
       <td>${isSelf ? statusBadge
         : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}</td>
@@ -765,13 +860,15 @@ async function saveUserRow(userId){
   if (!row) return;
   const role = row.querySelector('[data-u-role]').value;
   const noDept = role === 'ADMIN' || role === 'ASSISTANT';
-  const department = noDept ? null : (row.querySelector('[data-u-dept]').value || null);
+  const departments = noDept ? null
+    : [...row.querySelectorAll('.u-dept-cb:checked')].map(c=>c.value);
+  const department = departments && departments.length ? departments[0] : null;
   const employee_code = row.querySelector('[data-u-code]').value.trim() || null;
-  if (!noDept && !department){ toast('SUPERVISOR / USER ต้องระบุแผนก'); return; }
+  if (!noDept && (!departments || !departments.length)){ toast('SUPERVISOR / USER ต้องเลือกอย่างน้อย 1 ฝั่ง'); return; }
   const btn = row.querySelector('[data-save-user]');
   const label = btn.textContent; btn.textContent = '...'; btn.disabled = true;
   try{
-    const { error } = await sb.from('profiles').update({ role, department, employee_code }).eq('id', userId);
+    const { error } = await sb.from('profiles').update({ role, department, departments, employee_code }).eq('id', userId);
     if (error) throw error;
     await refreshUsers(); renderUsersTable();
     toast('บันทึกแล้ว', 'ok');
@@ -822,10 +919,10 @@ async function createUserFromForm(){
   const full_name = document.getElementById('nuName').value.trim();
   const password = document.getElementById('nuPass').value;
   const role = document.getElementById('nuRole').value;
-  const department = document.getElementById('nuDept').value || null;
+  const departments = [...document.querySelectorAll('#nuDeptCbs .nu-dept-cb:checked')].map(c=>c.value);
   if (!email || !full_name || !password){ hint.textContent = 'กรอก อีเมล / ชื่อ / รหัสผ่าน ให้ครบ'; return; }
   if (password.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
-  if ((role === 'SUPERVISOR' || role === 'USER') && !department){ hint.textContent = 'SUPERVISOR / USER ต้องระบุแผนก'; return; }
+  if ((role === 'SUPERVISOR' || role === 'USER') && !departments.length){ hint.textContent = 'SUPERVISOR / USER ต้องเลือกอย่างน้อย 1 ฝั่ง'; return; }
   hint.textContent = 'กำลังสร้างบัญชี...';
   try{
     const { data: { session } } = await sb.auth.getSession();
@@ -836,12 +933,13 @@ async function createUserFromForm(){
         'Authorization': 'Bearer ' + session.access_token,
         'apikey': SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ action: 'create', email, password, full_name, role, department }),
+      body: JSON.stringify({ action: 'create', email, password, full_name, role, departments }),
     });
     const out = await res.json().catch(()=>({}));
     if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
     hint.textContent = `สร้างบัญชี ${email} แล้ว`;
     ['nuEmail','nuName','nuPass'].forEach(id=>{ document.getElementById(id).value = ''; });
+    document.querySelectorAll('#nuDeptCbs .nu-dept-cb:checked').forEach(c=>{ c.checked = false; });
     await refreshUsers(); renderUsersTable();
     setTimeout(()=>{ document.getElementById('addUserForm').hidden = true; hint.textContent = ''; }, 1400);
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
@@ -897,6 +995,7 @@ function render(){
   } else if (activeView==='details'){
     renderDetailsTable(closed);
   } else if (activeView==='employees'){
+    renderEmpRoster();
     renderEmployeesTable(closed);
   } else if (activeView==='users'){
     renderUsersTable();
@@ -916,6 +1015,14 @@ async function refreshRoster(){
     roster = data || [];
   }catch(e){ /* keep as-is */ }
 }
+// The full roster (incl. deactivated) — only the ADMIN employees-management block needs it.
+async function refreshEmployeesAll(){
+  try{
+    const { data, error } = await sb.from('employees').select('*').order('department').order('name');
+    if (error) throw error;
+    allEmployees = data || [];
+  }catch(e){ /* keep as-is */ }
+}
 async function refreshUsers(){
   try{
     const { data, error } = await sb.from('profiles').select('*')
@@ -928,7 +1035,7 @@ async function refreshAll(){
   document.getElementById('syncText').textContent = 'กำลังโหลดข้อมูล...';
   loadError = null;
   if (firstLoad) render();                        // paints the skeleton
-  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers()]);
+  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshEmployeesAll()]);
   if (jobsRes.status === 'rejected'){
     loadError = mapDbError(jobsRes.reason);
     document.getElementById('syncText').textContent = 'โหลดข้อมูลไม่สำเร็จ';
@@ -949,7 +1056,7 @@ function wireRealtime(){
   });
   realtimeChannel = sb.channel('erp-jobs-changes-'+(currentUser?currentUser.id:'anon'))
     .on('postgres_changes', {event:'*', schema:'public', table:'jobs'}, softRefresh(refreshJobs))
-    .on('postgres_changes', {event:'*', schema:'public', table:'employees'}, softRefresh(refreshRoster))
+    .on('postgres_changes', {event:'*', schema:'public', table:'employees'}, softRefresh(()=>Promise.all([refreshRoster(), refreshEmployeesAll()])))
     .subscribe();
 }
 

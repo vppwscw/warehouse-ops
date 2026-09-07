@@ -89,8 +89,15 @@ let realtimeChannel = null;
 const isAdmin = () => !!profile && profile.role === 'ADMIN';
 const isWorker = () => !!profile && profile.role === 'USER';
 const isSupervisorRole = () => !!profile && profile.role === 'SUPERVISOR';
-const inScope = d => isAdmin() || d === profile.department;
-const visibleDepts = () => isAdmin() ? DEPT_KEYS : DEPT_KEYS.filter(d=>d===profile.department);
+// A SUPERVISOR may be assigned to several departments (profiles.departments);
+// everyone else keeps their single `department`.
+const myDepts = () => {
+  if (!profile) return [];
+  if (Array.isArray(profile.departments) && profile.departments.length) return profile.departments;
+  return profile.department ? [profile.department] : [];
+};
+const inScope = d => isAdmin() || myDepts().includes(d);
+const visibleDepts = () => isAdmin() ? DEPT_KEYS : DEPT_KEYS.filter(d=>myDepts().includes(d));
 
 let myOpenJob = null; // USER role: the job row they currently have open, if any
 let workerStep = 'list'; // USER role: 'list' (task list or active job) | 'success' (just closed)
@@ -120,7 +127,8 @@ function showLogin(){ document.getElementById('loginOverlay').style.display='fle
 function hideLogin(){ document.getElementById('loginOverlay').style.display='none'; }
 const ROLE_SHORT = { SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 function refreshRoleBadge(){
-  const label = isAdmin() ? 'ผู้ดูแลระบบ' : `${DEPT_PLAIN[profile.department]} · ${ROLE_SHORT[profile.role]||''}`;
+  const depts = myDepts().map(d=>DEPT_PLAIN[d]||d).join(', ');
+  const label = isAdmin() ? 'ผู้ดูแลระบบ' : `${depts} · ${ROLE_SHORT[profile.role]||''}`;
   document.getElementById('roleBadge').textContent = label;
 }
 
@@ -306,9 +314,11 @@ function goTab(tab){
   if (tab==='new'){
     if (isAdmin()){ flowMode = 'admin'; activeStep = 1; renderStep1(); }
     else if (isSupervisorRole()){
-      flowMode = 'sup-open'; oDeptVal = profile.department;
-      oTaskVal = null; crew = []; doneFieldsBuiltForTask = null; activeStep = 2;
-      renderStep2();
+      flowMode = 'sup-open';
+      oTaskVal = null; crew = []; doneFieldsBuiltForTask = null;
+      const ds = myDepts();
+      if (ds.length > 1){ oDeptVal = null; activeStep = 1; renderStep1(); }
+      else { oDeptVal = ds[0] || null; activeStep = 2; renderStep2(); }
     }
     else if (isWorker()){ renderWorkerHome(); }
   }
@@ -316,6 +326,7 @@ function goTab(tab){
   if (tab==='history'){ historySub = 'list'; refreshJobs().then(renderHistory); }
   if (tab==='approve') refreshPendingApprovals().then(renderApproveQueue);
   if (tab==='tasks') refreshDeptTasks().then(renderTaskManager);
+  if (tab==='manage') refreshRoster().then(renderRosterManager);
   document.querySelectorAll('.nav-btn').forEach(b=>b.setAttribute('aria-selected', b.dataset.nav===tab));
   renderScreens();
 }
@@ -329,9 +340,10 @@ function renderScreens(){
       else if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
       else if (activeStep===4){ screenId='screen-success'; title='เริ่มงาน'; }
     } else if (isSupervisorRole()){
-      // SUPERVISOR opens a job: pick task (step2) -> pick crew + start time (step3)
-      if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
-      else { screenId='screen-step2'; title='เลือกงาน'; }
+      // SUPERVISOR opens a job: [pick dept if >1] -> pick task (step2) -> crew + start (step3)
+      if (activeStep===1){ screenId='screen-step1'; title='เริ่มงาน'; }
+      else if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
+      else { screenId='screen-step2'; title=DEPT_PLAIN[oDeptVal]||'เลือกงาน'; showBack=(myDepts().length>1); }
     } else if (isWorker()){
       if (workerStep==='success'){ screenId='screen-worker-success'; title='งานของฉัน'; }
       else { screenId = myOpenJob ? 'screen-worker-active' : 'screen-worker-tasks'; title = myOpenJob ? 'กำลังทำงาน' : 'งานของฉัน'; }
@@ -355,7 +367,12 @@ function renderScreens(){
 }
 document.getElementById('backBtn').addEventListener('click', ()=>{
   if (activeTab==='new' && activeStep>1){
-    if (isSupervisorRole()){ activeStep=2; renderStep2(); renderScreens(); return; }
+    if (isSupervisorRole()){
+      // step3 -> step2; step2 -> step1 only when the supervisor has >1 department
+      if (activeStep===3){ activeStep=2; renderStep2(); }
+      else if (activeStep===2 && myDepts().length>1){ activeStep=1; oDeptVal=null; renderStep1(); }
+      renderScreens(); return;
+    }
     activeStep -= 1; if(activeStep===2) renderStep2(); if(activeStep===1) renderStep1(); renderScreens();
   }
   else if (activeTab==='openjobs' && openjobsSub==='close'){ openjobsSub='list'; renderOpenJobs(); renderScreens(); }
@@ -364,7 +381,10 @@ document.getElementById('backBtn').addEventListener('click', ()=>{
 
 // ================= STEP 1 =================
 function renderStep1(){
-  document.getElementById('deptTiles').innerHTML = DEPT_KEYS.map(d=>`
+  const q = document.querySelector('#screen-step1 .step-q');
+  if (q) q.textContent = isAdmin() ? 'วันนี้จะทำงานฝั่งไหน?' : 'เปิดงานฝั่งไหน?';
+  const depts = isAdmin() ? DEPT_KEYS : DEPT_KEYS.filter(d=>myDepts().includes(d));
+  document.getElementById('deptTiles').innerHTML = depts.map(d=>`
     <button type="button" class="tile ${d}" data-pick-dept="${d}">
       <span class="t-icon">${ICONS[DEPT_ICON[d]]}</span>
       <span><span class="t-name">${DEPT_PLAIN[d]}</span><span class="t-sub">${DEPT_SUB[d]}</span></span>
@@ -603,11 +623,27 @@ async function setJobStatusSupervisor(jobId, status){
   }catch(err){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
 }
 
+// Fill a <select> with the caller's departments; show its wrapper only when
+// there's a real choice to make (a multi-department supervisor, or ADMIN).
+function fillDeptSelect(selectId, fieldId){
+  const sel = document.getElementById(selectId);
+  const field = document.getElementById(fieldId);
+  if (!sel || !field) return;
+  const depts = visibleDepts();
+  sel.innerHTML = depts.map(d=>`<option value="${d}">${esc(DEPT_PLAIN[d]||d)}</option>`).join('');
+  field.hidden = depts.length <= 1;
+}
+function pickedDept(selectId){
+  const depts = visibleDepts();
+  if (depts.length <= 1) return depts[0] || profile.department;
+  return document.getElementById(selectId).value || depts[0];
+}
+
 // ================= SUPERVISOR role: task types =================
 async function refreshDeptTasks(){
   try{
     const { data, error } = await sb.from('tasks').select('*')
-      .eq('department', profile.department).order('name');
+      .in('department', myDepts()).order('name');
     if (error) throw error;
     deptTasks = data || [];
   }catch(e){ deptTasks = []; }
@@ -616,9 +652,10 @@ function renderTaskManager(){
   const box = document.getElementById('taskMgmtList');
   if (!box) return;
   if (deptTasks.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของแผนกนี้</div>`; return; }
+  const multi = visibleDepts().length > 1;
   box.innerHTML = deptTasks.map(t=>`
     <div class="task-row">
-      <span class="t-name ${t.active?'':'t-inactive'}">${esc(t.name)}</span>
+      <span class="t-name ${t.active?'':'t-inactive'}">${multi ? `<span class="badge ${esc(t.department)}"><span class="dot"></span>${esc(DEPT_PLAIN[t.department]||t.department)}</span> ` : ''}${esc(t.name)}</span>
       <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${esc(t.id)}" data-next-active="${t.active?'false':'true'}">
         ${t.active?'ปิดใช้งาน':'เปิดใช้งาน'}
       </button>
@@ -627,6 +664,7 @@ function renderTaskManager(){
 function openAddTaskModal(){
   document.getElementById('t-name').value='';
   document.getElementById('taskHint').textContent='';
+  fillDeptSelect('t-dept', 't-dept-field');
   document.getElementById('addTaskBackdrop').classList.add('open');
   document.getElementById('addTaskModal').classList.add('open');
   setTimeout(()=>document.getElementById('t-name').focus(), 50);
@@ -639,11 +677,12 @@ document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('t-name').value.trim();
   const hint = document.getElementById('taskHint');
   if (!name){ hint.textContent = 'พิมพ์ชื่องานก่อน'; return; }
-  if (deptTasks.some(t=>t.name===name)){ hint.textContent = `"${name}" มีอยู่แล้ว`; return; }
+  const dept = pickedDept('t-dept');
+  if (deptTasks.some(t=>t.name===name && t.department===dept)){ hint.textContent = `"${name}" มีอยู่แล้ว`; return; }
   hint.textContent = 'กำลังเพิ่ม...';
   try{
-    const id = profile.department.toLowerCase() + '_' + Date.now();
-    const { error } = await sb.from('tasks').insert({ id, department: profile.department, name, active: true });
+    const id = dept.toLowerCase() + '_' + Date.now();
+    const { error } = await sb.from('tasks').insert({ id, department: dept, name, active: true });
     if (error) throw error;
     hint.textContent = `เพิ่ม "${name}" แล้ว`;
     await refreshDeptTasks(); renderTaskManager();
@@ -670,8 +709,9 @@ async function openSupervisorJobs(){
   const details = { date, start, crew: crewMembers.map(m=>m.name) };
   hint.textContent = 'กำลังเปิดงาน...';
   try{
+    const dept = oDeptVal || myDepts()[0];
     const rows = crewMembers.map(m => ({
-      department: profile.department, task_id: oTaskVal,
+      department: dept, task_id: oTaskVal,
       employee_id: m.id, employee_name: m.name,
       created_by: currentUser.id, status: 'open',
       job_group_id: groupId, started_at: new Date().toISOString(),
@@ -695,7 +735,7 @@ async function openSupervisorJobs(){
 async function refreshOpenJobs(){
   try{
     const { data, error } = await sb.from('jobs').select('*')
-      .eq('department', profile.department).eq('status', 'open')
+      .in('department', myDepts()).eq('status', 'open')
       .order('created_at', { ascending:true });
     if (error) throw error;
     const map = new Map();
@@ -1008,6 +1048,7 @@ function renderRosterManager(){
 function openAddEmpModal(){
   document.getElementById('r-name').value='';
   document.getElementById('rosterHint').textContent='';
+  fillDeptSelect('r-dept', 'r-dept-field');
   document.getElementById('addEmpBackdrop').classList.add('open');
   document.getElementById('addEmpModal').classList.add('open');
   setTimeout(()=>document.getElementById('r-name').focus(), 50);
@@ -1020,10 +1061,11 @@ document.getElementById('rosterSubmitBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('r-name').value.trim();
   const hint = document.getElementById('rosterHint');
   if(!name){ hint.textContent='พิมพ์ชื่อพนักงานก่อน'; return; }
-  if (roster.some(r=>r.name===name)){ hint.textContent = `"${name}" มีอยู่ในรายชื่อแล้ว`; return; }
+  const dept = isAdmin() ? pickedDept('r-dept') : (pickedDept('r-dept') || myDepts()[0]);
+  if (roster.some(r=>r.name===name && r.department===dept)){ hint.textContent = `"${name}" มีอยู่ในรายชื่อแล้ว`; return; }
   hint.textContent = 'กำลังเพิ่ม...';
   try{
-    const { error } = await sb.from('employees').insert({ name, department: isAdmin() ? (oDeptVal||profile.department||DEPT_KEYS[0]) : profile.department });
+    const { error } = await sb.from('employees').insert({ name, department: dept });
     if (error) throw error;
     hint.textContent = `เพิ่ม "${name}" แล้ว`;
     await refreshRoster(); render();

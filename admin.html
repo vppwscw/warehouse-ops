@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>ภาพรวมคลังสินค้า</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=14">
+<link rel="stylesheet" href="css/admin.css?v=15">
 </head>
 <body>
 
@@ -131,6 +131,26 @@
 
     <!-- ===== VIEW: EMPLOYEES ===== -->
     <section class="view" id="view-employees">
+      <div class="user-admin-bar" id="empAdminBar" hidden>
+        <button type="button" class="btn-sm" id="toggleAddEmpBtn">＋ เพิ่มพนักงาน</button>
+      </div>
+      <form class="add-user-form" id="addEmpForm" hidden autocomplete="off">
+        <div class="auf-grid">
+          <div class="field"><label for="neName">ชื่อ-นามสกุล</label><input type="text" id="neName" placeholder="ชื่อ นามสกุล" autocomplete="off"></div>
+          <div class="field"><label for="neDept">ฝั่ง</label><select id="neDept"></select></div>
+        </div>
+        <div class="auf-actions">
+          <button type="button" class="btn-sm primary" id="createEmpBtn">เพิ่มเข้ารายชื่อ</button>
+          <button type="button" class="btn-sm" id="cancelAddEmpBtn">ยกเลิก</button>
+          <span class="form-hint" id="addEmpHint"></span>
+        </div>
+      </form>
+      <div class="table-wrap" id="empRosterWrap" hidden>
+        <table id="empRosterTable">
+          <thead><tr><th>ชื่อ (รายชื่อพนักงาน)</th><th>ฝั่ง</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
       <div class="table-wrap">
         <table id="employeesTable">
           <thead><tr><th>พนักงาน</th><th>ฝั่ง</th><th>งานที่เคยทำ (ช่วงที่เลือก)</th><th>งานสะสมทั้งหมด</th></tr></thead>
@@ -150,7 +170,7 @@
           <div class="field"><label for="nuName">ชื่อ-นามสกุล</label><input type="text" id="nuName" placeholder="ชื่อ นามสกุล"></div>
           <div class="field"><label for="nuPass">รหัสผ่านชั่วคราว</label><input type="text" id="nuPass" placeholder="อย่างน้อย 8 ตัว" autocomplete="off"></div>
           <div class="field"><label for="nuRole">สิทธิ์</label><select id="nuRole"></select></div>
-          <div class="field"><label for="nuDept">แผนก</label><select id="nuDept"></select></div>
+          <div class="field"><label>ฝั่ง (เลือกได้หลายฝั่ง)</label><div id="nuDeptCbs" class="dept-cb-row"></div></div>
         </div>
         <div class="auf-actions">
           <button type="button" class="btn-sm primary" id="createUserBtn">สร้างบัญชี</button>
@@ -161,7 +181,7 @@
       <p class="sub" id="usersViewNote" style="margin:0 0 14px;">รายชื่อผู้ใช้งานในระบบ</p>
       <div class="table-wrap">
         <table id="usersTable">
-          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>แผนก</th><th>รหัสพนักงาน</th><th>สถานะ</th><th></th></tr></thead>
+          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>ฝั่ง</th><th>รหัสพนักงาน</th><th>สถานะ</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -203,6 +223,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=19"></script>
+<script src="js/admin.js?v=20"></script>
 </body>
 </html>

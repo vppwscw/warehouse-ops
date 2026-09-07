@@ -171,6 +171,7 @@
 <div class="modal-backdrop" id="addEmpBackdrop"></div>
 <div class="modal-card" id="addEmpModal">
   <div class="modal-title">เพิ่มพนักงานใหม่</div>
+  <div class="field" id="r-dept-field" hidden style="margin-bottom:12px;"><label for="r-dept">ฝั่ง</label><select id="r-dept"></select></div>
   <div class="field" style="margin-bottom:12px;"><label for="r-name">ชื่อพนักงานคนใหม่</label><input id="r-name" placeholder="พิมพ์ชื่อ-นามสกุล"></div>
   <button type="button" class="btn ghost" id="rosterSubmitBtn" style="margin-bottom:6px;">+ เพิ่มเข้ารายชื่อ</button>
   <p class="hint" id="rosterHint"></p>
@@ -179,6 +180,7 @@
 <div class="modal-backdrop" id="addTaskBackdrop"></div>
 <div class="modal-card" id="addTaskModal">
   <div class="modal-title">เพิ่มชนิดงานใหม่</div>
+  <div class="field" id="t-dept-field" hidden style="margin-bottom:12px;"><label for="t-dept">ฝั่ง</label><select id="t-dept"></select></div>
   <div class="field" style="margin-bottom:12px;"><label for="t-name">ชื่องาน</label><input id="t-name" placeholder="เช่น ตรวจนับสต๊อกปลายวัน"></div>
   <button type="button" class="btn ghost" id="taskSubmitBtn" style="margin-bottom:6px;">+ เพิ่มชนิดงาน</button>
   <p class="hint" id="taskHint"></p>
@@ -199,6 +201,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/mobile.js?v=16"></script>
+<script src="js/mobile.js?v=17"></script>
 </body>
 </html>

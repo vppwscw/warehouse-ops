@@ -967,6 +967,7 @@ function mapDbError(err){
   if (!err) return 'unknown error';
   if (err.code === '42501' || /row-level security/i.test(err.message||'')) return 'ไม่มีสิทธิ์บันทึกข้อมูลของแผนกนี้';
   if (err.code === '23505') return 'ข้อมูลซ้ำกับที่มีอยู่แล้ว';
+  if (err.code === '23503' || /foreign key/i.test(err.message||'')) return 'ชนิดงานนี้ยังไม่มีในระบบ ไปเพิ่มที่แถบ "ชนิดงาน" ก่อน';
   return err.message || err.code || 'unknown error';
 }
 

@@ -182,6 +182,20 @@
   <div class="modal-title">เพิ่มชนิดงานใหม่</div>
   <div class="field" id="t-dept-field" hidden style="margin-bottom:12px;"><label for="t-dept">ฝั่ง</label><select id="t-dept"></select></div>
   <div class="field" style="margin-bottom:12px;"><label for="t-name">ชื่องาน</label><input id="t-name" placeholder="เช่น ตรวจนับสต๊อกปลายวัน"></div>
+  <div class="field" style="margin-bottom:12px;">
+    <label for="t-unit">หน่วยที่นับ (ว่างไว้ = "จำนวน")</label>
+    <input id="t-unit" list="t-unit-presets" placeholder="จำนวน">
+    <datalist id="t-unit-presets">
+      <option value="ยอดตู้เข้า"></option>
+      <option value="จำนวนตู้"></option>
+      <option value="จำนวนคัน"></option>
+      <option value="จำนวนพาเลท"></option>
+      <option value="จำนวนกล่อง"></option>
+      <option value="จำนวนชิ้น"></option>
+      <option value="เที่ยว"></option>
+      <option value="ครั้ง"></option>
+    </datalist>
+  </div>
   <button type="button" class="btn ghost" id="taskSubmitBtn" style="margin-bottom:6px;">+ เพิ่มชนิดงาน</button>
   <p class="hint" id="taskHint"></p>
 </div>
@@ -201,6 +215,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/mobile.js?v=18"></script>
+<script src="js/mobile.js?v=19"></script>
 </body>
 </html>

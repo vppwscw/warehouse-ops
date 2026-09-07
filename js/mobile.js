@@ -283,7 +283,8 @@ async function loadTasksFromDb(){
       data.forEach(t=>{
         byDept[t.department] = byDept[t.department] || [];
         byDept[t.department].push({
-          id: t.id, dept: t.department, label: t.name, sub:'', unit:'vehicles', unitLabel:'จำนวน',
+          id: t.id, dept: t.department, label: t.name, sub: t.unit_label || '',
+          unit: t.unit_label ? 'custom' : 'vehicles', unitLabel: t.unit_label || 'จำนวน',
           icon: ICON_BY_TASK_ID[t.id] || 'box',
         });
       });
@@ -671,7 +672,7 @@ function renderTaskManager(){
   const multi = visibleDepts().length > 1;
   box.innerHTML = deptTasks.map(t=>`
     <div class="task-row">
-      <span class="t-name ${t.active?'':'t-inactive'}">${multi ? `<span class="badge ${esc(t.department)}"><span class="dot"></span>${esc(DEPT_PLAIN[t.department]||t.department)}</span> ` : ''}${esc(t.name)}</span>
+      <span class="t-name ${t.active?'':'t-inactive'}">${multi ? `<span class="badge ${esc(t.department)}"><span class="dot"></span>${esc(DEPT_PLAIN[t.department]||t.department)}</span> ` : ''}${esc(t.name)}${t.unit_label ? ` <span class="jc-sub">· ${esc(t.unit_label)}</span>` : ''}</span>
       <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${esc(t.id)}" data-next-active="${t.active?'false':'true'}">
         ${t.active?'ปิดใช้งาน':'เปิดใช้งาน'}
       </button>
@@ -679,6 +680,7 @@ function renderTaskManager(){
 }
 function openAddTaskModal(){
   document.getElementById('t-name').value='';
+  const tu = document.getElementById('t-unit'); if (tu) tu.value='';
   document.getElementById('taskHint').textContent='';
   fillDeptSelect('t-dept', 't-dept-field');
   document.getElementById('addTaskBackdrop').classList.add('open');
@@ -698,7 +700,8 @@ document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
   hint.textContent = 'กำลังเพิ่ม...';
   try{
     const id = dept.toLowerCase() + '_' + Date.now();
-    const { error } = await sb.from('tasks').insert({ id, department: dept, name, active: true });
+    const unitLabel = (document.getElementById('t-unit')?.value || '').trim() || null;
+    const { error } = await sb.from('tasks').insert({ id, department: dept, name, active: true, unit_label: unitLabel });
     if (error) throw error;
     hint.textContent = `เพิ่ม "${name}" แล้ว`;
     await refreshDeptTasks(); renderTaskManager();
@@ -1097,7 +1100,7 @@ document.getElementById('searchBox').addEventListener('input', e=>{ searchTerm=e
 function formatResult(details, task){
   if (!task || !details) return '–';
   if (task.unit==='containers') return `${num(details.containers) || num(details.qty)} ตู้ / ${num(details.vehicles) || (num(details.containers)*(task.vehiclesPerContainer||56))} คัน`;
-  let s = `${num(details.qty)} ${unitShort(task.unit)}`;
+  let s = `${num(details.qty)} ${task.unit==='custom' ? task.unitLabel : unitShort(task.unit)}`;
   if (task.hasIssue && details.hasIssue) s += ` · มีปัญหา ${num(details.issueCount)} คัน`;
   return s;
 }

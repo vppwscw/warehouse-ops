@@ -225,7 +225,8 @@ async function loadTasksFromDb(){
       const byDept = { INB:[], OUT:[], INV:[] };
       data.forEach(t=>{
         byDept[t.department] = byDept[t.department] || [];
-        byDept[t.department].push({ id:t.id, label:t.name, unit:'vehicles', unitLabel:'จำนวน' });
+        byDept[t.department].push({ id:t.id, label:t.name, department:t.department,
+          unit: t.unit_label ? 'custom' : 'vehicles', unitLabel: t.unit_label || 'จำนวน' });
       });
       DEPT_KEYS.forEach(d=>{ if (byDept[d] && byDept[d].length) TASKS[d] = byDept[d]; });
     }
@@ -497,14 +498,23 @@ function daySeries(dept){
 // Replaces the old dept bar list + unit-cards split panel.
 function renderSideCards(closed){
   const sums = { INB:{containers:0,vehicles:0}, OUT:{vehicles:0,issue:0}, INV:{pieces:0,boxes:0} };
+  const customByDept = { INB:{}, OUT:{}, INV:{} }; // dept -> { unitLabel: qty }
   closed.forEach(j=>{
     const task = taskById(j.task_id); const d = j.details||{}; if (!task) return;
+    if (task.unit==='custom'){
+      const bag = customByDept[j.department] || (customByDept[j.department] = {});
+      bag[task.unitLabel] = (bag[task.unitLabel] || 0) + num(d.qty);
+      if (task.hasIssue && d.hasIssue && j.department==='OUT') sums.OUT.issue += num(d.issueCount);
+      return;
+    }
     if (task.unit==='containers'){ sums.INB.containers += num(d.containers); sums.INB.vehicles += num(d.vehicles) || (num(d.containers)*(task.vehiclesPerContainer||56)); }
     else if (j.department==='INB') sums.INB.vehicles += num(d.qty);
     else if (j.department==='OUT'){ sums.OUT.vehicles += num(d.qty); if (task.hasIssue && d.hasIssue) sums.OUT.issue += num(d.issueCount); }
     else if (task.unit==='boxes') sums.INV.boxes += num(d.qty);
     else if (task.unit==='pieces') sums.INV.pieces += num(d.qty);
   });
+  const customLines = dept => Object.entries(customByDept[dept]||{})
+    .map(([lab,q])=>`${num(q)} ${esc(lab)}`).join('<br>');
   // was any INB vehicle figure derived from a container multiplier (vs counted)?
   const inbDerived = closed.some(j=>{
     const t = taskById(j.task_id); const d = j.details||{};
@@ -519,18 +529,22 @@ function renderSideCards(closed){
     const smax = Math.max(1, ...series);
     const spark = series.map(v=>`<i class="${v>0?'on':''}" style="height:${Math.max(2,Math.round(v/smax*26))}px"></i>`).join('');
     let unit, cvt = '';
+    const cl = customLines(dept);
+    const onlyCustom = !!cl && !num(sums.INB.containers) && !num(sums.INB.vehicles)
+      && !num(sums.OUT.vehicles) && !num(sums.INV.pieces) && !num(sums.INV.boxes);
     if (dept==='INB'){
       if (num(sums.INB.containers)){
         unit = `<span class="approx">${num(sums.INB.containers)} ตู้ ${inbDerived?'≈':'·'} ${num(sums.INB.vehicles)} คัน</span>`;
         if (inbDerived) cvt = '(56 คัน/ตู้ — ประมาณ)';
       } else {
-        unit = `${num(sums.INB.vehicles)} คัน`;
+        unit = onlyCustom ? '' : `${num(sums.INB.vehicles)} คัน`;
       }
     } else if (dept==='OUT'){
-      unit = `${num(sums.OUT.vehicles)} คัน`;
+      unit = onlyCustom ? '' : `${num(sums.OUT.vehicles)} คัน`;
     } else {
-      unit = `${num(sums.INV.pieces)} ชิ้น<br>${num(sums.INV.boxes)} กล่อง`;
+      unit = onlyCustom ? '' : `${num(sums.INV.pieces)} ชิ้น<br>${num(sums.INV.boxes)} กล่อง`;
     }
+    if (cl) unit += (unit ? '<br>' : '') + cl;
     const issue = (dept==='OUT' && num(sums.OUT.issue))
       ? `<span class="badge issue sc-issue">มีปัญหา ${num(sums.OUT.issue)} คัน</span>` : '';
     return `<div class="side-card" data-dept="${dept}">

@@ -99,6 +99,10 @@ let deptTasks = []; // SUPERVISOR role: raw tasks rows (active + inactive) for t
 
 let oDeptVal = null, oTaskVal = null, crew = [];
 let doneFieldsBuiltForTask = null;
+let flowMode = 'admin';      // 'admin' one-shot entry | 'sup-open' SUPERVISOR opening a job
+let openJobGroups = [];      // SUPERVISOR: open jobs in their department, grouped by job_group_id
+let closingGroup = null;     // SUPERVISOR: the open job group currently being closed
+let openjobsSub = 'list';    // SUPERVISOR openjobs tab: 'list' | 'close'
 let deptFilter='ALL', empFilter='', searchTerm='', dateRange='today';
 let openMatrixEmp = null;
 let openRosterDept = null;
@@ -147,7 +151,7 @@ async function afterLogin(user){
   await loadTasksFromDb();
   if (isWorker()) await refreshMyOpenJob();
   wireRealtime();
-  goTab(isSupervisorRole() ? 'approve' : 'new');
+  goTab('new');
   await refreshAll();
 }
 
@@ -276,10 +280,12 @@ function navForRole(){
     {id:'new', label:'งานของฉัน', icon:'bolt'},
     {id:'history', label:'ประวัติ', icon:'chart'},
   ];
-  // SUPERVISOR: approve their department's pending jobs + manage its task types
+  // SUPERVISOR: record work directly — open a job (log start), close it (log end).
   return [
-    {id:'approve', label:'อนุมัติงาน', icon:'check'},
+    {id:'new', label:'เปิดงาน', icon:'bolt'},
+    {id:'openjobs', label:'งานเปิดอยู่', icon:'clock'},
     {id:'tasks', label:'ชนิดงาน', icon:'box'},
+    {id:'manage', label:'คนงาน', icon:'users'},
     {id:'history', label:'ประวัติ', icon:'chart'},
   ];
 }
@@ -292,15 +298,21 @@ function buildNav(){
 }
 buildNav();
 
-const TAB_TITLE = { new:'เริ่มงาน', history:'ประวัติ', manage:'รายชื่อคนงาน', approve:'อนุมัติงาน', tasks:'ชนิดงาน' };
+const TAB_TITLE = { new:'เริ่มงาน', history:'ประวัติ', manage:'รายชื่อคนงาน', approve:'อนุมัติงาน', tasks:'ชนิดงาน', openjobs:'งานที่เปิดอยู่' };
 
 let historySub = 'list';
 function goTab(tab){
   activeTab = tab;
   if (tab==='new'){
-    if (isAdmin()){ activeStep = 1; renderStep1(); }
+    if (isAdmin()){ flowMode = 'admin'; activeStep = 1; renderStep1(); }
+    else if (isSupervisorRole()){
+      flowMode = 'sup-open'; oDeptVal = profile.department;
+      oTaskVal = null; crew = []; doneFieldsBuiltForTask = null; activeStep = 2;
+      renderStep2();
+    }
     else if (isWorker()){ renderWorkerHome(); }
   }
+  if (tab==='openjobs'){ openjobsSub = 'list'; refreshOpenJobs().then(renderOpenJobs); }
   if (tab==='history'){ historySub = 'list'; refreshJobs().then(renderHistory); }
   if (tab==='approve') refreshPendingApprovals().then(renderApproveQueue);
   if (tab==='tasks') refreshDeptTasks().then(renderTaskManager);
@@ -316,17 +328,22 @@ function renderScreens(){
       else if (activeStep===2){ screenId='screen-step2'; title=DEPT_PLAIN[oDeptVal]; showBack=isAdmin(); }
       else if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
       else if (activeStep===4){ screenId='screen-success'; title='เริ่มงาน'; }
+    } else if (isSupervisorRole()){
+      // SUPERVISOR opens a job: pick task (step2) -> pick crew + start time (step3)
+      if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
+      else { screenId='screen-step2'; title='เลือกงาน'; }
     } else if (isWorker()){
       if (workerStep==='success'){ screenId='screen-worker-success'; title='งานของฉัน'; }
       else { screenId = myOpenJob ? 'screen-worker-active' : 'screen-worker-tasks'; title = myOpenJob ? 'กำลังทำงาน' : 'งานของฉัน'; }
     } else {
-      // SUPERVISOR has no 'new' tab (lands on 'approve' instead) — this only
-      // fires pre-login, while the login overlay covers the screen anyway
       screenId = 'screen-step1'; title = 'เริ่มงาน';
     }
   } else if (activeTab==='history'){
     if (historySub==='matrix'){ screenId='screen-matrix'; title='ใครทำอะไรได้บ้าง'; showBack=true; }
     else { screenId='screen-history'; title='ประวัติ'; }
+  } else if (activeTab==='openjobs'){
+    if (openjobsSub==='close'){ screenId='screen-closejob'; title='ปิดงาน'; showBack=true; }
+    else { screenId='screen-openjobs'; title='งานที่เปิดอยู่'; }
   } else {
     screenId = 'screen-'+activeTab;
     title = TAB_TITLE[activeTab];
@@ -337,7 +354,11 @@ function renderScreens(){
   document.getElementById('contentArea').scrollTop = 0;
 }
 document.getElementById('backBtn').addEventListener('click', ()=>{
-  if (activeTab==='new' && activeStep>1){ activeStep -= 1; if(activeStep===2) renderStep2(); if(activeStep===1) renderStep1(); renderScreens(); }
+  if (activeTab==='new' && activeStep>1){
+    if (isSupervisorRole()){ activeStep=2; renderStep2(); renderScreens(); return; }
+    activeStep -= 1; if(activeStep===2) renderStep2(); if(activeStep===1) renderStep1(); renderScreens();
+  }
+  else if (activeTab==='openjobs' && openjobsSub==='close'){ openjobsSub='list'; renderOpenJobs(); renderScreens(); }
   else if (activeTab==='history' && historySub==='matrix'){ historySub='list'; renderScreens(); }
 });
 
@@ -379,8 +400,17 @@ function renderStep3(){
   }
   document.getElementById('d-date').value = document.getElementById('d-date').value || todayISO();
   document.getElementById('d-start').value = document.getElementById('d-start').value || timeNowHHMM();
-  document.getElementById('d-end').value = document.getElementById('d-end').value || timeNowHHMM();
-  if (task && doneFieldsBuiltForTask !== oTaskVal) renderDoneFields();
+  // A SUPERVISOR opening a job only logs the start; end time + result are entered
+  // later on the "ปิดงาน" screen. The one-shot ADMIN flow keeps all fields.
+  const supOpen = flowMode === 'sup-open';
+  const endField = document.getElementById('d-end').closest('.field');
+  if (endField) endField.style.display = supOpen ? 'none' : '';
+  document.getElementById('doneResultFields').style.display = supOpen ? 'none' : '';
+  document.getElementById('openSubmitBtn').textContent = supOpen ? 'เปิดงาน · เริ่มจับเวลา' : 'บันทึกงาน';
+  if (!supOpen){
+    document.getElementById('d-end').value = document.getElementById('d-end').value || timeNowHHMM();
+    if (task && doneFieldsBuiltForTask !== oTaskVal) renderDoneFields();
+  }
 }
 
 // ================= RESULT-FIELD BUILDER =================
@@ -622,6 +652,156 @@ document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
   }catch(err){ hint.textContent = 'เพิ่มไม่สำเร็จ: ' + mapDbError(err); }
 });
 
+// ================= SUPERVISOR role: open / close jobs directly =================
+// One model: the SUPERVISOR picks a task + crew and opens the job (logs the
+// start), then later closes it (logs the end + quantity). No approval step —
+// closing writes status 'approved' straight away.
+async function openSupervisorJobs(){
+  const hint = document.getElementById('openHint');
+  if (crew.length===0){ hint.textContent='แตะเลือกคนอย่างน้อย 1 คนก่อน'; return; }
+  const task = taskById(oTaskVal);
+  const crewMembers = crew.map(id => roster.find(r=>r.id==id)).filter(Boolean);
+  if (crewMembers.length===0){ hint.textContent='ไม่พบรายชื่อที่เลือก ลองใหม่'; return; }
+  const date = document.getElementById('d-date').value || todayISO();
+  const start = document.getElementById('d-start').value || timeNowHHMM();
+  const groupId = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : (Date.now() + '-' + Math.random().toString(16).slice(2));
+  const details = { date, start, crew: crewMembers.map(m=>m.name) };
+  hint.textContent = 'กำลังเปิดงาน...';
+  try{
+    const rows = crewMembers.map(m => ({
+      department: profile.department, task_id: oTaskVal,
+      employee_id: m.id, employee_name: m.name,
+      created_by: currentUser.id, status: 'open',
+      job_group_id: groupId, started_at: new Date().toISOString(),
+      details,
+    }));
+    const { error } = await sb.from('jobs').insert(rows);
+    if (error) throw error;
+    hint.textContent = '';
+    crew = []; oTaskVal = null; doneFieldsBuiltForTask = null;
+    document.getElementById('d-date').value = '';
+    document.getElementById('d-start').value = '';
+    await Promise.all([refreshOpenJobs(), refreshJobs()]);
+    toast('เปิดงานแล้ว · ' + (task ? task.label : ''), 'ok');
+    goTab('openjobs');
+  }catch(err){
+    hint.textContent = '';
+    toast('เปิดงานไม่สำเร็จ: ' + mapDbError(err));
+  }
+}
+
+async function refreshOpenJobs(){
+  try{
+    const { data, error } = await sb.from('jobs').select('*')
+      .eq('department', profile.department).eq('status', 'open')
+      .order('created_at', { ascending:true });
+    if (error) throw error;
+    const map = new Map();
+    (data||[]).forEach(r=>{
+      const key = r.job_group_id ? ('g:'+r.job_group_id) : ('row:'+r.id);
+      if (!map.has(key)) map.set(key, { ...r, rowIds:[], crewNames:[] });
+      const g = map.get(key);
+      g.rowIds.push(r.id);
+      if (r.employee_name) g.crewNames.push(r.employee_name);
+    });
+    openJobGroups = [...map.values()];
+  }catch(e){ openJobGroups = []; }
+}
+
+function renderOpenJobs(){
+  const box = document.getElementById('openJobsList');
+  const empty = document.getElementById('openJobsEmpty');
+  if (!box) return;
+  if (openJobGroups.length===0){ box.innerHTML=''; empty.hidden=false; return; }
+  empty.hidden = true;
+  box.innerHTML = openJobGroups.map((g,i)=>{
+    const task = taskById(g.task_id);
+    const d = g.details || {};
+    const started = g.started_at
+      ? new Date(g.started_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})
+      : (d.start || '–');
+    return `<div class="hist-card">
+      <div class="hist-top"><div>
+        <span class="badge ${esc(g.department)}"><span class="dot"></span>${DEPT_PLAIN[g.department]||esc(g.department)}</span>
+        <span class="status-badge open">${STATUS_LABEL.open}</span>
+        <div class="hist-task">${esc(task?task.label:g.task_id)}</div>
+        <div class="hist-crew">${esc(g.crewNames.join(', '))}</div>
+      </div></div>
+      <div class="hist-meta">
+        <span>${esc(d.date||'')}</span>
+        <span>เริ่ม ${esc(started)} น.</span>
+      </div>
+      <div class="approve-actions">
+        <button type="button" class="mini-btn approve" data-close-group="${i}">ปิดงาน · บันทึกผล</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openCloseForm(idx){
+  closingGroup = openJobGroups[idx];
+  if (!closingGroup) return;
+  const task = taskById(closingGroup.task_id);
+  const d = closingGroup.details || {};
+  const started = closingGroup.started_at
+    ? new Date(closingGroup.started_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})
+    : (d.start || '–');
+  document.getElementById('closeJobCard').innerHTML = `
+    <div class="active-job-name">${esc(task?task.label:closingGroup.task_id)}</div>
+    <div class="active-job-meta">${esc(closingGroup.crewNames.join(', '))}</div>
+    <div class="active-job-meta">เริ่มงานเวลา ${esc(started)} น.</div>`;
+  document.getElementById('closeDoneFields').innerHTML = task ? buildResultFieldsHTML(task, 'c') : '';
+  if (task) wireContainerAutofill(task, 'c');
+  document.getElementById('c-end').value = timeNowHHMM();
+  document.getElementById('closeJobHint').textContent = '';
+  openjobsSub = 'close';
+  renderScreens();
+}
+
+async function closeSupervisorGroup(){
+  if (!closingGroup) return;
+  const hint = document.getElementById('closeJobHint');
+  const task = taskById(closingGroup.task_id);
+  const start = (closingGroup.details && closingGroup.details.start) || timeNowHHMM();
+  const end = document.getElementById('c-end').value || timeNowHHMM();
+  const unitVal = Number(document.getElementById('c-unit').value)||0;
+  const details = { ...(closingGroup.details||{}), end, mins: minutesBetween(start, end), qty: unitVal };
+  if (task && task.unit==='containers'){
+    details.containers = unitVal;
+    details.vehicles = Number(document.getElementById('c-vehicles').value) || (unitVal*task.vehiclesPerContainer);
+    details.qty = details.vehicles;
+  }
+  if (task && task.hasIssue){
+    const y = document.querySelector('input[name="issue-c"]:checked')?.value==='yes';
+    details.hasIssue = y;
+    details.issueCount = y ? (Number(document.getElementById('c-issue').value)||0) : 0;
+  }
+  hint.textContent = 'กำลังปิดงาน...';
+  try{
+    let q = sb.from('jobs').update({
+      status: 'approved', ended_at: new Date().toISOString(),
+      approved_by: currentUser.id, approved_at: new Date().toISOString(),
+      details,
+    });
+    q = closingGroup.job_group_id
+      ? q.eq('job_group_id', closingGroup.job_group_id)
+      : q.in('id', closingGroup.rowIds);
+    const { error } = await q;
+    if (error) throw error;
+    hint.textContent = '';
+    closingGroup = null; openjobsSub = 'list';
+    await Promise.all([refreshOpenJobs(), refreshJobs()]);
+    toast('ปิดงานเรียบร้อย บันทึกผลแล้ว', 'ok');
+    goTab('openjobs');
+  }catch(err){
+    hint.textContent = '';
+    toast('ปิดงานไม่สำเร็จ: ' + mapDbError(err));
+  }
+}
+document.getElementById('closeJobBtn').addEventListener('click', closeSupervisorGroup);
+
 // ================= EVENT DELEGATION =================
 document.addEventListener('click', async (e)=>{
   const navBtn = e.target.closest('[data-nav]');
@@ -714,6 +894,9 @@ document.addEventListener('click', async (e)=>{
     return;
   }
 
+  const closeGroupBtn = e.target.closest('[data-close-group]');
+  if (closeGroupBtn){ openCloseForm(Number(closeGroupBtn.dataset.closeGroup)); return; }
+
   const approveBtn = e.target.closest('[data-approve-job]');
   if (approveBtn){ setJobStatusSupervisor(approveBtn.dataset.approveJob, 'approved'); return; }
   const rejectBtn = e.target.closest('[data-reject-job]');
@@ -736,6 +919,7 @@ document.addEventListener('click', async (e)=>{
 });
 
 document.getElementById('openSubmitBtn').addEventListener('click', async ()=>{
+  if (flowMode === 'sup-open'){ await openSupervisorJobs(); return; }
   const hint = document.getElementById('openHint');
   if (crew.length===0){ hint.textContent='แตะเลือกคนอย่างน้อย 1 คนก่อน'; return; }
   const task = taskById(oTaskVal);
@@ -863,7 +1047,9 @@ function formatResult(details, task){
 function groupJobs(rows){
   const map = new Map();
   rows.forEach(r=>{
-    const key = [r.department, r.task_id, (r.details&&r.details.date)||'', (r.details&&r.details.start)||'', r.created_at.slice(0,16)].join('|');
+    const key = r.job_group_id
+      ? 'g:'+r.job_group_id
+      : [r.department, r.task_id, (r.details&&r.details.date)||'', (r.details&&r.details.start)||'', r.created_at.slice(0,16)].join('|');
     if (!map.has(key)) map.set(key, { ...r, crewNames: new Set() });
     const g = map.get(key);
     if (r.employee_name) g.crewNames.add(r.employee_name);
@@ -980,11 +1166,15 @@ function render(){
       if (activeStep===1) renderStep1();
       if (activeStep===2) renderStep2();
       if (activeStep===3) renderStep3();
+    } else if (isSupervisorRole() && activeStep===3){
+      renderStep3();
     } else if (isWorker() && workerStep!=='success'){
       renderWorkerHome();
     }
   } else if (activeTab==='approve' && isSupervisorRole()){
     refreshPendingApprovals().then(renderApproveQueue);
+  } else if (activeTab==='openjobs' && isSupervisorRole()){
+    if (openjobsSub==='list') refreshOpenJobs().then(renderOpenJobs);
   }
 }
 

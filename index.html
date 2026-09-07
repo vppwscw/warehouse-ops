@@ -137,6 +137,25 @@
       <div class="empty-state" id="approveEmpty" hidden><div class="big">○</div>ไม่มีงานรออนุมัติตอนนี้</div>
     </div>
 
+    <!-- ===== SUPERVISOR role: jobs currently open — tap one to close it ===== -->
+    <div class="screen" id="screen-openjobs">
+      <div id="openJobsList"></div>
+      <div class="empty-state" id="openJobsEmpty" hidden><div class="big">○</div>ยังไม่มีงานที่เปิดค้างอยู่<br>ไปที่แถบ "เปิดงาน" เพื่อเริ่มงานใหม่</div>
+    </div>
+
+    <!-- ===== SUPERVISOR role: close-out form for one open job group ===== -->
+    <div class="screen" id="screen-closejob">
+      <div class="active-job-card" id="closeJobCard"></div>
+      <div class="field-row" style="margin:14px 0 12px;">
+        <div class="field"><label for="c-end">เวลาจบ</label><input id="c-end" type="time"></div>
+      </div>
+      <div id="closeDoneFields"></div>
+      <div class="sticky-cta">
+        <button type="button" class="btn" id="closeJobBtn">ปิดงาน · บันทึกผล</button>
+        <p class="hint" id="closeJobHint"></p>
+      </div>
+    </div>
+
     <!-- ===== SUPERVISOR role: task types for their department ===== -->
     <div class="screen" id="screen-tasks">
       <button type="button" class="btn ghost" id="toggleAddTaskLink" style="margin-bottom:14px;">+ เพิ่มชนิดงานใหม่</button>
@@ -180,6 +199,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/mobile.js?v=13"></script>
+<script src="js/mobile.js?v=14"></script>
 </body>
 </html>

@@ -322,7 +322,9 @@ document.getElementById('searchInput').addEventListener('input', e=>{ searchTerm
 function groupJobs(rows){
   const map = new Map();
   rows.forEach(r=>{
-    const key = [r.department, r.task_id, (r.details&&r.details.date)||'', (r.details&&r.details.start)||'', (r.created_at||'').slice(0,16)].join('|');
+    const key = r.job_group_id
+      ? 'g:'+r.job_group_id
+      : [r.department, r.task_id, (r.details&&r.details.date)||'', (r.details&&r.details.start)||'', (r.created_at||'').slice(0,16)].join('|');
     if (!map.has(key)) map.set(key, { ...r, crewNames: new Set(), rowIds: [] });
     const g = map.get(key);
     g.rowIds.push(r.id);          // every DB row in this group — approve/reject must hit them all

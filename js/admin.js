@@ -1,7 +1,7 @@
 // ===================== SUPABASE INIT =====================
 
 const DEPT_KEYS = ['INB','OUT','INV'];
-const DEPT_PLAIN = { INB:'ขาเข้า', OUT:'ขาออก', INV:'สต๊อก' };
+const DEPT_PLAIN = { INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' };
 const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
@@ -658,7 +658,7 @@ function renderQueue(){
 async function approveDept(dept){
   const list = queuePending().filter(j=>j.department===dept);
   if (!list.length) return;
-  const okGo = await confirmModal(`อนุมัติงานฝั่ง${DEPT_PLAIN[dept]}ทั้งหมด ${list.length} งาน?`, { yes:'อนุมัติทั้งหมด' });
+  const okGo = await confirmModal(`อนุมัติงานฝั่ง ${DEPT_PLAIN[dept]} ทั้งหมด ${list.length} งาน?`, { yes:'อนุมัติทั้งหมด' });
   if (!okGo) return;
   const ids = list.flatMap(j => (j.rowIds && j.rowIds.length) ? j.rowIds : [j.id]);
   const { error } = await sb.from('jobs').update({

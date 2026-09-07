@@ -1,7 +1,7 @@
 // ===================== SUPABASE INIT =====================
 
 const DEPT_KEYS = ['INB','OUT','INV'];
-const DEPT_PLAIN = { INB:'ขาเข้า', OUT:'ขาออก', INV:'สต๊อก' };
+const DEPT_PLAIN = { INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' };
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const DEPT_SUB   = { INB:'รับรถเข้าคลัง', OUT:'ส่งรถออกคลัง', INV:'จัดการของ/แพ็คของ' };
 const DEPT_ICON  = { INB:'inbound', OUT:'outbound', INV:'inventory' };
@@ -374,7 +374,7 @@ function renderStep1(){
 
 // ================= STEP 2 =================
 function renderStep2(){
-  document.getElementById('step2Title').textContent = `งานฝั่ง${DEPT_PLAIN[oDeptVal]} — เลือกงาน`;
+  document.getElementById('step2Title').textContent = `งานฝั่ง ${DEPT_PLAIN[oDeptVal]} — เลือกงาน`;
   document.getElementById('jobChoiceList').innerHTML = (TASKS[oDeptVal]||[]).map(t=>`
     <button type="button" class="job-choice" data-pick-task="${esc(t.id)}">
       <span class="jc-icon badge ${esc(oDeptVal)}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
@@ -390,7 +390,7 @@ function renderStep3(){
   const list = roster.filter(r=>r.department===oDeptVal);
   const box = document.getElementById('empCheckList');
   if (list.length===0){
-    box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง${DEPT_PLAIN[oDeptVal]}<br>ไปเพิ่มที่แถบ "คนงาน" ด้านล่างก่อน</div>`;
+    box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง ${DEPT_PLAIN[oDeptVal]}<br>ไปเพิ่มที่แถบ "คนงาน" ด้านล่างก่อน</div>`;
   } else {
     box.innerHTML = list.map(r=>`
       <button type="button" class="emp-check" data-pick-emp="${esc(r.id)}" aria-pressed="${crew.includes(String(r.id))}">
@@ -482,7 +482,7 @@ function renderWorkerHome(){
 function renderWorkerTaskList(){
   const list = TASKS[profile.department] || [];
   const box = document.getElementById('workerTaskList');
-  if (list.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของฝั่ง${DEPT_PLAIN[profile.department]}<br>ติดต่อหัวหน้างานให้เพิ่มชนิดงานก่อน</div>`; return; }
+  if (list.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของฝั่ง ${DEPT_PLAIN[profile.department]}<br>ติดต่อหัวหน้างานให้เพิ่มชนิดงานก่อน</div>`; return; }
   box.innerHTML = list.map(t=>`
     <button type="button" class="job-choice" data-open-task="${esc(t.id)}">
       <span class="jc-icon badge ${esc(profile.department)}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>

@@ -110,7 +110,11 @@ const inScope = d => isAdmin() || myDepts().includes(d);
 const inWh = w => isAdmin() || myWarehouses().includes(w);
 const visibleDepts = () => isAdmin() ? DEPT_KEYS : DEPT_KEYS.filter(d=>myDepts().includes(d));
 // task list is warehouse-agnostic in the fallback (no `warehouse`), warehouse-pinned once from the DB
-const taskInWh = (t, wh) => t.warehouse == null || t.warehouse === wh;
+// A task belongs to a warehouse only when it is tagged with that exact one.
+// The hardcoded FALLBACK_TASKS carry no warehouse and can't open a job anyway
+// (jobs.task_id FK -> tasks.id), so they must never appear once a warehouse is
+// picked — otherwise คลัง B shows คลัง A's generic list.
+const taskInWh = (t, wh) => wh ? t.warehouse === wh : t.warehouse == null;
 
 let myOpenJob = null; // USER role: the job row they currently have open, if any
 let workerStep = 'list'; // USER role: 'list' (task list or active job) | 'success' (just closed)
@@ -499,12 +503,15 @@ function step1HasChoice(){
 function renderStep2(){
   const whTxt = oWhVal ? `${WH_PLAIN[oWhVal]} · ` : '';
   document.getElementById('step2Title').textContent = `${whTxt}งานฝั่ง ${DEPT_PLAIN[oDeptVal]} — เลือกงาน`;
-  document.getElementById('jobChoiceList').innerHTML = (TASKS[oDeptVal]||[]).filter(t=>taskInWh(t, oWhVal)).map(t=>`
-    <button type="button" class="job-choice" data-pick-task="${esc(t.id)}">
-      <span class="jc-icon badge ${esc(oDeptVal)}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
-      <span><span class="jc-name">${esc(t.label)}</span><br><span class="jc-sub">${esc(t.sub||'')}</span></span>
-      <span class="t-chev">${ICONS.chev}</span>
-    </button>`).join('');
+  const whTasks = (TASKS[oDeptVal]||[]).filter(t=>taskInWh(t, oWhVal));
+  document.getElementById('jobChoiceList').innerHTML = whTasks.length
+    ? whTasks.map(t=>`
+      <button type="button" class="job-choice" data-pick-task="${esc(t.id)}">
+        <span class="jc-icon badge ${esc(oDeptVal)}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
+        <span><span class="jc-name">${esc(t.label)}</span><br><span class="jc-sub">${esc(t.sub||'')}</span></span>
+        <span class="t-chev">${ICONS.chev}</span>
+      </button>`).join('')
+    : `<div class="empty-roster-inline">${esc(WH_PLAIN[oWhVal]||oWhVal)} · ฝั่ง ${esc(DEPT_PLAIN[oDeptVal]||oDeptVal)} ยังไม่มีชนิดงาน<br>เพิ่มที่แท็บ "ชนิดงาน" ก่อนเปิดงาน</div>`;
 }
 
 // ================= STEP 3 =================

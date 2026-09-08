@@ -302,9 +302,30 @@ document.getElementById('botNav').innerHTML = NAV.map(n=>`
 document.getElementById('gearBtn').innerHTML = ICONS.gear;
 document.getElementById('deniedLockIcon').innerHTML = ICONS.lock;
 
+// which filter controls make sense on each view (others are hidden)
+const VIEW_FILTERS = {
+  dashboard: ['range','wh','dept','search'],
+  details:   ['range','wh','dept','search'],
+  queue:     ['wh','dept','search'],
+  tasks:     ['wh','dept','search'],
+  employees: ['wh','dept','search'],
+  users:     ['search'],
+};
+function syncFilterbar(){
+  const show = VIEW_FILTERS[activeView] || ['range','wh','dept','search'];
+  const set = (elId, key) => { const el = document.getElementById(elId); if (el) el.hidden = !show.includes(key); };
+  set('rangeGroup','range'); set('whGroup','wh'); set('deptGroup','dept'); set('searchGroup','search');
+  const bar = document.getElementById('filterbar');
+  if (bar){
+    bar.hidden = show.length === 0;
+    bar.classList.toggle('filterbar--search-only', show.length === 1 && show[0] === 'search');
+  }
+}
+
 function goView(id){
   if (id === 'users' && !canManageUsers()){ openProfileModal(); return; }
   activeView = id;
+  syncFilterbar();
   document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current', b.dataset.view===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');

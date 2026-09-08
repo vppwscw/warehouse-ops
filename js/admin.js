@@ -12,23 +12,6 @@ const ROLE_ORDER = ['USER','SUPERVISOR','ASSISTANT','ADMIN'];
 // ASSISTANT (ผู้ช่วยผู้จัดการ), then SUPERVISOR (หัวหน้างาน), then USER.
 const ROLE_RANK = { ADMIN:0, ASSISTANT:1, SUPERVISOR:2, USER:3 };
 
-// POST to the admin-users Edge Function with the caller's session token.
-async function callAdminFn(payload){
-  const { data: { session } } = await sb.auth.getSession();
-  const res = await fetch(ADMIN_USERS_FN, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + session.access_token,
-      'apikey': SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify(payload),
-  });
-  const out = await res.json().catch(()=>({}));
-  if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
-  return out;
-}
-
 // Every value that ends up inside an innerHTML template must go through esc() —
 // full_name, employee_code, task names, crew names and the whole jobs.details
 // blob are user-controlled and were an XSS vector before this.
@@ -69,7 +52,6 @@ const ICONS = {
 
 let profile = null, currentUser = null;
 let jobs = [], roster = [], users = [], allEmployees = [], taskList = [], scopes = [];
-let userEmails = {};   // { profileId: email } — pulled from auth.users via the Edge Function
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', whFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
@@ -1071,7 +1053,7 @@ function renderUsersTable(){
   let list = sortedUsers();
   if (q) list = list.filter(u=>
     (u.full_name||'').toLowerCase().includes(q)
-    || (userEmails[u.id]||'').toLowerCase().includes(q)
+    || (u.email||'').toLowerCase().includes(q)
     || (u.employee_code||'').toLowerCase().includes(q)
     || (ROLE_LABEL[u.role]||'').toLowerCase().includes(q));
   if (list.length===0){ wrap.innerHTML = `<p class="empty-note">ไม่พบผู้ใช้ที่ตรงกับ "${esc(q)}"</p>`; return; }
@@ -1081,7 +1063,7 @@ function renderUsersTable(){
     const isSelf = currentUser && u.id === currentUser.id;
     const pairs = userScopePairs(u.id);
     const scoped = u.role === 'SUPERVISOR' || u.role === 'ASSISTANT';
-    const email = userEmails[u.id] || '';
+    const email = u.email || '';
     const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
     const effApps = allowedApps(u);
     const head = `
@@ -1289,7 +1271,7 @@ async function createUserFromForm(){
     hint.textContent = `สร้างบัญชี ${email} แล้ว`;
     ['nuEmail','nuName','nuPass'].forEach(id=>{ document.getElementById(id).value = ''; });
     document.querySelectorAll('#nuScopeGrid .nu-scope-cb:checked, #nuAppCbs .nu-app-cb:checked').forEach(c=>{ c.checked = false; });
-    await Promise.all([refreshUsers(), refreshScopes(), refreshUserEmails()]); renderUsersTable();
+    await Promise.all([refreshUsers(), refreshScopes()]); renderUsersTable();
     setTimeout(()=>{ document.getElementById('addUserForm').hidden = true; hint.textContent = ''; }, 1400);
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
 }
@@ -1390,21 +1372,11 @@ async function refreshScopes(){
     scopes = data || [];
   }catch(e){ /* admin-only; non-critical */ }
 }
-// Emails aren't in `profiles` — the Edge Function reads them from auth.users.
-async function refreshUserEmails(){
-  if (isReadOnly()) return;                 // ASSISTANT can't call the admin function
-  try{
-    const out = await callAdminFn({ action: 'list' });
-    const map = {};
-    (out.users || []).forEach(u=>{ map[u.id] = u.email || ''; });
-    userEmails = map;
-  }catch(e){ /* non-critical — the view just shows "–" for email */ }
-}
 async function refreshAll(){
   document.getElementById('syncText').textContent = 'กำลังโหลดข้อมูล...';
   loadError = null;
   if (firstLoad) render();                        // paints the skeleton
-  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshScopes(), refreshUserEmails(), refreshEmployeesAll(), refreshTasksAdmin()]);
+  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshScopes(), refreshEmployeesAll(), refreshTasksAdmin()]);
   if (jobsRes.status === 'rejected'){
     loadError = mapDbError(jobsRes.reason);
     document.getElementById('syncText').textContent = 'โหลดข้อมูลไม่สำเร็จ';

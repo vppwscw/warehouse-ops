@@ -300,7 +300,6 @@ document.getElementById('botNav').innerHTML = NAV.map(n=>`
     ${ICONS[n.icon]}<span>${n.short}</span>
   </button>`).join('');
 document.getElementById('gearBtn').innerHTML = ICONS.gear;
-document.getElementById('loginLockIcon').innerHTML = ICONS.matrix;
 document.getElementById('deniedLockIcon').innerHTML = ICONS.lock;
 document.getElementById('brandMark').innerHTML = ICONS.matrix;
 

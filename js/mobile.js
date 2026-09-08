@@ -71,7 +71,6 @@ document.getElementById('backBtn').innerHTML = ICONS.back;
 document.querySelector('.ok-circle').innerHTML = ICONS.check;
 document.getElementById('logoutBtn').innerHTML = ICONS.logout;
 document.getElementById('openMatrixChev').innerHTML = ICONS.chev;
-document.getElementById('loginLogo').innerHTML = ICONS.box;
 document.getElementById('matrixTrophyIcon').innerHTML = ICONS.trophy;
 
 const nowBkk = () => new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Bangkok'}));

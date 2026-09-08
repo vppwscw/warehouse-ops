@@ -203,6 +203,7 @@ input[type=time],input[type=date]{font-family:'IBM Plex Mono',monospace;}
 .login-overlay{position:fixed;inset:0;z-index:200;background:var(--app-bg);display:flex;align-items:center;justify-content:center;padding:20px;}
 .login-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px 22px;box-shadow:var(--shadow-lg);}
 .login-logo{font-size:36px;text-align:center;margin-bottom:6px;}
+.login-logo-img{display:block;height:48px;width:auto;max-width:80%;margin:0 auto 14px;}
 .login-title{font-family:'IBM Plex Sans Thai',sans-serif;font-weight:700;font-size:20px;text-align:center;margin-bottom:3px;}
 .login-sub{font-size:12.5px;color:var(--ink-dim);text-align:center;margin-bottom:20px;}
 .issue-toggle{display:flex;gap:8px;margin-bottom:16px;}

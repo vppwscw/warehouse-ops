@@ -54,6 +54,7 @@ let profile = null, currentUser = null;
 let jobs = [], roster = [], users = [], allEmployees = [], taskList = [], scopes = [];
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', whFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
+let dateFrom = null, dateTo = null;   // ISO yyyy-mm-dd, used when dateRange === 'custom'
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
 let prevSideCounts = {}; // last-rendered side-card job counts, for the counter animation
 let firstLoad = true;    // true until the first successful data load (drives the skeleton)
@@ -315,11 +316,65 @@ function syncFilterbar(){
   const show = VIEW_FILTERS[activeView] || ['range','wh','dept','search'];
   const set = (elId, key) => { const el = document.getElementById(elId); if (el) el.hidden = !show.includes(key); };
   set('rangeGroup','range'); set('whGroup','wh'); set('deptGroup','dept'); set('searchGroup','search');
+  renderWhChips();     // may hide #whGroup further (single-warehouse user)
+  syncDatePick();
   const bar = document.getElementById('filterbar');
   if (bar){
-    bar.hidden = show.length === 0;
-    bar.classList.toggle('filterbar--search-only', show.length === 1 && show[0] === 'search');
+    const anyVisible = ['rangeGroup','whGroup','deptGroup','searchGroup']
+      .some(id => { const el = document.getElementById(id); return el && !el.hidden; });
+    bar.hidden = !anyVisible;
+    bar.classList.toggle('filterbar--search-only',
+      show.length === 1 && show[0] === 'search');
   }
+}
+
+// the ADMIN sees every warehouse; anyone else sees only the ones in their scope
+function myWhList(){
+  if (profile && profile.role === 'ADMIN') return WH_KEYS.slice();
+  const uid = currentUser && currentUser.id;
+  return [...new Set(scopes.filter(s=>s.profile_id===uid).map(s=>s.warehouse))].sort();
+}
+function renderWhChips(){
+  const el = document.getElementById('whChips');
+  const grp = document.getElementById('whGroup');
+  if (!el || !grp) return;
+  const isAdm = profile && profile.role === 'ADMIN';
+  const mine = myWhList();
+  let opts;
+  if (isAdm) opts = [['ALL','ทั้งหมด'], ...WH_KEYS.map(w=>[w, w])];
+  else if (mine.length >= 2) opts = mine.map(w=>[w, w]);   // toggle A/B, no "ทั้งหมด"
+  else opts = null;                                        // 0–1 warehouse -> no filter
+
+  if (!opts){
+    grp.hidden = true;
+    whFilter = mine[0] || 'ALL';
+    return;
+  }
+  const valid = opts.map(o=>o[0]);
+  if (!valid.includes(whFilter)) whFilter = valid[0];
+  el.innerHTML = opts.map(([v,label])=>
+    `<button type="button" class="chip" data-wh="${esc(v)}" aria-pressed="${v===whFilter}">${esc(label)}</button>`
+  ).join('');
+}
+
+function syncDatePick(){
+  const custom = dateRange === 'custom';
+  const btn = document.getElementById('calBtn');
+  if (btn){
+    btn.setAttribute('aria-pressed', custom);
+    btn.title = custom ? ('ช่วง: ' + rangeLabel()) : 'เลือกช่วงวันที่';
+  }
+}
+function applyCustomRange(){
+  let f = document.getElementById('dateFromInput').value;
+  let t = document.getElementById('dateToInput').value;
+  if (!f && !t){ toast('เลือกวันที่อย่างน้อย 1 ช่อง'); return; }
+  if (!f) f = t; if (!t) t = f;
+  if (f > t){ [f, t] = [t, f]; }
+  dateFrom = f; dateTo = t; dateRange = 'custom';
+  document.getElementById('datePop').hidden = true;
+  document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
+  syncDatePick(); render();
 }
 
 function goView(id){
@@ -368,7 +423,29 @@ document.addEventListener('click', e=>{
   if (rangeChip){
     document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
     rangeChip.setAttribute('aria-pressed','true');
-    dateRange = rangeChip.dataset.range; render(); return;
+    dateRange = rangeChip.dataset.range; dateFrom = dateTo = null;
+    syncDatePick(); render(); return;
+  }
+  if (e.target.closest('#calBtn')){
+    const pop = document.getElementById('datePop');
+    pop.hidden = !pop.hidden;
+    if (!pop.hidden){
+      document.getElementById('dateFromInput').value = dateFrom || todayISO();
+      document.getElementById('dateToInput').value   = dateTo   || todayISO();
+    }
+    return;
+  }
+  if (e.target.closest('#dateApplyBtn')){ applyCustomRange(); return; }
+  if (e.target.closest('#dateClearBtn')){
+    dateFrom = dateTo = null; dateRange = 'all';
+    document.getElementById('datePop').hidden = true;
+    document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.range==='all'));
+    syncDatePick(); render(); return;
+  }
+  // click outside the date popover closes it
+  if (!e.target.closest('#datePick')){
+    const pop = document.getElementById('datePop');
+    if (pop && !pop.hidden) pop.hidden = true;
   }
   const whChip = e.target.closest('#whChips [data-wh]');
   if (whChip){
@@ -460,14 +537,16 @@ function matchScope(j){
 }
 function filteredJobs(){
   const todayStr = todayISO();
-  let fromStr = null;
+  let fromStr = null, toStr = null;
   if (dateRange==='today') fromStr = todayStr;
   else if (dateRange==='week') fromStr = daysAgoISO(6);
   else if (dateRange==='month') fromStr = daysAgoISO(29);
+  else if (dateRange==='custom'){ fromStr = dateFrom; toStr = dateTo; }
 
   return jobs.filter(j=>{
     const d = j.details || {};
     if (fromStr && d.date < fromStr) return false;
+    if (toStr && d.date > toStr) return false;
     if (dateRange==='today' && d.date !== todayStr) return false;
     if (!matchScope(j)) return false;
     return matchSearch(j);
@@ -507,7 +586,8 @@ function exportJobsCsv(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `warehouse-jobs_${whScope}_${scope}_${dateRange}_${todayISO()}.csv`;
+  const rangeTag = dateRange==='custom' ? `${dateFrom}_ถึง_${dateTo}` : dateRange;
+  a.download = `warehouse-jobs_${whScope}_${scope}_${rangeTag}_${todayISO()}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
   toast(`ส่งออก ${rows.length} รายการ`, 'ok');
@@ -542,10 +622,16 @@ function peopleInScope(){
 
 // ---- dashboard: month names + age formatting (Asia/Bangkok) ----
 const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function fmtThaiDate(iso){
+  if (!iso) return '';
+  const [y,m,d] = iso.split('-').map(Number);
+  return `${d} ${TH_MONTHS[m-1]}`;
+}
 function rangeLabel(){
   if (dateRange==='today'){ const n = nowBkk(); return `วันนี้ (${n.getDate()} ${TH_MONTHS[n.getMonth()]})`; }
   if (dateRange==='week') return '7 วันล่าสุด';
   if (dateRange==='month') return '30 วันล่าสุด';
+  if (dateRange==='custom') return dateFrom===dateTo ? fmtThaiDate(dateFrom) : `${fmtThaiDate(dateFrom)} – ${fmtThaiDate(dateTo)}`;
   return 'ทั้งหมด';
 }
 function ageText(iso){
@@ -1354,11 +1440,13 @@ async function createUserFromForm(){
 function isFiltered(){ return dateRange!=='all' || deptFilter!=='ALL' || whFilter!=='ALL' || !!searchTerm; }
 
 function clearFilters(){
-  dateRange = 'all'; deptFilter = 'ALL'; whFilter = 'ALL'; searchTerm = '';
+  dateRange = 'all'; deptFilter = 'ALL'; whFilter = 'ALL'; searchTerm = ''; dateFrom = dateTo = null;
   const s = document.getElementById('searchInput'); if (s) s.value = '';
   document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.range==='all'));
   document.querySelectorAll('#deptChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.dept==='ALL'));
-  document.querySelectorAll('#whChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.wh==='ALL'));
+  const dp = document.getElementById('datePop'); if (dp) dp.hidden = true;
+  syncDatePick();
+  renderWhChips();   // resets whFilter to a valid value for this user
   render();
 }
 
@@ -1392,6 +1480,7 @@ function render(){
   if (loadError){ showViewState('error'); return; }
   if (firstLoad){ showViewState('loading'); return; }
   showViewState(null);
+  renderWhChips();                 // keep the คลัง filter in sync with the user's scope
   const closed = filteredJobs();
   updatePendingBadges();
   if (activeView==='dashboard'){

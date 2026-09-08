@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=26">
+<link rel="stylesheet" href="css/admin.css?v=27">
 </head>
 <body>
 
@@ -71,6 +71,19 @@
           <button type="button" class="chip" data-range="week" aria-pressed="false">7 วัน</button>
           <button type="button" class="chip" data-range="month" aria-pressed="false">30 วัน</button>
           <button type="button" class="chip" data-range="all" aria-pressed="false">ทั้งหมด</button>
+        </div>
+        <div class="date-pick" id="datePick">
+          <button type="button" class="cal-btn" id="calBtn" aria-label="เลือกช่วงวันที่" title="เลือกช่วงวันที่">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          </button>
+          <div class="date-pop" id="datePop" hidden>
+            <label>จาก <input type="date" id="dateFromInput"></label>
+            <label>ถึง <input type="date" id="dateToInput"></label>
+            <div class="date-pop-actions">
+              <button type="button" class="btn-sm" id="dateClearBtn">ล้าง</button>
+              <button type="button" class="btn-sm primary" id="dateApplyBtn">ใช้ช่วงนี้</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="fb-group" id="whGroup">
@@ -265,6 +278,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=36"></script>
+<script src="js/admin.js?v=37"></script>
 </body>
 </html>

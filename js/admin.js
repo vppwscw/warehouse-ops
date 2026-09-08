@@ -1084,7 +1084,7 @@ function renderUsersTable(){
   const note = document.getElementById('usersViewNote');
   if (note) note.textContent = full
     ? 'เพิ่มบัญชี / แก้สิทธิ์-แผนก-รหัสพนักงาน / ปิดใช้งาน หรือ ลบถาวรได้จากที่นี่ · บัญชีที่มีประวัติงานลบถาวรไม่ได้ ให้ปิดใช้งานแทน'
-    : 'ผู้ช่วยผู้จัดการ: แก้ได้เฉพาะ "คลัง × แผนก" และ เปิด/ปิดใช้งาน ของหัวหน้างาน/พนักงาน (บัญชีผู้ดูแลระบบจะไม่แสดง)';
+    : 'ผู้ช่วยผู้จัดการ — อ่านอย่างเดียว · เห็นเฉพาะบัญชีในคลังที่ได้รับมอบหมาย (แก้ไขไม่ได้ · ติดต่อผู้ดูแลระบบ)';
   const nuRole = document.getElementById('nuRole');
   if (full && nuRole && !nuRole.options.length){
     nuRole.innerHTML = roleOptions('USER');
@@ -1128,17 +1128,33 @@ function renderUsersTable(){
         </div>
       </div>`;
 
+    // ---- ASSISTANT: read-only card, no controls, no footer ----
+    if (!full){
+      const scopeRO = u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
+        : scoped ? scopeSummary(pairs)
+        : (userDepts(u).length
+            ? userDepts(u).map(d=>`<span class="badge ${esc(d)}"><span class="dot"></span>${DEPT_PLAIN[d]||esc(d)}</span>`).join(' ')
+            : '<span class="td-sub">–</span>');
+      const appsRO = effApps.map(a=>`<span class="badge role">${APP_LABEL[a]||esc(a)}</span>`).join(' ')
+        + (Array.isArray(u.apps) && u.apps.length ? '' : ' <span class="td-sub">(ตาม role)</span>');
+      return `<article class="user-card ${active?'':'row-inactive'}">
+        ${head}
+        <div class="uc-fields">
+          <div class="uc-field"><span class="uc-lbl">คลัง × แผนก</span><div>${scopeRO}</div></div>
+          <div class="uc-field"><span class="uc-lbl">ระบบที่ใช้ได้</span><div>${appsRO}</div></div>
+        </div>
+      </article>`;
+    }
+
     const scopeCell = scoped ? scopeGridHTML(pairs, 'u-scope-cb')
       : u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
-      : deptCheckboxes(userDepts(u), 'u-dept-cb', !full);
-    const selDis = (isSelf || !full) ? 'disabled' : '';
-    const selTitle = isSelf ? ' title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"' : (!full ? ' title="เฉพาะผู้ดูแลระบบ"' : '');
+      : deptCheckboxes(userDepts(u), 'u-dept-cb');
     return `<article class="user-card ${active?'':'row-inactive'}" data-user-row="${esc(u.id)}">
       ${head}
       <div class="uc-fields">
         <div class="uc-field">
           <span class="uc-lbl">สิทธิ์</span>
-          <select class="mini-select" data-u-role ${selDis}${selTitle}>${roleOptions(u.role)}</select>
+          <select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select>
         </div>
         <div class="uc-field">
           <span class="uc-lbl">คลัง × แผนก</span>
@@ -1146,19 +1162,19 @@ function renderUsersTable(){
         </div>
         <div class="uc-field">
           <span class="uc-lbl">ระบบที่ใช้ได้</span>
-          ${appCheckboxes(effApps, 'u-app-cb', !full)}
+          ${appCheckboxes(effApps, 'u-app-cb')}
         </div>
         <div class="uc-field">
           <span class="uc-lbl">รหัสพนักงาน</span>
-          <input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส" ${full?'':'readonly'}>
+          <input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส">
         </div>
       </div>
       <div class="uc-btns">
         <button type="button" class="mini-btn approve" data-save-user="${esc(u.id)}">บันทึก</button>
-        ${full ? `<button type="button" class="mini-btn" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>` : ''}
+        <button type="button" class="mini-btn" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
         ${isSelf ? ''
           : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}
-        ${full && !isSelf && u.role !== 'ADMIN'
+        ${!isSelf && u.role !== 'ADMIN'
           ? `<button type="button" class="mini-btn reject" data-del-user="${esc(u.id)}">ลบถาวร</button>` : ''}
       </div>
     </article>`;
@@ -1166,36 +1182,9 @@ function renderUsersTable(){
 }
 
 async function saveUserRow(userId){
+  if (!isUserAdminFull()) return;   // ASSISTANT view is read-only
   const row = document.querySelector(`[data-user-row="${userId}"]`);
   if (!row) return;
-  const target = users.find(x=>x.id===userId);
-
-  // ASSISTANT: the only thing they can save is the staff_scope grid.
-  if (!isUserAdminFull()){
-    if (!target || target.role === 'ADMIN'){ toast('ไม่มีสิทธิ์แก้บัญชีนี้'); return; }
-    const desired = readScopeGrid(row, 'u-scope-cb');
-    const btnA = row.querySelector('[data-save-user]');
-    const labA = btnA.textContent; btnA.textContent = '...'; btnA.disabled = true;
-    try{
-      const { add, del } = diffScope(userId, desired);
-      if (del.length){
-        const { error } = await sb.from('staff_scope').delete().in('id', del.map(s=>s.id));
-        if (error) throw error;
-      }
-      if (add.length){
-        const { error } = await sb.from('staff_scope').insert(
-          add.map(p=>({ profile_id: userId, warehouse: p.warehouse, department: p.department, created_by: currentUser.id })));
-        if (error) throw error;
-      }
-      await refreshScopes(); renderUsersTable();
-      toast('บันทึกแล้ว', 'ok');
-    }catch(err){
-      toast('บันทึกไม่สำเร็จ: ' + mapDbError(err));
-      btnA.textContent = labA; btnA.disabled = false;
-    }
-    return;
-  }
-
   const role = row.querySelector('[data-u-role]').value;
   const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
   const employee_code = row.querySelector('[data-u-code]').value.trim() || null;
@@ -1241,6 +1230,7 @@ async function saveUserRow(userId){
 }
 
 async function toggleUserActive(userId, next){
+  if (!isUserAdminFull()) return;   // ASSISTANT view is read-only
   if (currentUser && userId === currentUser.id){ toast('ปิดใช้งานบัญชีตัวเองไม่ได้'); return; }
   if (!next){
     const go = await confirmModal('ปิดใช้งานบัญชีนี้? ผู้ใช้จะเข้าสู่ระบบไม่ได้ (ข้อมูลงานยังอยู่ครบ)', { danger:true, yes:'ปิดใช้งาน' });

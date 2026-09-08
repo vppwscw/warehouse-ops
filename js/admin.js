@@ -344,6 +344,8 @@ document.addEventListener('click', e=>{
   if (toggleUserBtn){ toggleUserActive(toggleUserBtn.dataset.toggleUser, toggleUserBtn.dataset.nextActive === 'true'); return; }
   const resetPassBtn = e.target.closest('[data-reset-pass]');
   if (resetPassBtn){ resetUserPassword(resetPassBtn.dataset.resetPass); return; }
+  const delUserBtn = e.target.closest('[data-del-user]');
+  if (delUserBtn){ deleteUserAccount(delUserBtn.dataset.delUser); return; }
   if (e.target.closest('#toggleAddUserBtn')){ const f = document.getElementById('addUserForm'); f.hidden = !f.hidden; return; }
   if (e.target.closest('#cancelAddUserBtn')){ document.getElementById('addUserForm').hidden = true; return; }
   if (e.target.closest('#createUserBtn')){ createUserFromForm(); return; }
@@ -1023,7 +1025,7 @@ function renderUsersTable(){
   const note = document.getElementById('usersViewNote');
   if (note) note.textContent = ro
     ? 'รายชื่อผู้ใช้งานในระบบ (อ่านอย่างเดียว)'
-    : 'เพิ่มบัญชี / แก้สิทธิ์-แผนก-รหัสพนักงาน / ปิดใช้งานได้จากที่นี่ · การลบถาวรทำที่ Supabase dashboard';
+    : 'เพิ่มบัญชี / แก้สิทธิ์-แผนก-รหัสพนักงาน / ปิดใช้งาน หรือ ลบถาวรได้จากที่นี่ · บัญชีที่มีประวัติงานลบถาวรไม่ได้ ให้ปิดใช้งานแทน';
   const nuRole = document.getElementById('nuRole');
   if (!ro && nuRole && !nuRole.options.length){
     nuRole.innerHTML = roleOptions('USER');
@@ -1076,6 +1078,8 @@ function renderUsersTable(){
       <td>
         <button type="button" class="mini-btn approve" data-save-user="${esc(u.id)}">บันทึก</button>
         <button type="button" class="mini-btn" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
+        ${isSelf || u.role === 'ADMIN' ? ''
+          : `<button type="button" class="mini-btn reject" data-del-user="${esc(u.id)}">ลบถาวร</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -1161,6 +1165,32 @@ function resetUserPassword(userId){
       return null;
     }catch(err){ return 'รีเซ็ตรหัสไม่สำเร็จ: ' + (err.message || err); }
   });
+}
+
+async function deleteUserAccount(userId){
+  if (currentUser && userId === currentUser.id){ toast('ลบบัญชีตัวเองไม่ได้'); return; }
+  const u = users.find(x=>x.id===userId);
+  const name = (u && u.full_name) || 'บัญชีนี้';
+  const go = await confirmModal(
+    `ลบบัญชี "${name}" ถาวร?\nลบทั้งบัญชีเข้าระบบ + โปรไฟล์ + ขอบเขตสิทธิ์ · กู้คืนไม่ได้\nถ้าบัญชีเคยเปิดงาน ระบบจะไม่ลบให้ — ใช้ "ปิดใช้งาน" แทน`,
+    { danger:true, yes:'ลบถาวร' });
+  if (!go) return;
+  try{
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch(ADMIN_USERS_FN, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ action: 'delete', user_id: userId }),
+    });
+    const out = await res.json().catch(()=>({}));
+    if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
+    await Promise.all([refreshUsers(), refreshScopes()]); renderUsersTable();
+    toast('ลบบัญชีแล้ว', 'ok');
+  }catch(err){ toast('ลบไม่สำเร็จ: ' + (err.message || err)); }
 }
 
 async function createUserFromForm(){

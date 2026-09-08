@@ -8,8 +8,9 @@ const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผ�
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
 const ROLE_ORDER = ['USER','SUPERVISOR','ASSISTANT','ADMIN'];
-// Users-view display order: most-privileged first, active before inactive, then name.
-const ROLE_RANK = { ADMIN:0, SUPERVISOR:1, ASSISTANT:2, USER:3 };
+// Users-view display order within the active / inactive groups: ADMIN, then
+// ASSISTANT (ผู้ช่วยผู้จัดการ), then SUPERVISOR (หัวหน้างาน), then USER.
+const ROLE_RANK = { ADMIN:0, ASSISTANT:1, SUPERVISOR:2, USER:3 };
 
 // POST to the admin-users Edge Function with the caller's session token.
 async function callAdminFn(payload){

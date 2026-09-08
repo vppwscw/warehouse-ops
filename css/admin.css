@@ -354,7 +354,7 @@ tbody tr.row-inactive{opacity:.5;}
 
 .login-col{width:100%;max-width:352px;}
 .login-brand{display:flex;align-items:center;justify-content:center;gap:9px;margin:0 2px 20px;}
-.login-logo-img{width:auto;height:52px;max-width:100%;}
+.login-logo-img{width:200px;max-width:70%;height:auto;}
 .login-logo{width:26px;height:26px;flex:none;color:var(--accent);display:flex;align-items:center;justify-content:center;}
 .login-logo svg{width:22px;height:22px;}
 .login-wordmark{font-family:'IBM Plex Sans Thai',sans-serif;font-weight:700;font-size:16px;letter-spacing:.1px;color:var(--ink);}

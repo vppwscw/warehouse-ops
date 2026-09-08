@@ -301,7 +301,6 @@ document.getElementById('botNav').innerHTML = NAV.map(n=>`
   </button>`).join('');
 document.getElementById('gearBtn').innerHTML = ICONS.gear;
 document.getElementById('deniedLockIcon').innerHTML = ICONS.lock;
-document.getElementById('brandMark').innerHTML = ICONS.matrix;
 
 function goView(id){
   if (id === 'users' && !canManageUsers()){ openProfileModal(); return; }

@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=22">
+<link rel="stylesheet" href="css/admin.css?v=23">
 </head>
 <body>
 
@@ -42,11 +42,8 @@
 <div class="shell" id="appShell" hidden>
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-mark" id="brandMark"></div>
-      <div>
-        <div class="brand-name">Skill Matrix</div>
-        <div class="brand-sub">ทักษะและกำลังคนคลัง</div>
-      </div>
+      <img class="brand-mark" id="brandMark" src="assets/vppw-mark.png" alt="">
+      <img class="brand-full" src="assets/vppw-logo.png" alt="VPPW Warehouse-KM.23">
     </div>
     <nav class="navlist" id="navList"></nav>
     <div class="sync-box" id="syncBox"><span class="sync-dot"></span><span id="syncText">กำลังเชื่อมต่อ...</span></div>
@@ -261,6 +258,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=33"></script>
+<script src="js/admin.js?v=34"></script>
 </body>
 </html>

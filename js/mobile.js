@@ -140,6 +140,9 @@ function mapAuthError(err){
 function showLogin(){ document.getElementById('loginOverlay').style.display='flex'; }
 function hideLogin(){ document.getElementById('loginOverlay').style.display='none'; }
 const ROLE_SHORT = { SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
+const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
+// Flip to true once Supabase custom SMTP + Redirect URLs are configured.
+const EMAIL_RESET_ENABLED = false;
 function refreshRoleBadge(){
   const whs = myWarehouses().join('/');
   const depts = myDepts().map(d=>DEPT_PLAIN[d]||d).join(', ');
@@ -280,7 +283,41 @@ function changeOwnPassword(){
     return null;
   });
 }
-document.getElementById('changePwBtn').addEventListener('click', changeOwnPassword);
+
+function closeProfileModal(){
+  document.getElementById('pwBackdrop').classList.remove('open');
+  document.getElementById('profileModal').classList.remove('open');
+}
+function openProfileModal(){
+  if (!profile) return;
+  document.getElementById('pmName').textContent  = profile.full_name || '–';
+  document.getElementById('pmEmail').textContent = profile.email || '–';
+  document.getElementById('pmRole').textContent  = ROLE_LABEL[profile.role] || profile.role || '–';
+  const rb = document.getElementById('pmResetEmailBtn');
+  const ok = EMAIL_RESET_ENABLED && !!profile.email;
+  rb.disabled = !ok;
+  document.getElementById('pmHint').textContent = ok ? '' : 'ปุ่มส่งอีเมลยังไม่เปิดใช้ — ติดต่อผู้ดูแลระบบ';
+  const bd = document.getElementById('pwBackdrop');
+  bd.classList.add('open');
+  document.getElementById('profileModal').classList.add('open');
+  bd.addEventListener('click', closeProfileModal, { once:true });
+}
+async function sendOwnResetEmail(){
+  const btn = document.getElementById('pmResetEmailBtn');
+  const hint = document.getElementById('pmHint');
+  if (!profile || !profile.email || btn.disabled) return;
+  btn.disabled = true; hint.textContent = 'กำลังส่ง...';
+  const { error } = await sb.auth.resetPasswordForEmail(profile.email, { redirectTo: location.origin + location.pathname });
+  btn.disabled = false;
+  hint.textContent = error
+    ? ('ส่งไม่สำเร็จ: ' + (error.message || error))
+    : ('ส่งลิงก์ไปที่ ' + profile.email + ' แล้ว — เช็คกล่องเมล (รวม junk)');
+}
+
+document.getElementById('changePwBtn').addEventListener('click', openProfileModal);
+document.getElementById('pmClose').addEventListener('click', closeProfileModal);
+document.getElementById('pmChangePwBtn').addEventListener('click', ()=>{ closeProfileModal(); changeOwnPassword(); });
+document.getElementById('pmResetEmailBtn').addEventListener('click', sendOwnResetEmail);
 
 document.getElementById('loginSubmitBtn').addEventListener('click', async ()=>{
   const hint = document.getElementById('loginHint');
@@ -1369,5 +1406,13 @@ document.getElementById('liveStatus').innerHTML = '<span class="live-dot"></span
   }
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'SIGNED_OUT'){ showLogin(); }
+    if (event === 'PASSWORD_RECOVERY'){
+      askNewPassword(async (pw)=>{
+        const { error } = await sb.auth.updateUser({ password: pw });
+        if (error) return error.message || String(error);
+        toast('ตั้งรหัสผ่านใหม่แล้ว', 'ok');
+        return null;
+      });
+    }
   });
 })();

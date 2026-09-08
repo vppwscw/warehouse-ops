@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=20">
+<link rel="stylesheet" href="css/admin.css?v=21">
 </head>
 <body>
 
@@ -61,8 +61,8 @@
       </div>
       <div class="pagehead-actions">
         <button type="button" class="btn-sm" id="exportCsvBtn" title="ดาวน์โหลดข้อมูลงานตามตัวกรองปัจจุบันเป็นไฟล์ CSV">⬇ ส่งออก CSV</button>
-        <button type="button" class="gear-btn" id="gearBtn" data-view="users" title="ผู้ใช้งานระบบ" aria-label="ผู้ใช้งานระบบ"></button>
-        <button type="button" class="btn-sm" id="changePwBtn">เปลี่ยนรหัสผ่าน</button>
+        <button type="button" class="gear-btn" id="gearBtn" title="ผู้ใช้งานระบบ / โปรไฟล์" aria-label="ผู้ใช้งานระบบ / โปรไฟล์"></button>
+        <button type="button" class="btn-sm" id="changePwBtn">โปรไฟล์ของฉัน</button>
         <button type="button" class="logout-btn" id="logoutBtn">ออกจากระบบ</button>
       </div>
     </div>
@@ -226,6 +226,24 @@
   </div>
 </div>
 
+<!-- personal profile modal — the only account UI a non-ADMIN/ASSISTANT sees -->
+<div class="modal-overlay" id="profileModal" hidden>
+  <div class="modal">
+    <h3>โปรไฟล์ของฉัน</h3>
+    <dl class="pm-info">
+      <div><dt>ชื่อ</dt><dd id="pmName">–</dd></div>
+      <div><dt>อีเมล</dt><dd id="pmEmail">–</dd></div>
+      <div><dt>สิทธิ์</dt><dd id="pmRole">–</dd></div>
+    </dl>
+    <p class="form-hint" id="pmHint"></p>
+    <div class="pm-actions">
+      <button type="button" class="btn-sm primary" id="pmChangePwBtn">เปลี่ยนรหัสผ่าน</button>
+      <button type="button" class="btn-sm" id="pmResetEmailBtn">ส่งลิงก์รีเซ็ตรหัสเข้าอีเมล</button>
+      <button type="button" class="btn-sm" id="pmClose">ปิด</button>
+    </div>
+  </div>
+</div>
+
 <!-- generic confirm modal — inline replacement for window.confirm() -->
 <div class="modal-overlay" id="confirmModal" hidden>
   <div class="modal">
@@ -244,6 +262,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=31"></script>
+<script src="js/admin.js?v=32"></script>
 </body>
 </html>

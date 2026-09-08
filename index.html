@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>สมุดทักษะคลัง</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/mobile.css?v=6">
+<link rel="stylesheet" href="css/mobile.css?v=7">
 </head>
 <body>
 
@@ -204,6 +204,20 @@
 </div>
 
 <div class="modal-backdrop" id="pwBackdrop"></div>
+
+<div class="modal-card" id="profileModal">
+  <div class="modal-title">โปรไฟล์ของฉัน</div>
+  <dl class="pm-info">
+    <div><dt>ชื่อ</dt><dd id="pmName">–</dd></div>
+    <div><dt>อีเมล</dt><dd id="pmEmail">–</dd></div>
+    <div><dt>สิทธิ์</dt><dd id="pmRole">–</dd></div>
+  </dl>
+  <p class="hint" id="pmHint" style="text-align:left;margin:8px 0 12px;"></p>
+  <button type="button" class="btn" id="pmChangePwBtn" style="margin-bottom:6px;">เปลี่ยนรหัสผ่าน</button>
+  <button type="button" class="btn ghost" id="pmResetEmailBtn" style="margin-bottom:6px;">ส่งลิงก์รีเซ็ตรหัสเข้าอีเมล</button>
+  <button type="button" class="btn ghost" id="pmClose">ปิด</button>
+</div>
+
 <div class="modal-card" id="pwModal">
   <div class="modal-title">เปลี่ยนรหัสผ่าน</div>
   <div class="field" style="margin-bottom:12px;"><label for="pwNew">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label><input id="pwNew" type="password" autocomplete="new-password"></div>
@@ -218,6 +232,6 @@
 <footer class="build-footer">warehouse-ops production build &middot; Supabase project dkudeyxccztrfngqfthj</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
-<script src="js/mobile.js?v=20"></script>
+<script src="js/mobile.js?v=21"></script>
 </body>
 </html>

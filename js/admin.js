@@ -1089,7 +1089,8 @@ async function deleteTask(id){
 function renderDeptAdmin(){
   const wrap = document.getElementById('deptAdmin');
   if (!wrap) return;
-  const isAdm = profile && profile.role === 'ADMIN';
+  // only show once the departments table exists (loadDepartments populated DEPT_ROWS)
+  const isAdm = profile && profile.role === 'ADMIN' && DEPT_ROWS.length > 0;
   wrap.hidden = !isAdm;
   if (!isAdm) return;
   const tb = document.querySelector('#deptTable tbody');

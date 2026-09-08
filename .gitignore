@@ -3,3 +3,12 @@
 .DS_Store
 
 PROJECT-NOTES.local.md
+
+# dev-only — not needed by the GitHub Pages site, and the SQL / Edge Function
+# source / planning docs are backend recon material on a public repo.
+# Local copies are kept; back them up outside git.
+/sql/
+/docs/
+/supabase/
+/.claude/
+/*.png

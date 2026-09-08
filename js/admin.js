@@ -8,6 +8,25 @@ const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผ�
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
 const ROLE_ORDER = ['USER','SUPERVISOR','ASSISTANT','ADMIN'];
+// Users-view display order: most-privileged first, active before inactive, then name.
+const ROLE_RANK = { ADMIN:0, SUPERVISOR:1, ASSISTANT:2, USER:3 };
+
+// POST to the admin-users Edge Function with the caller's session token.
+async function callAdminFn(payload){
+  const { data: { session } } = await sb.auth.getSession();
+  const res = await fetch(ADMIN_USERS_FN, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + session.access_token,
+      'apikey': SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify(payload),
+  });
+  const out = await res.json().catch(()=>({}));
+  if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
+  return out;
+}
 
 // Every value that ends up inside an innerHTML template must go through esc() —
 // full_name, employee_code, task names, crew names and the whole jobs.details
@@ -49,6 +68,7 @@ const ICONS = {
 
 let profile = null, currentUser = null;
 let jobs = [], roster = [], users = [], allEmployees = [], taskList = [], scopes = [];
+let userEmails = {};   // { profileId: email } — pulled from auth.users via the Edge Function
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', whFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
@@ -1015,9 +1035,17 @@ function appCheckboxes(selected, cls){
   ).join('') + `</span>`;
 }
 
+// Users-view sort: active first, then most-privileged role, then name (Thai).
+function sortedUsers(){
+  return users.slice().sort((a,b)=>
+    ((a.active!==false?0:1) - (b.active!==false?0:1))
+    || ((ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9))
+    || String(a.full_name||'').localeCompare(String(b.full_name||''), 'th'));
+}
+
 function renderUsersTable(){
-  const tbody = document.querySelector('#usersTable tbody');
-  if (!tbody) return;
+  const wrap = document.getElementById('usersList');
+  if (!wrap) return;
   const ro = isReadOnly();
   const bar = document.getElementById('userAdminBar');
   if (bar) bar.hidden = ro;
@@ -1036,57 +1064,94 @@ function renderUsersTable(){
       `<label class="dept-cb"><input type="checkbox" class="nu-app-cb" value="${a}"> ${APP_LABEL[a]}</label>`).join('');
   }
 
-  if (users.length===0){ tbody.innerHTML = `<tr><td colspan="7" class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</td></tr>`; return; }
-  tbody.innerHTML = users.map(u=>{
+  if (users.length===0){ wrap.innerHTML = `<p class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</p>`; return; }
+
+  const q = searchTerm;
+  let list = sortedUsers();
+  if (q) list = list.filter(u=>
+    (u.full_name||'').toLowerCase().includes(q)
+    || (userEmails[u.id]||'').toLowerCase().includes(q)
+    || (u.employee_code||'').toLowerCase().includes(q)
+    || (ROLE_LABEL[u.role]||'').toLowerCase().includes(q));
+  if (list.length===0){ wrap.innerHTML = `<p class="empty-note">ไม่พบผู้ใช้ที่ตรงกับ "${esc(q)}"</p>`; return; }
+
+  wrap.innerHTML = list.map(u=>{
     const active = u.active !== false;
     const isSelf = currentUser && u.id === currentUser.id;
     const pairs = userScopePairs(u.id);
     const scoped = u.role === 'SUPERVISOR' || u.role === 'ASSISTANT';
-    const deptBadge = u.role === 'ADMIN'
-      ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
-      : scoped ? scopeSummary(pairs)
-      : (userDepts(u).length
-          ? userDepts(u).map(d=>`<span class="badge ${esc(d)}"><span class="dot"></span>${DEPT_PLAIN[d]||esc(d)}</span>`).join(' ')
-          : '<span class="td-sub">–</span>');
+    const email = userEmails[u.id] || '';
     const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
     const effApps = allowedApps(u);
-    const appsBadge = (Array.isArray(u.apps) && u.apps.length)
-      ? effApps.map(a=>`<span class="badge role">${APP_LABEL[a]||esc(a)}</span>`).join(' ')
-      : `<span class="td-sub">${effApps.map(a=>APP_LABEL[a]||a).join(' + ')} (ตาม role)</span>`;
+    const head = `
+      <div class="uc-top">
+        <div class="uc-title">
+          <span class="uc-name">${esc(u.full_name||'–')}</span>
+          <span class="badge role">${ROLE_LABEL[u.role]||esc(u.role)}</span>
+          ${statusBadge}
+        </div>
+        <div class="uc-sub">
+          <span class="uc-email">${email ? esc(email) : '<span class="td-sub">ไม่พบอีเมล</span>'}</span>
+          ${u.employee_code ? `<span class="uc-code-tag">รหัส ${esc(u.employee_code)}</span>` : ''}
+        </div>
+      </div>`;
+
     if (ro){
-      return `<tr>
-        <td>${esc(u.full_name||'–')}</td>
-        <td><span class="badge role">${ROLE_LABEL[u.role]||esc(u.role)}</span></td>
-        <td>${deptBadge}</td>
-        <td>${appsBadge}</td>
-        <td>${esc(u.employee_code || '–')}</td>
-        <td>${statusBadge}</td>
-        <td></td>
-      </tr>`;
+      const deptBadge = u.role === 'ADMIN'
+        ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
+        : scoped ? scopeSummary(pairs)
+        : (userDepts(u).length
+            ? userDepts(u).map(d=>`<span class="badge ${esc(d)}"><span class="dot"></span>${DEPT_PLAIN[d]||esc(d)}</span>`).join(' ')
+            : '<span class="td-sub">–</span>');
+      const appsBadge = (Array.isArray(u.apps) && u.apps.length)
+        ? effApps.map(a=>`<span class="badge role">${APP_LABEL[a]||esc(a)}</span>`).join(' ')
+        : `<span class="td-sub">${effApps.map(a=>APP_LABEL[a]||a).join(' + ')} (ตาม role)</span>`;
+      return `<article class="user-card ${active?'':'row-inactive'}">
+        ${head}
+        <div class="uc-fields">
+          <div class="uc-field"><span class="uc-lbl">คลัง × แผนก</span><div>${deptBadge}</div></div>
+          <div class="uc-field"><span class="uc-lbl">ระบบที่ใช้ได้</span><div>${appsBadge}</div></div>
+        </div>
+      </article>`;
     }
+
     const scopeCell = scoped ? scopeGridHTML(pairs, 'u-scope-cb')
       : u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
       : deptCheckboxes(userDepts(u), 'u-dept-cb');
-    return `<tr data-user-row="${esc(u.id)}" class="${active?'':'row-inactive'}">
-      <td>${esc(u.full_name||'–')}</td>
-      <td><select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select></td>
-      <td class="scope-cell">${scopeCell}</td>
-      <td>${appCheckboxes(effApps, 'u-app-cb')}</td>
-      <td><input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส"></td>
-      <td>${isSelf ? statusBadge
-        : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}</td>
-      <td>
+    return `<article class="user-card ${active?'':'row-inactive'}" data-user-row="${esc(u.id)}">
+      ${head}
+      <div class="uc-fields">
+        <div class="uc-field">
+          <span class="uc-lbl">สิทธิ์</span>
+          <select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select>
+        </div>
+        <div class="uc-field">
+          <span class="uc-lbl">คลัง × แผนก</span>
+          <div class="scope-cell">${scopeCell}</div>
+        </div>
+        <div class="uc-field">
+          <span class="uc-lbl">ระบบที่ใช้ได้</span>
+          ${appCheckboxes(effApps, 'u-app-cb')}
+        </div>
+        <div class="uc-field">
+          <span class="uc-lbl">รหัสพนักงาน</span>
+          <input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส">
+        </div>
+      </div>
+      <div class="uc-btns">
         <button type="button" class="mini-btn approve" data-save-user="${esc(u.id)}">บันทึก</button>
         <button type="button" class="mini-btn" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
+        ${isSelf ? ''
+          : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}
         ${isSelf || u.role === 'ADMIN' ? ''
           : `<button type="button" class="mini-btn reject" data-del-user="${esc(u.id)}">ลบถาวร</button>`}
-      </td>
-    </tr>`;
+      </div>
+    </article>`;
   }).join('');
 }
 
 async function saveUserRow(userId){
-  const row = document.querySelector(`tr[data-user-row="${userId}"]`);
+  const row = document.querySelector(`[data-user-row="${userId}"]`);
   if (!row) return;
   const role = row.querySelector('[data-u-role]').value;
   const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
@@ -1223,7 +1288,7 @@ async function createUserFromForm(){
     hint.textContent = `สร้างบัญชี ${email} แล้ว`;
     ['nuEmail','nuName','nuPass'].forEach(id=>{ document.getElementById(id).value = ''; });
     document.querySelectorAll('#nuScopeGrid .nu-scope-cb:checked, #nuAppCbs .nu-app-cb:checked').forEach(c=>{ c.checked = false; });
-    await Promise.all([refreshUsers(), refreshScopes()]); renderUsersTable();
+    await Promise.all([refreshUsers(), refreshScopes(), refreshUserEmails()]); renderUsersTable();
     setTimeout(()=>{ document.getElementById('addUserForm').hidden = true; hint.textContent = ''; }, 1400);
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
 }
@@ -1324,11 +1389,21 @@ async function refreshScopes(){
     scopes = data || [];
   }catch(e){ /* admin-only; non-critical */ }
 }
+// Emails aren't in `profiles` — the Edge Function reads them from auth.users.
+async function refreshUserEmails(){
+  if (isReadOnly()) return;                 // ASSISTANT can't call the admin function
+  try{
+    const out = await callAdminFn({ action: 'list' });
+    const map = {};
+    (out.users || []).forEach(u=>{ map[u.id] = u.email || ''; });
+    userEmails = map;
+  }catch(e){ /* non-critical — the view just shows "–" for email */ }
+}
 async function refreshAll(){
   document.getElementById('syncText').textContent = 'กำลังโหลดข้อมูล...';
   loadError = null;
   if (firstLoad) render();                        // paints the skeleton
-  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshScopes(), refreshEmployeesAll(), refreshTasksAdmin()]);
+  const [jobsRes] = await Promise.allSettled([refreshJobs(), refreshRoster(), refreshUsers(), refreshScopes(), refreshUserEmails(), refreshEmployeesAll(), refreshTasksAdmin()]);
   if (jobsRes.status === 'rejected'){
     loadError = mapDbError(jobsRes.reason);
     document.getElementById('syncText').textContent = 'โหลดข้อมูลไม่สำเร็จ';

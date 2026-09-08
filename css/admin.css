@@ -313,6 +313,24 @@ tbody tr:hover{background:var(--surface-2);}
 .dept-cb input{accent-color:var(--accent);width:15px;height:15px;}
 .field-wide{grid-column:1/-1;}
 
+/* users view — one card per account */
+.users-list{display:flex;flex-direction:column;gap:12px;}
+.user-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;}
+.user-card.row-inactive{opacity:.55;}
+.uc-top{display:flex;flex-direction:column;gap:5px;padding-bottom:12px;border-bottom:1px solid var(--line);margin-bottom:12px;}
+.uc-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.uc-name{font-size:15px;font-weight:800;color:var(--ink);}
+.uc-sub{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-dim);}
+.uc-email{font-weight:600;word-break:break-all;}
+.uc-code-tag{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:3px 8px;border-radius:100px;background:var(--surface-3);color:var(--ink-dim);}
+.uc-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px 20px;align-items:start;}
+.uc-field{display:flex;flex-direction:column;gap:6px;min-width:0;}
+.uc-lbl{font-size:11px;font-weight:700;letter-spacing:.3px;color:var(--ink-dim);}
+.uc-field .mini-select{width:100%;max-width:220px;}
+.uc-field .scope-cell{width:auto;}
+.uc-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);}
+p.empty-note{color:var(--ink-dim);font-size:13px;padding:24px;text-align:center;}
+
 /* warehouse tag — neutral, sits next to the coloured dept badge */
 .wh-tag{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:4px 9px;border-radius:100px;
   background:var(--surface-3);color:var(--ink-dim);white-space:nowrap;}

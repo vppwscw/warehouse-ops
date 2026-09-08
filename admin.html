@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=19">
+<link rel="stylesheet" href="css/admin.css?v=20">
 </head>
 <body>
 
@@ -205,12 +205,7 @@
         </div>
       </form>
       <p class="sub" id="usersViewNote" style="margin:0 0 14px;">รายชื่อผู้ใช้งานในระบบ</p>
-      <div class="table-wrap">
-        <table id="usersTable">
-          <thead><tr><th>ชื่อ</th><th>สิทธิ์</th><th>คลัง / แผนก</th><th>ระบบที่ใช้ได้</th><th>รหัสพนักงาน</th><th>สถานะ</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+      <div id="usersList" class="users-list"></div>
     </section>
   </main>
 
@@ -249,6 +244,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=28"></script>
+<script src="js/admin.js?v=29"></script>
 </body>
 </html>

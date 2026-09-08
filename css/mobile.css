@@ -77,12 +77,10 @@ button,input,select{font-family:inherit;}
 .tile-list{display:flex;flex-direction:column;gap:12px;}
 .tile{display:flex;align-items:center;gap:14px;border:none;border-radius:12px;padding:20px;width:100%;cursor:pointer;text-align:left;box-shadow:var(--shadow-sm);}
 .tile:active{transform:scale(.98);}
-.tile .t-icon{width:46px;height:46px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.5);}
-.tile .t-name{font-family:'IBM Plex Sans Thai',sans-serif;font-weight:700;font-size:19px;}
-.tile .t-sub{font-size:12px;opacity:.8;margin-top:1px;}
-.tile.INB{background:var(--inb-bg);color:var(--inb);}
-.tile.OUT{background:var(--out-bg);color:var(--out);}
-.tile.INV{background:var(--inv-bg);color:var(--inv);}
+.tile .t-icon{width:46px;height:46px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center;}
+.tile .t-name{display:block;font-family:'IBM Plex Sans Thai',sans-serif;font-weight:700;font-size:19px;}
+.tile .t-sub{display:block;font-size:12px;opacity:.8;margin-top:1px;}
+/* dept tint + colour set inline (style="background:…;color:…") per tile */
 .tile .t-chev{margin-left:auto;opacity:.55;}
 
 .job-choice-list{display:flex;flex-direction:column;gap:10px;}

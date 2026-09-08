@@ -1,7 +1,29 @@
 // ===================== SUPABASE INIT =====================
 
-const DEPT_KEYS = ['INB','OUT','INV'];
-const DEPT_PLAIN = { INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' };
+// Departments are data now (public.departments) — these hold the fallback until
+// loadDepartments() runs, then get replaced. DEPT_KEYS = active only.
+let DEPT_KEYS  = ['INB','OUT','INV'];
+let DEPT_PLAIN = { INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' };
+let DEPT_COLOR = { INB:'#2563eb', OUT:'#e11d48', INV:'#7c3aed' };
+let DEPT_ROWS  = [];   // full rows incl. inactive (for the management view + label lookups)
+async function loadDepartments(){
+  try{
+    const { data, error } = await sb.from('departments').select('*').order('sort').order('code');
+    if (error) throw error;
+    if (data && data.length){
+      DEPT_ROWS  = data;
+      DEPT_KEYS  = data.filter(d=>d.active).map(d=>d.code);
+      DEPT_PLAIN = Object.fromEntries(data.map(d=>[d.code, d.name]));
+      DEPT_COLOR = Object.fromEntries(data.map(d=>[d.code, d.color || '#64748b']));
+    }
+  }catch(e){ /* keep the fallback */ }
+}
+const deptColor = c => DEPT_COLOR[c] || '#64748b';
+const deptName  = c => DEPT_PLAIN[c] || c;
+function deptBadge(c){
+  const col = deptColor(c);
+  return `<span class="badge" style="color:${esc(col)};background:${esc(col)}1f"><span class="dot" style="background:${esc(col)}"></span>${esc(deptName(c))}</span>`;
+}
 const WH_KEYS = ['A','B'];
 const WH_PLAIN = { A:'คลัง A', B:'คลัง B' };
 const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
@@ -253,6 +275,8 @@ async function afterLogin(user){
     return;
   }
   showScreen('app');
+  await loadDepartments();
+  buildDeptChips();
   await loadTasksFromDb();
   wireRealtime();
   goView('dashboard');
@@ -265,13 +289,12 @@ async function loadTasksFromDb(){
     const { data, error } = await sb.from('tasks').select('*').eq('active', true);
     if (error) throw error;
     if (data && data.length){
-      const byDept = { INB:[], OUT:[], INV:[] };
+      const byDept = {};
       data.forEach(t=>{
-        byDept[t.department] = byDept[t.department] || [];
-        byDept[t.department].push({ id:t.id, label:t.name, department:t.department,
+        (byDept[t.department] = byDept[t.department] || []).push({ id:t.id, label:t.name, department:t.department,
           unit: t.unit_label ? 'custom' : 'vehicles', unitLabel: t.unit_label || 'จำนวน' });
       });
-      DEPT_KEYS.forEach(d=>{ if (byDept[d] && byDept[d].length) TASKS[d] = byDept[d]; });
+      Object.keys(byDept).forEach(d=>{ if (byDept[d].length) TASKS[d] = byDept[d]; });
     }
   }catch(e){ /* keep fallback */ }
 }
@@ -317,6 +340,7 @@ function syncFilterbar(){
   const set = (elId, key) => { const el = document.getElementById(elId); if (el) el.hidden = !show.includes(key); };
   set('rangeGroup','range'); set('whGroup','wh'); set('deptGroup','dept'); set('searchGroup','search');
   renderWhChips();     // may hide #whGroup further (single-warehouse user)
+  buildDeptChips();
   syncDatePick();
   const bar = document.getElementById('filterbar');
   if (bar){
@@ -333,6 +357,14 @@ function myWhList(){
   if (profile && profile.role === 'ADMIN') return WH_KEYS.slice();
   const uid = currentUser && currentUser.id;
   return [...new Set(scopes.filter(s=>s.profile_id===uid).map(s=>s.warehouse))].sort();
+}
+function buildDeptChips(){
+  const el = document.getElementById('deptChips');
+  if (!el) return;
+  if (deptFilter !== 'ALL' && !DEPT_KEYS.includes(deptFilter)) deptFilter = 'ALL';
+  el.innerHTML = [['ALL','ทั้งหมด'], ...DEPT_KEYS.map(d=>[d, deptName(d)])].map(([v,label])=>
+    `<button type="button" class="chip" data-dept="${esc(v)}" aria-pressed="${v===deptFilter}">${esc(label)}</button>`
+  ).join('');
 }
 function renderWhChips(){
   const el = document.getElementById('whChips');
@@ -485,6 +517,16 @@ document.addEventListener('click', e=>{
   if (taskToggleBtn){ toggleTaskActive(taskToggleBtn.dataset.taskToggle, taskToggleBtn.dataset.next === 'true'); return; }
   const taskDelBtn = e.target.closest('[data-task-del]');
   if (taskDelBtn){ deleteTask(taskDelBtn.dataset.taskDel); return; }
+
+  if (e.target.closest('#toggleAddDeptBtn')){ const f = document.getElementById('addDeptForm'); f.hidden = !f.hidden; return; }
+  if (e.target.closest('#cancelAddDeptBtn')){ document.getElementById('addDeptForm').hidden = true; return; }
+  if (e.target.closest('#createDeptBtn')){ createDeptFromForm(); return; }
+  const deptSaveBtn = e.target.closest('[data-dept-save]');
+  if (deptSaveBtn){ saveDeptRow(deptSaveBtn.dataset.deptSave); return; }
+  const deptToggleBtn = e.target.closest('[data-dept-toggle]');
+  if (deptToggleBtn){ toggleDeptActive(deptToggleBtn.dataset.deptToggle, deptToggleBtn.dataset.next === 'true'); return; }
+  const deptDelBtn = e.target.closest('[data-dept-del]');
+  if (deptDelBtn){ deleteDept(deptDelBtn.dataset.deptDel); return; }
 
   const saveUserBtn = e.target.closest('[data-save-user]');
   if (saveUserBtn){ saveUserRow(saveUserBtn.dataset.saveUser); return; }
@@ -684,21 +726,22 @@ function daySeries(dept){
 // One card per side (เข้า/ออก/สต๊อก): job count + unit output + trend.
 // Replaces the old dept bar list + unit-cards split panel.
 function renderSideCards(closed){
-  const sums = { INB:{containers:0,vehicles:0}, OUT:{vehicles:0,issue:0}, INV:{pieces:0,boxes:0} };
-  const customByDept = { INB:{}, OUT:{}, INV:{} }; // dept -> { unitLabel: qty }
+  const sums = {};                 // dept -> {containers,vehicles,issue,pieces,boxes}
+  const customByDept = {};          // dept -> { unitLabel: qty }
+  const S = d => sums[d] || (sums[d] = {containers:0,vehicles:0,issue:0,pieces:0,boxes:0});
   closed.forEach(j=>{
     const task = taskById(j.task_id); const d = j.details||{}; if (!task) return;
     if (task.unit==='custom'){
       const bag = customByDept[j.department] || (customByDept[j.department] = {});
       bag[task.unitLabel] = (bag[task.unitLabel] || 0) + num(d.qty);
-      if (task.hasIssue && d.hasIssue && j.department==='OUT') sums.OUT.issue += num(d.issueCount);
+      if (task.hasIssue && d.hasIssue && j.department==='OUT') S('OUT').issue += num(d.issueCount);
       return;
     }
-    if (task.unit==='containers'){ sums.INB.containers += num(d.containers); sums.INB.vehicles += num(d.vehicles) || (num(d.containers)*(task.vehiclesPerContainer||56)); }
-    else if (j.department==='INB') sums.INB.vehicles += num(d.qty);
-    else if (j.department==='OUT'){ sums.OUT.vehicles += num(d.qty); if (task.hasIssue && d.hasIssue) sums.OUT.issue += num(d.issueCount); }
-    else if (task.unit==='boxes') sums.INV.boxes += num(d.qty);
-    else if (task.unit==='pieces') sums.INV.pieces += num(d.qty);
+    if (task.unit==='containers'){ S('INB').containers += num(d.containers); S('INB').vehicles += num(d.vehicles) || (num(d.containers)*(task.vehiclesPerContainer||56)); }
+    else if (j.department==='INB') S('INB').vehicles += num(d.qty);
+    else if (j.department==='OUT'){ S('OUT').vehicles += num(d.qty); if (task.hasIssue && d.hasIssue) S('OUT').issue += num(d.issueCount); }
+    else if (task.unit==='boxes') S('INV').boxes += num(d.qty);
+    else if (task.unit==='pieces') S('INV').pieces += num(d.qty);
   });
   const customLines = dept => Object.entries(customByDept[dept]||{})
     .map(([lab,q])=>`${num(q)} ${esc(lab)}`).join('<br>');
@@ -715,29 +758,23 @@ function renderSideCards(closed){
     const series = daySeries(dept);
     const smax = Math.max(1, ...series);
     const spark = series.map(v=>`<i class="${v>0?'on':''}" style="height:${Math.max(2,Math.round(v/smax*26))}px"></i>`).join('');
-    let unit, cvt = '';
+    const s = sums[dept] || {};
     const cl = customLines(dept);
-    const onlyCustom = !!cl && !num(sums.INB.containers) && !num(sums.INB.vehicles)
-      && !num(sums.OUT.vehicles) && !num(sums.INV.pieces) && !num(sums.INV.boxes);
-    if (dept==='INB'){
-      if (num(sums.INB.containers)){
-        unit = `<span class="approx">${num(sums.INB.containers)} ตู้ ${inbDerived?'≈':'·'} ${num(sums.INB.vehicles)} คัน</span>`;
-        if (inbDerived) cvt = '(56 คัน/ตู้ — ประมาณ)';
-      } else {
-        unit = onlyCustom ? '' : `${num(sums.INB.vehicles)} คัน`;
-      }
-    } else if (dept==='OUT'){
-      unit = onlyCustom ? '' : `${num(sums.OUT.vehicles)} คัน`;
-    } else {
-      unit = onlyCustom ? '' : `${num(sums.INV.pieces)} ชิ้น<br>${num(sums.INV.boxes)} กล่อง`;
-    }
+    let unit = '', cvt = '';
+    if (dept==='INB' && num(s.containers)){
+      unit = `<span class="approx">${num(s.containers)} ตู้ ${inbDerived?'≈':'·'} ${num(s.vehicles)} คัน</span>`;
+      if (inbDerived) cvt = '(56 คัน/ตู้ — ประมาณ)';
+    } else if (dept==='INB' && num(s.vehicles)) unit = `${num(s.vehicles)} คัน`;
+    else if (dept==='OUT' && num(s.vehicles)) unit = `${num(s.vehicles)} คัน`;
+    else if (dept==='INV' && (num(s.pieces) || num(s.boxes))) unit = `${num(s.pieces)} ชิ้น<br>${num(s.boxes)} กล่อง`;
     if (cl) unit += (unit ? '<br>' : '') + cl;
-    const issue = (dept==='OUT' && num(sums.OUT.issue))
-      ? `<span class="badge issue sc-issue">มีปัญหา ${num(sums.OUT.issue)} คัน</span>` : '';
-    return `<div class="side-card" data-dept="${dept}">
+    const issue = (dept==='OUT' && num(s.issue))
+      ? `<span class="badge issue sc-issue">มีปัญหา ${num(s.issue)} คัน</span>` : '';
+    const col = deptColor(dept);
+    return `<div class="side-card" data-dept="${esc(dept)}" style="--dc:${esc(col)}">
       <div class="sc-cap"></div>
       <div class="sc-body">
-        <div class="sc-lab"><span class="dot" style="background:var(--${dept.toLowerCase()})"></span>${DEPT_PLAIN[dept]}</div>
+        <div class="sc-lab"><span class="dot" style="background:${esc(col)}"></span>${esc(deptName(dept))}</div>
         <div class="sc-big"><span class="sc-big-n num">${count}</span><span class="u">งาน</span></div>
         <div class="sc-unit">${unit}</div>
         ${cvt ? `<div class="sc-cvt">${cvt}</div>` : ''}
@@ -782,7 +819,7 @@ function jobRowHTML(j){
   return `<tr>
     <td class="mono">${esc(d.date)}</td>
     <td><span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span></td>
-    <td><span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span></td>
+    <td>${deptBadge(j.department)}</td>
     <td class="td-task">${esc(task?task.label:j.task_id)}</td>
     <td>${esc((j.crew||[]).join(', '))}</td>
     <td class="mono">${esc(d.start||'–')}–${esc(d.end||'–')}</td>
@@ -912,11 +949,11 @@ function renderQueue(){
   const html = scored.map(({j})=>{
     const task = taskById(j.task_id); const d = j.details || {};
     const r = urgencyReason(j, list);
-    return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}">
+    return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}" style="border-left-color:${esc(deptColor(j.department))}">
       <div class="q-main">
         <div class="q-top">
           <span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span>
-          <span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span>
+          ${deptBadge(j.department)}
           <span class="pill ${r.cls}">${esc(r.txt)}</span>
         </div>
         <div class="q-task">${esc(task ? task.label : j.task_id)}</div>
@@ -981,7 +1018,7 @@ function renderEmpRoster(){
     return `<tr class="${on?'':'row-inactive'}">
       <td>${esc(em.name)}</td>
       <td><span class="wh-tag">${esc(WH_PLAIN[em.warehouse]||em.warehouse||'–')}</span></td>
-      <td><span class="badge ${esc(em.department)}"><span class="dot"></span>${DEPT_PLAIN[em.department]||esc(em.department)}</span></td>
+      <td>${deptBadge(em.department)}</td>
       <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
       <td>
         <button type="button" class="mini-btn ${on?'reject':'approve'}" data-emp-toggle="${esc(em.id)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
@@ -1012,7 +1049,7 @@ function renderTasksAdmin(){
     return `<tr class="${on?'':'row-inactive'}">
       <td>${esc(t.name)}${t.unit_label ? ` <span style="color:var(--ink-dim);font-size:12px;">· ${esc(t.unit_label)}</span>` : ''}</td>
       <td><span class="wh-tag">${esc(WH_PLAIN[t.warehouse]||t.warehouse||'–')}</span></td>
-      <td><span class="badge ${esc(t.department)}"><span class="dot"></span>${DEPT_PLAIN[t.department]||esc(t.department)}</span></td>
+      <td>${deptBadge(t.department)}</td>
       <td class="mono">${linked || ''}</td>
       ${ro ? '' : `<td>
         <button type="button" class="mini-btn ${on?'reject':'approve'}" data-task-toggle="${esc(t.id)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
@@ -1046,6 +1083,94 @@ async function deleteTask(id){
       toast('ลบไม่สำเร็จ: ' + mapDbError(err));
     }
   }
+}
+
+// ---------- ADMIN-only: departments (add / toggle / delete) ----------
+function renderDeptAdmin(){
+  const wrap = document.getElementById('deptAdmin');
+  if (!wrap) return;
+  const isAdm = profile && profile.role === 'ADMIN';
+  wrap.hidden = !isAdm;
+  if (!isAdm) return;
+  const tb = document.querySelector('#deptTable tbody');
+  if (!tb) return;
+  const usage = code => {
+    const inScope = scopes.filter(s=>s.department===code).length;
+    const inTasks = taskList.filter(t=>t.department===code).length;
+    const inEmp   = allEmployees.filter(e=>e.department===code).length;
+    return { inScope, inTasks, inEmp, total: inScope+inTasks+inEmp };
+  };
+  tb.innerHTML = (DEPT_ROWS.length ? DEPT_ROWS : DEPT_KEYS.map(c=>({code:c,name:deptName(c),color:deptColor(c),active:true})))
+    .map(d=>{
+      const u = usage(d.code);
+      const on = d.active !== false;
+      return `<tr class="${on?'':'row-inactive'}">
+        <td class="mono"><b>${esc(d.code)}</b></td>
+        <td><input type="text" class="code-input" data-dept-name="${esc(d.code)}" value="${esc(d.name)}" style="width:150px"></td>
+        <td><input type="color" data-dept-color="${esc(d.code)}" value="${esc(d.color||'#64748b')}"></td>
+        <td class="mono">${u.total ? `${u.total} (scope ${u.inScope} · งาน ${u.inTasks} · คน ${u.inEmp})` : '–'}</td>
+        <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
+        <td>
+          <button type="button" class="mini-btn approve" data-dept-save="${esc(d.code)}">บันทึก</button>
+          <button type="button" class="mini-btn ${on?'reject':'approve'}" data-dept-toggle="${esc(d.code)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
+          ${u.total ? '' : `<button type="button" class="mini-btn reject" data-dept-del="${esc(d.code)}">ลบถาวร</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+}
+async function reloadDeptsEverywhere(){
+  await loadDepartments();
+  buildDeptChips();
+  await loadTasksFromDb();
+  renderDeptAdmin(); render();
+}
+async function createDeptFromForm(){
+  if (!profile || profile.role !== 'ADMIN') return;
+  const hint = document.getElementById('addDeptHint');
+  const code = document.getElementById('ndCode').value.trim().toUpperCase();
+  const name = document.getElementById('ndName').value.trim();
+  const color = document.getElementById('ndColor').value || '#64748b';
+  if (!/^[A-Z][A-Z0-9_]{1,11}$/.test(code)){ hint.textContent = 'รหัสต้องขึ้นต้นด้วยตัวอักษร A–Z ยาว 2–12 ตัว (A–Z ตัวเลข _)'; return; }
+  if (!name){ hint.textContent = 'กรอกชื่อเต็ม'; return; }
+  if (DEPT_ROWS.some(d=>d.code===code)){ hint.textContent = `รหัส "${code}" มีอยู่แล้ว`; return; }
+  hint.textContent = 'กำลังเพิ่ม...';
+  const sort = (Math.max(0, ...DEPT_ROWS.map(d=>d.sort||0)) + 10);
+  const { error } = await sb.from('departments').insert({ code, name, color, sort, active: true });
+  if (error){ hint.textContent = 'ไม่สำเร็จ: ' + mapDbError(error); return; }
+  ['ndCode','ndName'].forEach(id=>{ document.getElementById(id).value=''; });
+  document.getElementById('addDeptForm').hidden = true;
+  hint.textContent = '';
+  toast(`เพิ่มแผนก ${code} แล้ว`, 'ok');
+  await reloadDeptsEverywhere();
+}
+async function saveDeptRow(code){
+  if (!profile || profile.role !== 'ADMIN') return;
+  const name = document.querySelector(`[data-dept-name="${code}"]`).value.trim();
+  const color = document.querySelector(`[data-dept-color="${code}"]`).value;
+  if (!name){ toast('ชื่อแผนกว่างไม่ได้'); return; }
+  const { error } = await sb.from('departments').update({ name, color }).eq('code', code);
+  if (error){ toast('บันทึกไม่สำเร็จ: ' + mapDbError(error)); return; }
+  toast('บันทึกแล้ว', 'ok');
+  await reloadDeptsEverywhere();
+}
+async function toggleDeptActive(code, next){
+  if (!profile || profile.role !== 'ADMIN') return;
+  const { error } = await sb.from('departments').update({ active: next }).eq('code', code);
+  if (error){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
+  await reloadDeptsEverywhere();
+}
+async function deleteDept(code){
+  if (!profile || profile.role !== 'ADMIN') return;
+  const go = await confirmModal(`ลบแผนก "${code}" ถาวร?\nลบได้เฉพาะแผนกที่ยังไม่มี scope / ชนิดงาน / พนักงาน ผูกอยู่`, { danger:true, yes:'ลบถาวร' });
+  if (!go) return;
+  const { error } = await sb.from('departments').delete().eq('code', code);
+  if (error){
+    if (error.code === '23503' || /foreign key/i.test(error.message||'')) toast('แผนกนี้ยังมีข้อมูลผูกอยู่ — ใช้ "ปิดใช้งาน" แทน');
+    else toast('ลบไม่สำเร็จ: ' + mapDbError(error));
+    return;
+  }
+  toast('ลบแล้ว', 'ok');
+  await reloadDeptsEverywhere();
 }
 
 async function createEmpFromForm(){
@@ -1103,7 +1228,7 @@ function renderEmployeesTable(closed){
     const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
     const initials = esc(r.name.trim().slice(0,1));
     const deptCell = r.department
-      ? `<span class="badge ${esc(r.department)}"><span class="dot"></span>${DEPT_PLAIN[r.department]||esc(r.department)}</span>`
+      ? `${deptBadge(r.department)}`
       : '<span class="td-sub">–</span>';
     return `<tr>
       <td><span class="emp-name-cell"><span class="emp-avatar">${initials}</span>${esc(r.name)}</span></td>
@@ -1240,7 +1365,7 @@ function renderUsersTable(){
       const scopeRO = u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
         : scoped ? scopeSummary(pairs)
         : (userDepts(u).length
-            ? userDepts(u).map(d=>`<span class="badge ${esc(d)}"><span class="dot"></span>${DEPT_PLAIN[d]||esc(d)}</span>`).join(' ')
+            ? userDepts(u).map(d=>deptBadge(d)).join(' ')
             : '<span class="td-sub">–</span>');
       const appsRO = effApps.map(a=>`<span class="badge role">${APP_LABEL[a]||esc(a)}</span>`).join(' ')
         + (Array.isArray(u.apps) && u.apps.length ? '' : ' <span class="td-sub">(ตาม role)</span>');
@@ -1493,6 +1618,7 @@ function render(){
     renderEmpRoster();
     renderEmployeesTable(closed);
   } else if (activeView==='tasks'){
+    renderDeptAdmin();
     renderTasksAdmin();
   } else if (activeView==='users'){
     renderUsersTable();

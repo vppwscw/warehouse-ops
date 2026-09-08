@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=27">
+<link rel="stylesheet" href="css/admin.css?v=28">
 </head>
 <body>
 
@@ -160,6 +160,30 @@
 
     <!-- ===== VIEW: TASKS ===== -->
     <section class="view" id="view-tasks">
+      <div class="dept-admin" id="deptAdmin" hidden>
+        <div class="da-head">
+          <h2 class="da-title">แผนก</h2>
+          <button type="button" class="btn-sm" id="toggleAddDeptBtn">＋ เพิ่มแผนก</button>
+        </div>
+        <form class="add-user-form" id="addDeptForm" hidden autocomplete="off">
+          <div class="auf-grid">
+            <div class="field"><label for="ndCode">รหัส (A–Z ตัวเลข _ · 2–12 ตัว)</label><input type="text" id="ndCode" placeholder="เช่น PKG" maxlength="12" autocomplete="off"></div>
+            <div class="field"><label for="ndName">ชื่อเต็ม</label><input type="text" id="ndName" placeholder="เช่น PACKING" autocomplete="off"></div>
+            <div class="field"><label for="ndColor">สี</label><input type="color" id="ndColor" value="#0ea5e9"></div>
+          </div>
+          <div class="auf-actions">
+            <button type="button" class="btn-sm primary" id="createDeptBtn">เพิ่มแผนก</button>
+            <button type="button" class="btn-sm" id="cancelAddDeptBtn">ยกเลิก</button>
+            <span class="form-hint" id="addDeptHint"></span>
+          </div>
+        </form>
+        <div class="table-wrap">
+          <table id="deptTable">
+            <thead><tr><th>รหัส</th><th>ชื่อ</th><th>สี</th><th>ใช้อยู่</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
       <p class="sub" id="tasksViewNote" style="margin:0 0 14px;">หัวหน้างานเพิ่มชนิดงานได้จากแอปมือถือ · ที่นี่ปิดใช้งานหรือลบถาวรได้ (ADMIN)</p>
       <div class="table-wrap">
         <table id="tasksTable">
@@ -278,6 +302,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=37"></script>
+<script src="js/admin.js?v=38"></script>
 </body>
 </html>

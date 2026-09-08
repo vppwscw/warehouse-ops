@@ -1,12 +1,32 @@
 // ===================== SUPABASE INIT =====================
 
-const DEPT_KEYS = ['INB','OUT','INV'];
-const DEPT_PLAIN = { INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' };
+// Departments are data (public.departments) — these hold the fallback until
+// loadDepartments() runs on login, then get replaced. DEPT_KEYS = active only.
+let DEPT_KEYS  = ['INB','OUT','INV'];
+let DEPT_PLAIN = { INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' };
+let DEPT_COLOR = { INB:'#2563eb', OUT:'#e11d48', INV:'#7c3aed' };
 const WH_KEYS = ['A','B'];
 const WH_PLAIN = { A:'คลัง A', B:'คลัง B' };
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
-const DEPT_SUB   = { INB:'รับรถเข้าคลัง', OUT:'ส่งรถออกคลัง', INV:'จัดการของ/แพ็คของ' };
-const DEPT_ICON  = { INB:'inbound', OUT:'outbound', INV:'inventory' };
+const DEPT_SUB   = { INB:'รับรถเข้าคลัง', OUT:'ส่งรถออกคลัง', INV:'จัดการของ/แพ็คของ' };  // known 3 only
+const DEPT_ICON  = { INB:'inbound', OUT:'outbound', INV:'inventory' };                      // else -> box
+async function loadDepartments(){
+  try{
+    const { data, error } = await sb.from('departments').select('*').eq('active', true).order('sort').order('code');
+    if (error) throw error;
+    if (data && data.length){
+      DEPT_KEYS  = data.map(d=>d.code);
+      DEPT_PLAIN = Object.fromEntries(data.map(d=>[d.code, d.name]));
+      DEPT_COLOR = Object.fromEntries(data.map(d=>[d.code, d.color || '#64748b']));
+    }
+  }catch(e){ /* keep fallback */ }
+}
+const deptColor = c => DEPT_COLOR[c] || '#64748b';
+const deptName  = c => DEPT_PLAIN[c] || c;
+function deptBadge(c){
+  const col = deptColor(c);
+  return `<span class="badge" style="color:${esc(col)};background:${esc(col)}1f"><span class="dot" style="background:${esc(col)}"></span>${esc(deptName(c))}</span>`;
+}
 
 // Fallback task list, used only until the `tasks` table has rows for a department.
 const FALLBACK_TASKS = {
@@ -30,7 +50,7 @@ const ICON_BY_TASK_ID = {}; // id -> icon key, used to decorate DB-sourced tasks
 DEPT_KEYS.forEach(d => FALLBACK_TASKS[d].forEach(t => ICON_BY_TASK_ID[t.id] = t.icon));
 
 let TASKS = { INB:[], OUT:[], INV:[] }; // populated at load, DB-preferred with fallback
-const ALL_TASKS = () => DEPT_KEYS.flatMap(d => TASKS[d]);
+const ALL_TASKS = () => Object.values(TASKS).flat();
 const taskById = id => ALL_TASKS().find(t=>t.id===id);
 const unitShort = u => ({containers:'ตู้', vehicles:'คัน', pieces:'ชิ้น', boxes:'กล่อง'})[u] || u;
 
@@ -199,6 +219,7 @@ async function afterLogin(user){
     return;
   }
   await loadMyScope();
+  await loadDepartments();
   hideLogin();
   refreshRoleBadge();
   buildNav();
@@ -338,24 +359,24 @@ document.getElementById('loginPass').addEventListener('keydown', e=>{ if (e.key=
 
 // ================= TASKS from DB (with fallback) =================
 async function loadTasksFromDb(){
-  TASKS = { INB:[...FALLBACK_TASKS.INB], OUT:[...FALLBACK_TASKS.OUT], INV:[...FALLBACK_TASKS.INV] };
+  TASKS = {};
+  DEPT_KEYS.forEach(d => TASKS[d] = (FALLBACK_TASKS[d] ? FALLBACK_TASKS[d].map(t=>({...t})) : []));
   try{
     const { data, error } = await sb.from('tasks').select('*').eq('active', true);
     if (error) throw error;
     if (data && data.length){
-      const byDept = { INB:[], OUT:[], INV:[] };
+      const byDept = {};
       data.forEach(t=>{
-        byDept[t.department] = byDept[t.department] || [];
-        byDept[t.department].push({
+        (byDept[t.department] = byDept[t.department] || []).push({
           id: t.id, dept: t.department, warehouse: t.warehouse, label: t.name, sub: t.unit_label || '',
           unit: t.unit_label ? 'custom' : 'vehicles', unitLabel: t.unit_label || 'จำนวน',
           icon: ICON_BY_TASK_ID[t.id] || 'box',
         });
       });
-      DEPT_KEYS.forEach(d=>{ if (byDept[d] && byDept[d].length) TASKS[d] = byDept[d]; });
+      Object.keys(byDept).forEach(d=>{ if (byDept[d].length) TASKS[d] = byDept[d]; });
     }
   }catch(e){ /* keep fallback */ }
-  DEPT_KEYS.forEach(d => TASKS[d].forEach(t => t.dept = d));
+  Object.keys(TASKS).forEach(d => TASKS[d].forEach(t => t.dept = d));
 }
 
 // ================= NAV (role-dependent, built after login) =================
@@ -486,9 +507,9 @@ function renderStep1(){
   if (q) q.textContent = !oWhVal ? 'เลือกคลังก่อน' : (isAdmin() ? 'วันนี้จะทำงานฝั่งไหน?' : 'เปิดงานฝั่งไหน?');
   const depts = oWhVal ? deptsForWh(oWhVal) : [];
   document.getElementById('deptTiles').innerHTML = depts.map(d=>`
-    <button type="button" class="tile ${d}" data-pick-dept="${d}">
-      <span class="t-icon">${ICONS[DEPT_ICON[d]]}</span>
-      <span><span class="t-name">${DEPT_PLAIN[d]}</span><span class="t-sub">${DEPT_SUB[d]}</span></span>
+    <button type="button" class="tile" data-pick-dept="${esc(d)}" style="background:${esc(deptColor(d))}17;color:${esc(deptColor(d))}">
+      <span class="t-icon" style="color:${esc(deptColor(d))};background:${esc(deptColor(d))}2b">${ICONS[DEPT_ICON[d]]||ICONS.box}</span>
+      <span><span class="t-name">${esc(deptName(d))}</span>${DEPT_SUB[d] ? `<span class="t-sub">${esc(DEPT_SUB[d])}</span>` : ''}</span>
       <span class="t-chev">${ICONS.chev}</span>
     </button>`).join('') || (oWhVal ? '<div class="empty-roster-inline">คลังนี้ยังไม่มีแผนกที่คุณดูแล</div>' : '');
 }
@@ -507,7 +528,7 @@ function renderStep2(){
   document.getElementById('jobChoiceList').innerHTML = whTasks.length
     ? whTasks.map(t=>`
       <button type="button" class="job-choice" data-pick-task="${esc(t.id)}">
-        <span class="jc-icon badge ${esc(oDeptVal)}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
+        <span class="jc-icon badge" style="width:40px;height:40px;border-radius:11px;color:${esc(deptColor(oDeptVal))};background:${esc(deptColor(oDeptVal))}1f;">${ICONS[t.icon]||ICONS.box}</span>
         <span><span class="jc-name">${esc(t.label)}</span><br><span class="jc-sub">${esc(t.sub||'')}</span></span>
         <span class="t-chev">${ICONS.chev}</span>
       </button>`).join('')
@@ -616,7 +637,7 @@ function renderWorkerTaskList(){
   if (list.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของฝั่ง ${DEPT_PLAIN[profile.department]}<br>ติดต่อหัวหน้างานให้เพิ่มชนิดงานก่อน</div>`; return; }
   box.innerHTML = list.map(t=>`
     <button type="button" class="job-choice" data-open-task="${esc(t.id)}">
-      <span class="jc-icon badge ${esc(profile.department)}" style="width:40px;height:40px;border-radius:11px;">${ICONS[t.icon]||ICONS.box}</span>
+      <span class="jc-icon badge" style="width:40px;height:40px;border-radius:11px;color:${esc(deptColor(profile.department))};background:${esc(deptColor(profile.department))}1f;">${ICONS[t.icon]||ICONS.box}</span>
       <span><span class="jc-name">${esc(t.label)}</span><br><span class="jc-sub">${esc(t.sub||'')}</span></span>
       <span class="t-chev">${ICONS.chev}</span>
     </button>`).join('');
@@ -780,7 +801,7 @@ function renderTaskManager(){
   const multiWh = myWarehouses().length > 1;
   box.innerHTML = deptTasks.map(t=>`
     <div class="task-row">
-      <span class="t-name ${t.active?'':'t-inactive'}">${multiWh ? `<span class="wh-tag">${esc(t.warehouse||'–')}</span> ` : ''}${multi ? `<span class="badge ${esc(t.department)}"><span class="dot"></span>${esc(DEPT_PLAIN[t.department]||t.department)}</span> ` : ''}${esc(t.name)}${t.unit_label ? ` <span class="jc-sub">· ${esc(t.unit_label)}</span>` : ''}</span>
+      <span class="t-name ${t.active?'':'t-inactive'}">${multiWh ? `<span class="wh-tag">${esc(t.warehouse||'–')}</span> ` : ''}${multi ? `${deptBadge(t.department)} ` : ''}${esc(t.name)}${t.unit_label ? ` <span class="jc-sub">· ${esc(t.unit_label)}</span>` : ''}</span>
       <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${esc(t.id)}" data-next-active="${t.active?'false':'true'}">
         ${t.active?'ปิดใช้งาน':'เปิดใช้งาน'}
       </button>
@@ -895,7 +916,7 @@ function renderOpenJobs(){
     return `<div class="hist-card">
       <div class="hist-top"><div>
         <span class="wh-tag">${esc(WH_PLAIN[g.warehouse]||g.warehouse||'–')}</span>
-        <span class="badge ${esc(g.department)}"><span class="dot"></span>${DEPT_PLAIN[g.department]||esc(g.department)}</span>
+        ${deptBadge(g.department)}
         <span class="status-badge open">${STATUS_LABEL.open}</span>
         <div class="hist-task">${esc(task?task.label:g.task_id)}</div>
         <div class="hist-crew">${esc(g.crewNames.join(', '))}</div>
@@ -1175,7 +1196,7 @@ function renderRosterManager(){
     const isOpen = openRosterDept===d;
     const rows = list.length===0
       ? `<p class="empty-roster">ยังไม่มีคนงานฝั่งนี้</p>`
-      : list.map(r=>`<div class="roster-row"><span class="rr-name">${multiWh ? `<span class="wh-tag">${esc(r.warehouse||'–')}</span>` : ''}<span class="badge ${d}"><span class="dot"></span>${DEPT_PLAIN[d]}</span>${esc(r.name)}</span><button type="button" class="icon-btn" data-roster-del="${esc(r.id)}">${ICONS.x}</button></div>`).join('');
+      : list.map(r=>`<div class="roster-row"><span class="rr-name">${multiWh ? `<span class="wh-tag">${esc(r.warehouse||'–')}</span>` : ''}${deptBadge(d)}${esc(r.name)}</span><button type="button" class="icon-btn" data-roster-del="${esc(r.id)}">${ICONS.x}</button></div>`).join('');
     return `<div class="matrix-emp ${isOpen?'open':''}">
       <div class="matrix-emp-head" data-roster-dept="${d}">
         <span class="name">${DEPT_PLAIN[d]}</span>
@@ -1321,7 +1342,7 @@ function renderHistory(){
       <div class="hist-top">
         <div>
           <span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span>
-          <span class="badge ${esc(j.department)}"><span class="dot"></span>${DEPT_PLAIN[j.department]||esc(j.department)}</span>
+          ${deptBadge(j.department)}
           <span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span>
           <div class="hist-task">${task?('<span style=\"display:inline-flex;vertical-align:-3px;width:15px;height:15px;margin-right:4px;\">'+(ICONS[task.icon]||ICONS.box)+'</span>'+esc(task.label)):esc(j.task_id)}</div>
           <div class="hist-crew">${esc((j.crew||[]).join(', '))}</div>

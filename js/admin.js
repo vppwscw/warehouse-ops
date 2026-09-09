@@ -73,6 +73,7 @@ const ICONS = {
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>',
   id:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5"/></svg>',
   logout:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg>',
+  chevron:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 7l-5 5 5 5"/></svg>',
 };
 
 let profile = null, currentUser = null;
@@ -81,7 +82,7 @@ let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', whFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let dateFrom = null, dateTo = null;   // ISO yyyy-mm-dd, used when dateRange === 'custom'
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
-let prevSideCounts = {}; // last-rendered side-card job counts, for the counter animation
+let prevKpi = {};        // last-rendered KPI values, for the counter animation
 let firstLoad = true;    // true until the first successful data load (drives the skeleton)
 let loadError = null;    // set when the initial jobs load fails (drives the error card)
 
@@ -346,6 +347,33 @@ document.getElementById('logoutBtn').innerHTML    = ICONS.logout   + '<span clas
   mq.addEventListener('change', place);
 })();
 
+// ---- sidebar collapse (rail) ----
+// A manual toggle ≥960px (choice saved); below 960 the rail is forced and the
+// toggle is hidden; below 640 the sidebar is gone entirely (bottom tab bar).
+(function(){
+  const shell  = document.querySelector('.shell');
+  const toggle = document.getElementById('railToggle');
+  if (!shell || !toggle) return;
+  toggle.innerHTML = ICONS.chevron + '<span class="nav-tx">ย่อเมนู</span>';
+  const forceMq = window.matchMedia('(max-width:960px)');
+  let saved = false;
+  try { saved = localStorage.getItem('wh_nav_rail') === '1'; } catch(e){}
+  const apply = () => {
+    const rail = forceMq.matches || saved;
+    shell.classList.toggle('rail', rail);
+    toggle.hidden = forceMq.matches;
+    toggle.setAttribute('aria-pressed', String(rail));
+    toggle.querySelector('.nav-tx').textContent = rail ? 'ขยายเมนู' : 'ย่อเมนู';
+  };
+  toggle.addEventListener('click', () => {
+    saved = !shell.classList.contains('rail');
+    try { localStorage.setItem('wh_nav_rail', saved ? '1' : '0'); } catch(e){}
+    apply();
+  });
+  forceMq.addEventListener('change', apply);
+  apply();
+})();
+
 // which filter controls make sense on each view (others are hidden)
 const VIEW_FILTERS = {
   dashboard: ['range','wh','dept','search'],
@@ -467,6 +495,22 @@ document.addEventListener('click', e=>{
     return;
   }
   if (e.target.closest('#pmResetEmailBtn')){ sendOwnResetEmail(); return; }
+
+  const empRow = e.target.closest('#employeesTable tbody tr[data-emp]');
+  if (empRow){ openEmpPanel(empRow.dataset.emp); return; }
+  if (e.target.closest('#empClose') || e.target.id === 'empModal'){ closeEmpModal(); return; }
+  const erChip = e.target.closest('#emRange .chip');
+  if (erChip){
+    empPanel.range = erChip.dataset.er;
+    document.querySelectorAll('#emRange .chip').forEach(c=>c.setAttribute('aria-pressed', String(c===erChip)));
+    renderEmpPanel(); return;
+  }
+  const etChip = e.target.closest('#emTabs .chip');
+  if (etChip){
+    empPanel.tab = etChip.dataset.et;
+    document.querySelectorAll('#emTabs .chip').forEach(c=>c.setAttribute('aria-pressed', String(c===etChip)));
+    renderEmpTable(); return;
+  }
 
   const navBtn = e.target.closest('[data-view]');
   if (navBtn){ goView(navBtn.dataset.view); return; }
@@ -736,98 +780,232 @@ function renderScopeLine(closed){
   el.innerHTML = s;
 }
 
-// per-department 7-day job counts, for the card sparklines
-function daySeries(dept){
-  const days = [...Array(7)].map((_,i)=>daysAgoISO(6-i));
-  const inWh = j => whFilter==='ALL' || j.warehouse===whFilter;
-  return days.map(dt => jobs.filter(j => (j.details&&j.details.date)===dt && j.department===dept && inWh(j)).length);
+// ---- dashboard: KPI + SVG charts (dependency-free) ----
+
+// Jobs of the previous equal-length window, same scope+search — powers the
+// KPI delta chips. Returns null for the "ทั้งหมด" range (nothing to compare).
+function prevPeriodJobs(){
+  const dayMs = 86400000;
+  let curFrom, curTo;
+  if (dateRange==='today'){ curFrom = curTo = todayISO(); }
+  else if (dateRange==='week'){ curFrom = daysAgoISO(6); curTo = todayISO(); }
+  else if (dateRange==='month'){ curFrom = daysAgoISO(29); curTo = todayISO(); }
+  else if (dateRange==='custom' && dateFrom && dateTo){ curFrom = dateFrom; curTo = dateTo; }
+  else return null;
+  const a = new Date(curFrom+'T00:00:00'), b = new Date(curTo+'T00:00:00');
+  const len = Math.round((b - a) / dayMs) + 1;
+  const pTo   = new Date(a.getTime() -     dayMs).toLocaleDateString('sv-SE');
+  const pFrom = new Date(a.getTime() - len*dayMs).toLocaleDateString('sv-SE');
+  return jobs.filter(j=>{
+    const d = (j.details && j.details.date) || '';
+    return d >= pFrom && d <= pTo && matchScope(j) && matchSearch(j);
+  });
 }
 
-// One card per side (เข้า/ออก/สต๊อก): job count + unit output + trend.
-// Replaces the old dept bar list + unit-cards split panel.
-function renderSideCards(closed){
-  const sums = {};                 // dept -> {containers,vehicles,issue,pieces,boxes}
-  const customByDept = {};          // dept -> { unitLabel: qty }
-  const S = d => sums[d] || (sums[d] = {containers:0,vehicles:0,issue:0,pieces:0,boxes:0});
-  closed.forEach(j=>{
-    const task = taskById(j.task_id); const d = j.details||{}; if (!task) return;
-    if (task.unit==='custom'){
-      const bag = customByDept[j.department] || (customByDept[j.department] = {});
-      bag[task.unitLabel] = (bag[task.unitLabel] || 0) + num(d.qty);
-      if (task.hasIssue && d.hasIssue && j.department==='OUT') S('OUT').issue += num(d.issueCount);
-      return;
+// ▲/▼ % vs the previous window. `invert` = a drop is the good direction (avg time).
+function deltaChip(cur, prev, invert){
+  if (prev == null) return '';
+  if (prev === 0) return cur > 0 ? '<span class="kpi-delta up">ใหม่</span>' : '';
+  const pct = Math.round((cur - prev) / prev * 100);
+  if (pct === 0) return '<span class="kpi-delta flat">0%</span>';
+  const up = pct > 0;
+  const good = invert ? !up : up;
+  return `<span class="kpi-delta ${good?'up':'down'}">${up?'▲':'▼'} ${Math.abs(pct)}%</span>`;
+}
+
+// how many distinct people logged work in this set
+function peopleCount(set){
+  const names = new Set();
+  set.forEach(j => (j.crew||[]).forEach(n => { if (n) names.add(n); }));
+  return names.size;
+}
+
+// output totalled by each task's OWN declared unit — never assume "คัน".
+// containers tasks count as "ตู้" (their primary unit); a job that also needs
+// a vehicle count is logged as its own vehicles-unit task type.
+// `weight` (optional) scales each job's output — e.g. 1/crewSize for a per-person view
+function unitTotals(set, weight){
+  const wf = weight || (()=>1);
+  const by = new Map();   // label -> qty
+  const add = (label, q) => { if (label && q) by.set(label, (by.get(label)||0) + q); };
+  set.forEach(j=>{
+    const t = taskById(j.task_id), d = j.details || {}, k = wf(j);
+    if (!t) return;
+    if (t.unit==='containers') add('ตู้', num(d.containers)*k);
+    else if (t.unit==='vehicles') add(t.unitLabel || 'คัน', num(d.qty)*k);
+    else if (t.unit==='pieces')   add(t.unitLabel || 'ชิ้น', num(d.qty)*k);
+    else if (t.unit==='boxes')    add(t.unitLabel || 'กล่อง', num(d.qty)*k);
+    else add(t.unitLabel || 'หน่วย', num(d.qty)*k);   // custom
+  });
+  return [...by.entries()]
+    .map(([label,n])=>({ label, n: n < 100 ? Math.round(n*10)/10 : Math.round(n) }))
+    .sort((a,b)=>b.n-a.n);
+}
+
+function renderKpis(closed){
+  const prev = prevPeriodJobs();
+  const withMins = set => set.filter(j=>j.details && j.details.mins!=null);
+  const avgMins  = set => { const w = withMins(set); return w.length ? Math.round(w.reduce((s,j)=>s+num(j.details.mins),0)/w.length) : 0; };
+
+  const total   = closed.length;
+  const pending = jobs.filter(j=>(j.status||'approved')==='pending' && matchScope(j)).length;
+  const avg     = avgMins(closed);
+  const people  = peopleCount(closed);
+
+  const cards = [
+    { k:'total',   lab:'งานทั้งหมด',       val:total, foot:deltaChip(total, prev ? prev.length : null) },
+    { k:'pending', lab:'รออนุมัติ',        val:pending, tone: pending ? 'warn' : 'ok',
+      foot:`<span class="kpi-sub">${pending ? 'ต้องตรวจ' : 'เคลียร์แล้ว'}</span>` },
+    { k:'avg',     lab:'เฉลี่ย นาที/งาน',  val:avg, foot:deltaChip(avg, prev ? avgMins(prev) : null, true) },
+    { k:'people',  lab:'คนทำงาน',          val:people, foot:deltaChip(people, prev ? peopleCount(prev) : null) },
+  ];
+  document.getElementById('kpiRow').innerHTML = cards.map(c=>`
+    <div class="kpi ${c.tone ? 'kpi-'+c.tone : ''}">
+      <div class="kpi-lab">${esc(c.lab)}</div>
+      <div class="kpi-val num" data-kpi="${c.k}">${c.val}</div>
+      <div class="kpi-foot">${c.foot || ''}</div>
+    </div>`).join('');
+  if (window.Anim) cards.forEach(c=>{
+    Anim.count(document.querySelector(`[data-kpi="${c.k}"]`), c.val, prevKpi[c.k] || 0);
+    prevKpi[c.k] = c.val;
+  });
+}
+
+// day list for the trend chart — follows the active range; 'today'/'all' fall
+// back to a sensible fixed window so the chart is never one bar or 500.
+function trendDays(){
+  if (dateRange==='week')  return [...Array(7)].map((_,i)=>daysAgoISO(6-i));
+  if (dateRange==='month') return [...Array(30)].map((_,i)=>daysAgoISO(29-i));
+  if (dateRange==='custom' && dateFrom && dateTo){
+    const out = []; let d = new Date(dateFrom+'T00:00:00'); const end = new Date(dateTo+'T00:00:00');
+    while (d <= end && out.length < 120){ out.push(d.toLocaleDateString('sv-SE')); d = new Date(d.getTime()+86400000); }
+    return out.length >= 2 ? out : [...Array(7)].map((_,i)=>daysAgoISO(6-i));
+  }
+  return [...Array(7)].map((_,i)=>daysAgoISO(6-i));   // 'today' or 'all'
+}
+
+// stacked-area job trend, one band per department
+function renderTrend(){
+  const days = trendDays();
+  const idx  = Object.fromEntries(days.map((d,i)=>[d,i]));
+  const series = DEPT_KEYS.map(dept=>({ dept, color:deptColor(dept), vals:days.map(()=>0) }));
+  const byDept = Object.fromEntries(series.map(s=>[s.dept, s]));
+  jobs.forEach(j=>{
+    const d = (j.details && j.details.date);
+    if (!(d in idx) || !matchScope(j) || !matchSearch(j)) return;
+    const s = byDept[j.department]; if (s) s.vals[idx[d]]++;
+  });
+  const totals = days.map((_,i)=>series.reduce((sum,s)=>sum+s.vals[i], 0));
+  const max = Math.max(1, ...totals);
+
+  const W=720, H=210, PL=32, PR=10, PT=12, PB=26;
+  const iw = W-PL-PR, ih = H-PT-PB;
+  const X = i => PL + (days.length===1 ? iw/2 : i/(days.length-1)*iw);
+  const Y = v => PT + ih - (v/max)*ih;
+
+  // Catmull-Rom → cubic bezier, so the trend reads as a smooth curve not a
+  // zig-zag. `lead` false continues the current path (for the return edge).
+  const clampY = y => Math.max(PT, Math.min(PT+ih, y));
+  const smooth = (pts, lead) => {
+    if (pts.length < 3) return (lead?'M':'L') + pts.map(p=>p.join(',')).join(' L');
+    let d = (lead?'M':'L') + pts[0].join(',');
+    for (let i=0;i<pts.length-1;i++){
+      const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
+      d += ` C${(p1[0]+(p2[0]-p0[0])/6).toFixed(1)},${clampY(p1[1]+(p2[1]-p0[1])/6).toFixed(1)}`
+        +  ` ${(p2[0]-(p3[0]-p1[0])/6).toFixed(1)},${clampY(p2[1]-(p3[1]-p1[1])/6).toFixed(1)}`
+        +  ` ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
     }
-    if (task.unit==='containers'){ S('INB').containers += num(d.containers); S('INB').vehicles += num(d.vehicles) || (num(d.containers)*(task.vehiclesPerContainer||56)); }
-    else if (j.department==='INB') S('INB').vehicles += num(d.qty);
-    else if (j.department==='OUT'){ S('OUT').vehicles += num(d.qty); if (task.hasIssue && d.hasIssue) S('OUT').issue += num(d.issueCount); }
-    else if (task.unit==='boxes') S('INV').boxes += num(d.qty);
-    else if (task.unit==='pieces') S('INV').pieces += num(d.qty);
-  });
-  const customLines = dept => Object.entries(customByDept[dept]||{})
-    .map(([lab,q])=>`${num(q)} ${esc(lab)}`).join('<br>');
-  // was any INB vehicle figure derived from a container multiplier (vs counted)?
-  const inbDerived = closed.some(j=>{
-    const t = taskById(j.task_id); const d = j.details||{};
-    return t && t.unit==='containers' && num(d.containers) && !num(d.vehicles);
-  });
-
-  const counts = {};
-  const html = DEPT_KEYS.map(dept=>{
-    const count = closed.filter(j=>j.department===dept).length;
-    counts[dept] = count;
-    const series = daySeries(dept);
-    const smax = Math.max(1, ...series);
-    const spark = series.map(v=>`<i class="${v>0?'on':''}" style="height:${Math.max(2,Math.round(v/smax*26))}px"></i>`).join('');
-    const s = sums[dept] || {};
-    const cl = customLines(dept);
-    let unit = '', cvt = '';
-    if (dept==='INB' && num(s.containers)){
-      unit = `<span class="approx">${num(s.containers)} ตู้ ${inbDerived?'≈':'·'} ${num(s.vehicles)} คัน</span>`;
-      if (inbDerived) cvt = '(56 คัน/ตู้ — ประมาณ)';
-    } else if (dept==='INB' && num(s.vehicles)) unit = `${num(s.vehicles)} คัน`;
-    else if (dept==='OUT' && num(s.vehicles)) unit = `${num(s.vehicles)} คัน`;
-    else if (dept==='INV' && (num(s.pieces) || num(s.boxes))) unit = `${num(s.pieces)} ชิ้น<br>${num(s.boxes)} กล่อง`;
-    if (cl) unit += (unit ? '<br>' : '') + cl;
-    const issue = (dept==='OUT' && num(s.issue))
-      ? `<span class="badge issue sc-issue">มีปัญหา ${num(s.issue)} คัน</span>` : '';
-    const col = deptColor(dept);
-    return `<div class="side-card" data-dept="${esc(dept)}" style="--dc:${esc(col)}">
-      <div class="sc-cap"></div>
-      <div class="sc-body">
-        <div class="sc-lab"><span class="dot" style="background:${esc(col)}"></span>${esc(deptName(dept))}</div>
-        <div class="sc-big"><span class="sc-big-n num">${count}</span><span class="u">งาน</span></div>
-        <div class="sc-unit">${unit}</div>
-        ${cvt ? `<div class="sc-cvt">${cvt}</div>` : ''}
-        ${issue}
-      </div>
-      <div class="sc-spark">${spark}</div>
-    </div>`;
+    return d;
+  };
+  let lower = days.map(()=>0);
+  const bands = series.map(s=>{
+    const upper = lower.map((lo,i)=>lo + s.vals[i]);
+    const top = upper.map((v,i)=>[X(i), Y(v)]);
+    const bot = lower.map((v,i)=>[X(i), Y(v)]).reverse();
+    lower = upper;
+    return `<path d="${smooth(top,true)} ${smooth(bot,false)} Z" fill="${esc(s.color)}" fill-opacity=".85" stroke="var(--surface)" stroke-width="1"/>`;
   }).join('');
-  document.getElementById('sideCards').innerHTML = html;
-  if (window.Anim) DEPT_KEYS.forEach(dept=>{
-    const card = document.querySelector(`.side-card[data-dept="${dept}"]`);
-    if (!card) return;
-    Anim.count(card.querySelector('.sc-big-n'), counts[dept], prevSideCounts[dept]);
-    Anim.bars(card.querySelector('.sc-spark'), 'i', { stiffness:90, damping:16, stagger:28 });
-  });
-  prevSideCounts = counts;
+
+  const grid = [0,.25,.5,.75,1].map(f=>{
+    const gy = Y(max*f);
+    return `<line x1="${PL}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="var(--line)"/>`
+         + `<text x="${PL-6}" y="${gy+3}" text-anchor="end" class="c-axis">${Math.round(max*f)}</text>`;
+  }).join('');
+  const step = Math.max(1, Math.ceil(days.length/6));
+  const xlab = days.map((d,i)=> (i%step===0 || i===days.length-1)
+    ? `<text x="${X(i)}" y="${H-8}" text-anchor="middle" class="c-axis">${esc(fmtThaiDate(d))}</text>` : '').join('');
+
+  document.getElementById('trendSub').textContent = days.length + ' วันล่าสุด';
+  document.getElementById('trendChart').innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" class="c-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="แนวโน้มงานรายวัน">
+       ${grid}${bands}${xlab}
+     </svg>`;
+  document.getElementById('trendLegend').innerHTML = series.map(s=>
+    `<span class="lg"><i style="background:${esc(s.color)}"></i>${esc(deptName(s.dept))}</span>`).join('');
 }
 
-function renderDayChart(){
-  const days = [...Array(7)].map((_,i)=>daysAgoISO(6-i));
-  const counts = days.map(d=> jobs.filter(j=> (j.details&&j.details.date)===d && matchScope(j)).length);
-  const max = Math.max(1, ...counts);
-  const wd = ['อา','จ','อ','พ','พฤ','ศ','ส'];
-  document.getElementById('dayChart').innerHTML = days.map((d,i)=>{
-    const h = Math.max(4, Math.round(counts[i]/max*90));
-    const dow = wd[new Date(d+'T00:00:00').getDay()];
-    return `<div class="daybar-wrap">
-      <span class="daybar-val num">${counts[i]||''}</span>
-      <span class="daybar" style="height:${h}px"></span>
-      <span class="daybar-lbl">${dow}</span>
-    </div>`;
+// donut — job share by department
+function renderDeptDonut(closed){
+  const data = DEPT_KEYS
+    .map(d=>({ d, n:closed.filter(j=>j.department===d).length, c:deptColor(d) }))
+    .filter(x=>x.n>0);
+  const total = data.reduce((s,x)=>s+x.n, 0);
+  const box = document.getElementById('deptDonut');
+  if (!total){ box.innerHTML = '<p class="c-empty">ยังไม่มีงานในช่วงนี้</p>'; return; }
+  const R=58, SW=20, C=2*Math.PI*R, cx=80, cy=80;
+  let off = 0;
+  const segs = data.map(x=>{
+    const len = x.n/total*C;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${esc(x.c)}" stroke-width="${SW}"`
+      + ` stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    off += len; return seg;
   }).join('');
-  if (window.Anim) Anim.bars(document.getElementById('dayChart'), '.daybar', { stiffness:90, damping:16, stagger:40 });
+  const legend = data.map(x=>`<li><span class="lg"><i style="background:${esc(x.c)}"></i>${esc(deptName(x.d))}</span>`
+    + `<b class="num">${x.n}</b><span class="c-pct">${Math.round(x.n/total*100)}%</span></li>`).join('');
+  box.innerHTML =
+    `<svg viewBox="0 0 160 160" class="donut-svg" role="img" aria-label="สัดส่วนงานตามฝั่ง">
+       ${segs}
+       <text x="80" y="78" text-anchor="middle" class="donut-c-n">${total}</text>
+       <text x="80" y="95" text-anchor="middle" class="donut-c-l">งาน</text>
+     </svg>
+     <ul class="c-legend">${legend}</ul>`;
+}
+
+// generic horizontal-bar list
+function hbars(box, rows){
+  const max = Math.max(1, ...rows.map(r=>r.n));
+  box.innerHTML = rows.length
+    ? rows.map(r=>`<div class="hbar-row">
+        <span class="hbar-lab" title="${esc(r.label)}">${esc(r.label)}</span>
+        <span class="hbar-track"><i style="width:${Math.max(2, r.n/max*100)}%;background:${esc(r.color||'var(--accent)')}"></i></span>
+        <b class="hbar-n num">${r.disp != null ? esc(r.disp) : r.n}</b>
+      </div>`).join('')
+    : '<p class="c-empty">ยังไม่มีข้อมูล</p>';
+}
+
+function renderWhBars(closed){
+  hbars(document.getElementById('whBars'),
+    WH_KEYS.map(w=>({ label:WH_PLAIN[w], n:closed.filter(j=>j.warehouse===w).length, color:'var(--accent)' })));
+}
+
+// total output by real unit (ชิ้น / กล่อง / คัน / ตู้ / custom)
+function renderUnitOutput(closed){
+  const rows = unitTotals(closed).map(r=>({ label:r.label, n:r.n, disp:r.n.toLocaleString('en-US') }));
+  hbars(document.getElementById('unitOutput'), rows);
+}
+
+function renderTopTasks(closed){
+  const agg = new Map();   // label -> { n, color }
+  closed.forEach(j=>{
+    const t = taskById(j.task_id);
+    const label = t ? t.label : (j.task_id || 'ไม่ทราบ');
+    const cur = agg.get(label) || { n:0, color:deptColor(j.department) };
+    cur.n++; agg.set(label, cur);
+  });
+  const rows = [...agg.entries()]
+    .map(([label,v])=>({ label, n:v.n, color:v.color }))
+    .sort((a,b)=>b.n-a.n).slice(0,6);
+  hbars(document.getElementById('topTasks'), rows);
 }
 
 // One row renderer, shared by the dashboard table and the "งานทั้งหมด" view —
@@ -869,7 +1047,7 @@ function renderDashJobs(closed){
   let rows = closed;
   if (jobsPreset==='pending') rows = closed.filter(j=>(j.status||'approved')==='pending');
   else if (jobsPreset==='today'){ const t = todayISO(); rows = closed.filter(j=>(j.details&&j.details.date)===t); }
-  rows = [...rows].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,12);
+  rows = [...rows].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,6);
   renderJobRows(document.querySelector('#dashJobsTable tbody'), rows,
     jobsPreset==='pending' ? 'ไม่มีงานรออนุมัติในช่วงนี้' : 'ยังไม่มีงานที่บันทึกในช่วงนี้');
 }
@@ -1251,7 +1429,7 @@ function renderEmployeesTable(closed){
     const deptCell = r.department
       ? `${deptBadge(r.department)}`
       : '<span class="td-sub">–</span>';
-    return `<tr>
+    return `<tr class="emp-row" data-emp="${esc(r.name)}" tabindex="0" role="button" aria-label="ดูรายละเอียด ${esc(r.name)}">
       <td><span class="emp-name-cell"><span class="emp-avatar">${initials}</span>${esc(r.name)}</span></td>
       <td>${deptCell}</td>
       <td class="mono">${num(inRange)}</td>
@@ -1259,6 +1437,168 @@ function renderEmployeesTable(closed){
     </tr>`;
   }).join('');
 }
+
+// ---- employee detail panel (personal KPIs + day/month/year breakdown) ----
+// Full-width overlay; all figures computed client-side from `jobs`.
+let empPanel = { name:null, range:'all', tab:'day' };
+// a group job is attributed to one person by dividing its OUTPUT by the crew size
+// (time is never divided — the whole crew is present the full duration)
+const empCrew = j => (j.crew||[]).length || 1;
+
+function empPanelFrom(range){
+  if (range==='today') return todayISO();
+  if (range==='week')  return daysAgoISO(6);
+  if (range==='month') return daysAgoISO(29);
+  if (range==='year')  return nowBkk().getFullYear() + '-01-01';
+  return null;   // 'all'
+}
+const empPanelJobs = () => jobs.filter(j => (j.crew||[]).includes(empPanel.name));
+// same date window drives the whole panel — KPIs, the คลัง/แผนก split, and the table
+function empRangedJobs(){
+  const from = empPanelFrom(empPanel.range);
+  const all  = empPanelJobs();
+  return from ? all.filter(j => ((j.details&&j.details.date)||'') >= from) : all;
+}
+
+function openEmpPanel(name){
+  if (!jobs.some(j=>(j.crew||[]).includes(name))) return;
+  empPanel = { name, range:'all', tab:'day' };
+  const mine = jobs.filter(j=>(j.crew||[]).includes(name));
+  document.getElementById('emName').textContent   = name;
+  document.getElementById('emAvatar').textContent = name.trim().slice(0,1);
+
+  // home department from the roster (mobile logs one department per person)
+  const rEntry   = roster.find(r=>r.name===name);
+  const homeDept = (rEntry && rEntry.department) || [...new Set(mine.map(j=>j.department))][0];
+  document.getElementById('emDept').innerHTML = deptBadge(homeDept)
+    + (rEntry && rEntry.warehouse ? ` <span class="emp-home-wh">คลังหลัก ${esc(rEntry.warehouse)}</span>` : '');
+  document.querySelectorAll('#emRange .chip').forEach(c=>c.setAttribute('aria-pressed', String(c.dataset.er==='all')));
+  document.querySelectorAll('#emTabs .chip').forEach(c=>c.setAttribute('aria-pressed', String(c.dataset.et==='day')));
+  renderEmpPanel();
+  document.getElementById('empModal').hidden = false;
+}
+function closeEmpModal(){ document.getElementById('empModal').hidden = true; }
+
+function renderEmpPanel(){
+  const rng = empRangedJobs();
+  const wt  = j => 1 / empCrew(j);   // per-person share
+
+  const wm     = rng.filter(j => j.details && j.details.mins!=null);
+  const totMin = wm.reduce((s,j)=>s+num(j.details.mins),0);
+  const avg    = wm.length ? Math.round(totMin/wm.length) : 0;
+  const days   = new Set(rng.map(j=>(j.details&&j.details.date)).filter(Boolean)).size;
+  const top    = unitTotals(rng, wt)[0];
+
+  const kpi = (n,l)=>`<div class="ek"><div class="ek-n num">${n}</div><div class="ek-l">${esc(l)}</div></div>`;
+  document.getElementById('emStats').innerHTML =
+    kpi(rng.length, 'งานทั้งหมด') +
+    kpi(days, 'วันที่ทำงาน') +
+    kpi(days ? (rng.length/days).toFixed(1) : '0', 'งาน/วัน') +
+    kpi(avg, 'เฉลี่ย นาที/งาน') +
+    kpi(Math.round(totMin/60), 'ชม.รวม') +
+    kpi(top ? `${top.n.toLocaleString('en-US')} ${esc(top.label)}` : '–', 'ผลงานหลัก (ส่วนของคนนี้)');
+
+  // proportion breakdowns — which warehouses, which departments (scoped to range)
+  const pct = n => rng.length ? Math.round(n/rng.length*100) : 0;
+  const whRows = WH_KEYS
+    .map(w=>({ label:WH_PLAIN[w], n:rng.filter(j=>j.warehouse===w).length, color:'var(--accent)' }))
+    .filter(r=>r.n>0)
+    .map(r=>({ ...r, disp:`${r.n} · ${pct(r.n)}%` }));
+  const dCount = {};
+  rng.forEach(j=>{ if (j.department) dCount[j.department] = (dCount[j.department]||0) + 1; });
+  const deptRows = Object.entries(dCount).sort((a,b)=>b[1]-a[1])
+    .map(([d,n])=>({ label:deptName(d), n, color:deptColor(d), disp:`${n} · ${pct(n)}%` }));
+  hbars(document.getElementById('emByWh'), whRows);
+  hbars(document.getElementById('emByDept'), deptRows);
+
+  renderEmpTable();
+}
+
+// this person's share of one job's output, formatted with unit
+function empJobShare(t, d, cw){
+  if (!t) return '–';
+  const nf = v => { v = num(v)/cw; return (v < 100 ? Math.round(v*10)/10 : Math.round(v)).toLocaleString('en-US'); };
+  if (t.unit==='containers') return num(d.vehicles) ? `${nf(d.vehicles)} คัน` : `${nf(d.containers)} ตู้`;
+  return `${nf(d.qty)} ${t.unitLabel||''}`.trim() || '–';
+}
+
+function renderEmpTable(){
+  const box = document.getElementById('emTable');
+  const set = empRangedJobs().filter(j => j.details && j.details.date);
+  if (!set.length){ box.innerHTML = '<p class="c-empty">ไม่มีข้อมูลในช่วงนี้</p>'; return; }
+
+  // รายวัน — one row per job, with its open/close time
+  if (empPanel.tab === 'day'){
+    const key = j => (j.details.date||'') + (j.details.start||'') + (j.id||'');
+    const rows = [...set].sort((a,b)=>key(b).localeCompare(key(a))).slice(0,200);
+    let lastD = null;
+    box.innerHTML = `
+      <table class="emp-tbl">
+        <thead><tr><th>วันที่</th><th>งานที่ทำ</th><th>เปิด–ปิด</th><th>ผลลัพธ์</th><th>นาที</th></tr></thead>
+        <tbody>${rows.map(j=>{
+          const d = j.details, t = taskById(j.task_id);
+          const show = d.date !== lastD; lastD = d.date;
+          return `<tr class="${show?'et-first':''}">
+            <td>${show ? esc(fmtThaiDate(d.date)) : ''}</td>
+            <td class="et-task">${esc(t ? t.label : j.task_id)}</td>
+            <td class="mono">${esc(d.start||'–')}–${esc(d.end||'–')}</td>
+            <td class="mono">${esc(empJobShare(t, d, empCrew(j)))}</td>
+            <td class="mono">${d.mins==null ? '–' : num(d.mins)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+    return;
+  }
+
+  // รายเดือน / รายปี — aggregate by period × task type
+  const perOf = empPanel.tab==='month' ? (d=>d.slice(0,7)) : (d=>d.slice(0,4));
+  const g = new Map();
+  set.forEach(j=>{
+    const d = j.details, cw = empCrew(j);
+    const period = perOf(d.date), k = period + '|' + j.task_id;
+    const b = g.get(k) || { period, task_id:j.task_id, n:0, min:0, wm:0, qty:0, containers:0, vehicles:0 };
+    b.n++;
+    if (d.mins!=null){ b.min += num(d.mins); b.wm++; }
+    b.qty += num(d.qty)/cw; b.containers += num(d.containers)/cw; b.vehicles += num(d.vehicles)/cw;
+    g.set(k, b);
+  });
+  const rows = [...g.values()].sort((a,b)=> b.period.localeCompare(a.period) || b.n - a.n);
+
+  const label = empPanel.tab==='month' ? 'เดือน' : 'ปี';
+  const fmtP  = p => empPanel.tab==='month'
+    ? `${TH_MONTHS[+p.slice(5,7)-1]} ${(+p.slice(0,4))+543}` : `${(+p)+543}`;
+  const nf = n => (n < 100 ? Math.round(n*10)/10 : Math.round(n)).toLocaleString('en-US');
+  const outStr = b => {
+    const t = taskById(b.task_id);
+    if (!t) return '–';
+    if (t.unit==='containers') return b.vehicles ? `${nf(b.vehicles)} คัน` : `${nf(b.containers)} ตู้`;
+    return `${nf(b.qty)} ${t.unitLabel||''}`.trim() || '–';
+  };
+  let lastP = null;
+  box.innerHTML = `
+    <table class="emp-tbl">
+      <thead><tr><th>${label}</th><th>งานที่ทำ</th><th>จำนวน</th><th>ผลลัพธ์</th><th>นาทีรวม</th><th>เฉลี่ย นาที/งาน</th></tr></thead>
+      <tbody>${rows.map(b=>{
+        const t = taskById(b.task_id);
+        const show = b.period !== lastP; lastP = b.period;
+        return `<tr class="${show?'et-first':''}">
+          <td>${show ? esc(fmtP(b.period)) : ''}</td>
+          <td class="et-task">${esc(t ? t.label : (b.task_id||'–'))}</td>
+          <td class="mono">${b.n}</td>
+          <td class="mono">${esc(outStr(b))}</td>
+          <td class="mono">${b.min.toLocaleString('en-US')}</td>
+          <td class="mono">${b.wm ? Math.round(b.min/b.wm) : '–'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+
+document.addEventListener('keydown', e=>{
+  const m = document.getElementById('empModal');
+  if (e.key === 'Escape' && m && !m.hidden){ closeEmpModal(); return; }
+  const row = e.target.closest && e.target.closest('#employeesTable tbody tr[data-emp]');
+  if (row && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); openEmpPanel(row.dataset.emp); }
+});
 
 function roleOptions(sel){
   return ROLE_ORDER.map(r=>`<option value="${r}" ${sel===r?'selected':''}>${ROLE_LABEL[r]}</option>`).join('');
@@ -1600,7 +1940,7 @@ function skeletonHTML(){
   const b = n => Array(n).fill('<div class="sk sk-row"></div>').join('');
   if (activeView==='dashboard')
     return `<div class="sk sk-strip"></div>
-      <div class="sk-cards"><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-card"></div></div>
+      <div class="sk-cards"><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-card"></div></div>
       <div class="sk sk-chart"></div>${b(4)}`;
   if (activeView==='queue')
     return `<div class="sk sk-qcard"></div><div class="sk sk-qcard"></div><div class="sk sk-qcard"></div>`;
@@ -1630,7 +1970,8 @@ function render(){
   const closed = filteredJobs();
   updatePendingBadges();
   if (activeView==='dashboard'){
-    renderActionStrip(); renderScopeLine(closed); renderSideCards(closed); renderDayChart(); renderDashJobs(closed);
+    renderActionStrip(); renderScopeLine(closed); renderKpis(closed); renderTrend();
+    renderUnitOutput(closed); renderDeptDonut(closed); renderWhBars(closed); renderTopTasks(closed); renderDashJobs(closed);
   } else if (activeView==='queue'){
     renderQueue();
   } else if (activeView==='details'){

@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=30">
+<link rel="stylesheet" href="css/admin.css?v=50">
 </head>
 <body>
 
@@ -47,6 +47,7 @@
     </div>
     <nav class="navlist" id="navList"></nav>
     <div class="sync-box" id="syncBox"><span class="sync-dot"></span><span id="syncText">กำลังเชื่อมต่อ...</span></div>
+    <button type="button" class="rail-toggle navbtn" id="railToggle" aria-label="ย่อ/ขยายเมนู" aria-pressed="false"></button>
   </aside>
 
   <main class="main">
@@ -117,16 +118,42 @@
       <div class="action-strip" id="actionStrip" hidden></div>
       <p class="scope-line" id="scopeLine"></p>
 
-      <div class="side-cards" id="sideCards"></div>
+      <div class="kpi-row" id="kpiRow"></div>
 
-      <div class="panel">
-        <h2>งานที่บันทึกรายวัน</h2>
-        <p class="panel-sub">ย้อนหลัง 7 วัน</p>
-        <div class="daychart" id="dayChart"></div>
-      </div>
+      <div class="dash-grid">
+        <div class="panel g-trend">
+          <div class="panel-head">
+            <div>
+              <h2>แนวโน้มงานรายวัน</h2>
+              <p class="panel-sub" id="trendSub">7 วันล่าสุด</p>
+            </div>
+            <div class="chip-legend" id="trendLegend"></div>
+          </div>
+          <div class="chart-trend" id="trendChart"></div>
+        </div>
 
-      <div class="panel" style="padding-bottom:6px;">
+        <div class="panel g-donut">
+          <h2>สัดส่วนงานตามฝั่ง</h2>
+          <p class="panel-sub">แยกตามแผนก · คลัง A / B</p>
+          <div class="chart-donut" id="deptDonut"></div>
+          <div class="chart-hbars donut-wh" id="whBars"></div>
+        </div>
+
+        <div class="panel g-unit">
+          <h2>ผลงานตามหน่วย</h2>
+          <p class="panel-sub">ยอดรวมตามหน่วยจริงของแต่ละชนิดงาน</p>
+          <div class="chart-hbars" id="unitOutput"></div>
+        </div>
+
+        <div class="panel g-top">
+          <h2>งานยอดนิยม</h2>
+          <p class="panel-sub">ชนิดงานที่บันทึกมากที่สุด (สูงสุด 6 อันดับ)</p>
+          <div class="chart-hbars" id="topTasks"></div>
+        </div>
+
+        <div class="panel g-jobs" style="padding-bottom:6px;">
         <div class="table-toolbar">
+          <h2 class="tt-title">งานล่าสุด</h2>
           <div class="chipgroup" id="jobsPresets">
             <button type="button" class="preset" data-preset="all" aria-pressed="true">ทั้งหมด</button>
             <button type="button" class="preset" data-preset="pending" aria-pressed="false">รออนุมัติ</button>
@@ -138,6 +165,7 @@
             <thead><tr><th>วันที่</th><th>คลัง</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>เริ่ม–จบ</th><th>นาที</th><th>ผลลัพธ์</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
             <tbody></tbody>
           </table>
+        </div>
         </div>
       </div>
     </section>
@@ -296,12 +324,51 @@
   </div>
 </div>
 
+<!-- employee detail — full-width panel opened from the พนักงาน summary table -->
+<div class="modal-overlay emp-overlay" id="empModal" hidden>
+  <div class="emp-panel">
+    <div class="emp-panel-head">
+      <span class="emp-avatar lg" id="emAvatar"></span>
+      <div class="emp-head-t">
+        <h3 id="emName">–</h3>
+        <div class="emp-head-badges" id="emDept"></div>
+      </div>
+      <div class="emp-seg emp-range" id="emRange">
+        <button type="button" class="chip" data-er="today">วันนี้</button>
+        <button type="button" class="chip" data-er="week">7 วัน</button>
+        <button type="button" class="chip" data-er="month">30 วัน</button>
+        <button type="button" class="chip" data-er="year">ปีนี้</button>
+        <button type="button" class="chip" data-er="all" aria-pressed="true">ทั้งหมด</button>
+      </div>
+      <button type="button" class="modal-x" id="empClose" aria-label="ปิด">✕</button>
+    </div>
+    <div class="emp-kpis" id="emStats"></div>
+    <div class="emp-split">
+      <div class="emp-split-card">
+        <h4>งานตามคลัง</h4>
+        <div class="chart-hbars" id="emByWh"></div>
+      </div>
+      <div class="emp-split-card">
+        <h4>งานตามแผนก</h4>
+        <div class="chart-hbars" id="emByDept"></div>
+      </div>
+    </div>
+    <div class="emp-seg emp-tabs" id="emTabs">
+      <button type="button" class="chip" data-et="day" aria-pressed="true">รายวัน</button>
+      <button type="button" class="chip" data-et="month">รายเดือน</button>
+      <button type="button" class="chip" data-et="year">รายปี</button>
+    </div>
+    <p class="emp-note">ผลลัพธ์ = ส่วนงานของคนนี้ หารเฉลี่ยตามขนาดทีมของแต่ละงานแล้ว</p>
+    <div class="emp-table-wrap" id="emTable"></div>
+  </div>
+</div>
+
 <div id="toastHost"></div>
 
 <footer class="build-footer">Skill Matrix &middot; production build</footer>
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=39"></script>
+<script src="js/admin.js?v=53"></script>
 </body>
 </html>

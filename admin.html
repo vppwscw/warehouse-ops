@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=29">
+<link rel="stylesheet" href="css/admin.css?v=30">
 </head>
 <body>
 
@@ -55,7 +55,7 @@
         <h1 id="pageTitle">ภาพรวม</h1>
         <p class="sub" id="pageSub">สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก</p>
       </div>
-      <div class="pagehead-actions">
+      <div class="pagehead-actions" id="acctActions">
         <button type="button" class="btn-sm" id="exportCsvBtn" title="ดาวน์โหลดข้อมูลงานตามตัวกรองปัจจุบันเป็นไฟล์ CSV">⬇ ส่งออก CSV</button>
         <button type="button" class="gear-btn" id="gearBtn" title="ผู้ใช้งานระบบ / โปรไฟล์" aria-label="ผู้ใช้งานระบบ / โปรไฟล์"></button>
         <button type="button" class="btn-sm" id="changePwBtn">โปรไฟล์ของฉัน</button>
@@ -302,6 +302,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=38"></script>
+<script src="js/admin.js?v=39"></script>
 </body>
 </html>

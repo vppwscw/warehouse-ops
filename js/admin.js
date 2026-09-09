@@ -70,6 +70,9 @@ const ICONS = {
   queue: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5h6a1 1 0 0 1 1 1V7H8V5.5a1 1 0 0 1 1-1z"/><rect x="4" y="6" width="16" height="15" rx="2"/><path d="M8.5 13.5l2.2 2.2 4.8-4.8"/></svg>',
   box:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
   matrix:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="6" height="6" rx="1.4"/><rect x="14.5" y="3.5" width="6" height="6" rx="1.4"/><rect x="3.5" y="14.5" width="6" height="6" rx="1.4"/><rect x="14.5" y="14.5" width="6" height="6" rx="1.4"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>',
+  id:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5"/></svg>',
+  logout:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg>',
 };
 
 let profile = null, currentUser = null;
@@ -323,8 +326,25 @@ document.getElementById('botNav').innerHTML = NAV.map(n=>`
   <button type="button" class="botbtn" data-view="${n.id}" aria-current="${n.id==='dashboard'}">
     ${ICONS[n.icon]}<span>${n.short}</span>
   </button>`).join('');
-document.getElementById('gearBtn').innerHTML = ICONS.gear;
 document.getElementById('deniedLockIcon').innerHTML = ICONS.lock;
+
+// account actions — give each a glyph + label, then dock the row into the
+// sidebar bottom on tablet/desktop, or leave it in the page header on phones
+// (where the sidebar is replaced by the bottom tab bar).
+document.getElementById('gearBtn').innerHTML      = ICONS.gear     + '<span class="act-tx">ผู้ใช้งานระบบ</span>';
+document.getElementById('exportCsvBtn').innerHTML = ICONS.download + '<span class="act-tx">ส่งออก CSV</span>';
+document.getElementById('changePwBtn').innerHTML  = ICONS.id       + '<span class="act-tx">โปรไฟล์ของฉัน</span>';
+document.getElementById('logoutBtn').innerHTML    = ICONS.logout   + '<span class="act-tx">ออกจากระบบ</span>';
+(function(){
+  const acts = document.getElementById('acctActions');
+  const side = document.querySelector('.sidebar');
+  const sync = document.getElementById('syncBox');
+  const head = document.querySelector('.pagehead');
+  const mq   = window.matchMedia('(min-width:640px)');
+  const place = () => { mq.matches ? side.insertBefore(acts, sync) : head.appendChild(acts); };
+  place();
+  mq.addEventListener('change', place);
+})();
 
 // which filter controls make sense on each view (others are hidden)
 const VIEW_FILTERS = {

@@ -592,6 +592,7 @@ document.addEventListener('click', e=>{
 
   if (e.target.closest('#actionStripBtn')){ goView('queue'); return; }
   if (e.target.closest('#exportCsvBtn')){ exportJobsCsv(); return; }
+  if (e.target.closest('#exportEmpCsvBtn')){ exportEmployeesCsv(); return; }
 
   const batchBtn = e.target.closest('[data-approve-dept]');
   if (batchBtn){ approveDept(batchBtn.dataset.approveDept); return; }
@@ -787,6 +788,39 @@ function exportJobsCsv(){
   toast(`ส่งออก ${rows.length} รายการ`, 'ok');
 }
 
+// Per-person export (พนักงาน view) — one row per person with explicit คลัง +
+// ฝั่ง columns (rows already sort by warehouse -> department -> name), scoped
+// by the same whFilter/deptFilter chips as everything else (which for a
+// non-ADMIN never offer a warehouse outside their own staff_scope anyway).
+function exportEmployeesCsv(){
+  const closed = filteredJobs();
+  const people = peopleInScope();
+  if (!people.length){ toast('ไม่มีพนักงานในขอบเขตนี้'); return; }
+  const head = ['ชื่อ','คลัง','ฝั่ง','งานในช่วงที่เลือก','งานสะสมทั้งหมด'];
+  const lines = [head.join(',')];
+  people.forEach(r=>{
+    const inRange = closed.filter(j=>(j.crew||[]).includes(r.name)).length;
+    const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
+    lines.push([
+      r.name,
+      WH_PLAIN[r.warehouse]||r.warehouse||'',
+      deptName(r.department, r.warehouse),
+      inRange, total,
+    ].map(csvCell).join(','));
+  });
+  const scope = deptFilter==='ALL' ? 'ทุกฝั่ง' : deptName(deptFilter, whFilter);
+  const whScope = whFilter==='ALL' ? 'ทุกคลัง' : (WH_PLAIN[whFilter]||whFilter);
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const rangeTag = dateRange==='custom' ? `${dateFrom}_ถึง_${dateTo}` : dateRange;
+  a.download = `warehouse-employees_${whScope}_${scope}_${rangeTag}_${todayISO()}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast(`ส่งออก ${people.length} คน`, 'ok');
+}
+
 function formatResult(details, task){
   if (!task || !details) return '–';
   if (task.unit==='containers') return `${num(details.containers)} ตู้ / ${num(details.vehicles) || (num(details.containers)*(task.vehiclesPerContainer||56))} คัน`;
@@ -803,15 +837,15 @@ function formatResult(details, task){
 function peopleInScope(){
   const inDept = d => deptFilter==='ALL' || d===deptFilter;
   const inWh = w => whFilter==='ALL' || w===whFilter;
-  const byName = new Map(); // name -> department (roster wins, else first job's dept)
-  roster.forEach(r=>{ if (inDept(r.department) && inWh(r.warehouse)) byName.set(r.name, r.department); });
+  const byName = new Map(); // name -> {department, warehouse} (roster wins, else first job's)
+  roster.forEach(r=>{ if (inDept(r.department) && inWh(r.warehouse)) byName.set(r.name, {department:r.department, warehouse:r.warehouse}); });
   jobs.forEach(j=>{
     if (!inDept(j.department) || !inWh(j.warehouse)) return;
-    (j.crew||[]).forEach(n=>{ if (!byName.has(n)) byName.set(n, j.department); });
+    (j.crew||[]).forEach(n=>{ if (!byName.has(n)) byName.set(n, {department:j.department, warehouse:j.warehouse}); });
   });
   return [...byName.entries()]
-    .map(([name, department])=>({name, department}))
-    .sort((a,b)=>a.name.localeCompare(b.name,'th'));
+    .map(([name, info])=>({name, department:info.department, warehouse:info.warehouse}))
+    .sort((a,b)=>(a.warehouse||'').localeCompare(b.warehouse||'') || (a.department||'').localeCompare(b.department||'') || a.name.localeCompare(b.name,'th'));
 }
 
 // ---- dashboard: month names + age formatting (Asia/Bangkok) ----
@@ -1644,16 +1678,17 @@ async function deleteEmp(id){
 function renderEmployeesTable(closed){
   const people = peopleInScope();
   const tbody = document.querySelector('#employeesTable tbody');
-  if (people.length===0){ tbody.innerHTML = emptyRow(4, 'ยังไม่มีพนักงานในขอบเขตนี้'); return; }
+  if (people.length===0){ tbody.innerHTML = emptyRow(5, 'ยังไม่มีพนักงานในขอบเขตนี้'); return; }
   tbody.innerHTML = people.map(r=>{
     const inRange = closed.filter(j=>(j.crew||[]).includes(r.name)).length;
     const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
     const initials = esc(r.name.trim().slice(0,1));
     const deptCell = r.department
-      ? `${deptBadge(r.department, whFilter!=='ALL'?whFilter:undefined)}`
+      ? `${deptBadge(r.department, r.warehouse)}`
       : '<span class="td-sub">–</span>';
     return `<tr class="emp-row" data-emp="${esc(r.name)}" tabindex="0" role="button" aria-label="ดูรายละเอียด ${esc(r.name)}">
       <td><span class="emp-name-cell"><span class="emp-avatar">${initials}</span>${esc(r.name)}</span></td>
+      <td><span class="wh-tag">${esc(WH_PLAIN[r.warehouse]||r.warehouse||'–')}</span></td>
       <td>${deptCell}</td>
       <td class="mono">${num(inRange)}</td>
       <td class="mono">${num(total)}</td>

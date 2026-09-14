@@ -342,6 +342,7 @@ const NAV = [
   {id:'details',    label:'งานทั้งหมด',   short:'งาน',    icon:'list',  title:'งานทั้งหมด', sub:'รายการงานทุกชิ้นตามตัวกรองที่เลือก'},
   {id:'tasks',      label:'ชนิดงาน',      short:'ชนิด',   icon:'box',   title:'ชนิดงาน', sub:'ชนิดงานทั้งหมดของแต่ละฝั่ง — ปิดใช้งานหรือลบถาวรได้'},
   {id:'employees',  label:'พนักงาน',      short:'คน',     icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
+  {id:'skillmatrix', label:'Skill Matrix', short:'สกิล',  icon:'matrix', title:'Skill Matrix', sub:'ใครทำงานชนิดไหนได้บ้าง — แต้มนับจากจำนวนครั้งที่เคยทำสำเร็จ'},
 ];
 // Secondary — reached via the gear icon in the header, not the main nav.
 const SECONDARY = [
@@ -411,6 +412,7 @@ const VIEW_FILTERS = {
   queue:     ['wh','dept','search'],
   tasks:     ['wh','dept','search'],
   employees: ['wh','dept','search'],
+  skillmatrix: ['wh','dept','search'],
   users:     ['search'],
 };
 function syncFilterbar(){
@@ -592,7 +594,7 @@ document.addEventListener('click', e=>{
 
   if (e.target.closest('#actionStripBtn')){ goView('queue'); return; }
   if (e.target.closest('#exportCsvBtn')){ exportJobsCsv(); return; }
-  if (e.target.closest('#exportEmpCsvBtn')){ exportEmployeesCsv(); return; }
+  if (e.target.closest('#exportEmpCsvBtn')){ exportEmployeesXlsx(); return; }
 
   const batchBtn = e.target.closest('[data-approve-dept]');
   if (batchBtn){ approveDept(batchBtn.dataset.approveDept); return; }
@@ -652,6 +654,7 @@ document.addEventListener('click', e=>{
     else { dtState.sortKey = k; dtState.sortDir = 'asc'; }
     render(); return;
   }
+
   const dtPg = e.target.closest('[data-dt-page]');
   if (dtPg){
     const m = dtPg.dataset.dtPage;
@@ -788,37 +791,99 @@ function exportJobsCsv(){
   toast(`ส่งออก ${rows.length} รายการ`, 'ok');
 }
 
-// Per-person export (พนักงาน view) — one row per person with explicit คลัง +
-// ฝั่ง columns (rows already sort by warehouse -> department -> name), scoped
-// by the same whFilter/deptFilter chips as everything else (which for a
-// non-ADMIN never offer a warehouse outside their own staff_scope anyway).
-function exportEmployeesCsv(){
+// Per-person export (พนักงาน view) — real Excel workbook, one SHEET per
+// (คลัง × แผนก) so the split people asked for ("แยกแผนกเป็นชีทๆ") is a real
+// worksheet tab, not just a sorted column — a flat CSV can't express that.
+// Uses SheetJS (loaded from jsdelivr in admin.html) purely client-side.
+function safeSheetName(name, used){
+  let base = String(name).replace(/[:\\/?*\[\]]/g, '').trim().slice(0, 28) || 'Sheet';
+  let n = base, i = 2;
+  while (used.has(n)){ n = `${base}_${i}`; i++; }
+  used.add(n);
+  return n;
+}
+// One person's totals over a set of jobs: minutes are never split (the whole
+// crew is present the full duration) but output quantity is divided by crew
+// size per job — same convention as the employee detail panel's empJobShare.
+function personOutputTotals(name, list){
+  const bag = {};   // unit label -> qty (this person's share)
+  let mins = 0, n = 0;
+  list.forEach(j=>{
+    if (!(j.crew||[]).includes(name)) return;
+    n++;
+    const d = j.details || {};
+    if (d.mins != null) mins += num(d.mins);
+    const t = taskById(j.task_id);
+    if (!t) return;
+    const cw = empCrew(j);
+    if (t.unit === 'containers'){
+      const veh = num(d.vehicles) || num(d.containers) * (t.vehiclesPerContainer || 56);
+      bag['คัน'] = (bag['คัน'] || 0) + veh / cw;
+    } else {
+      const label = t.unitLabel || 'จำนวน';
+      bag[label] = (bag[label] || 0) + num(d.qty) / cw;
+    }
+  });
+  const outputTxt = Object.entries(bag).map(([u, q]) => `${Math.round(q * 10) / 10} ${u}`).join(' / ') || '-';
+  return { n, mins, avgMins: n ? Math.round(mins / n) : 0, outputTxt };
+}
+// One row per (person, job) — "งานอะไรบ้าง" — sorted date then start time.
+function personJobRows(name, list){
+  return list.filter(j => (j.crew||[]).includes(name))
+    .sort((a,b) => {
+      const da = (a.details&&a.details.date)||'', db = (b.details&&b.details.date)||'';
+      if (da !== db) return da.localeCompare(db);
+      return ((a.details&&a.details.start)||'').localeCompare((b.details&&b.details.start)||'');
+    })
+    .map(j => {
+      const d = j.details || {}; const t = taskById(j.task_id); const cw = empCrew(j);
+      const status = j.status || 'approved';
+      return [name, fmtThaiDate(d.date)||d.date||'', t ? t.label : (j.task_id||''),
+        d.start||'-', d.end||'-', d.mins==null?'-':num(d.mins),
+        empJobShare(t, d, cw), STATUS_LABEL[status] || status];
+    });
+}
+function exportEmployeesXlsx(){
   const closed = filteredJobs();
   const people = peopleInScope();
   if (!people.length){ toast('ไม่มีพนักงานในขอบเขตนี้'); return; }
-  const head = ['ชื่อ','คลัง','ฝั่ง','งานในช่วงที่เลือก','งานสะสมทั้งหมด'];
-  const lines = [head.join(',')];
+  if (typeof XLSX === 'undefined'){ toast('โหลดตัวสร้างไฟล์ Excel ไม่สำเร็จ — เช็คอินเทอร์เน็ตแล้วลองใหม่'); return; }
+
+  const groups = new Map();   // "warehouse|department" -> {summary:[], byPerson:[{name, jobRows}]}
   people.forEach(r=>{
-    const inRange = closed.filter(j=>(j.crew||[]).includes(r.name)).length;
-    const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
-    lines.push([
-      r.name,
-      WH_PLAIN[r.warehouse]||r.warehouse||'',
-      deptName(r.department, r.warehouse),
-      inRange, total,
-    ].map(csvCell).join(','));
+    const key = (r.warehouse||'-') + '|' + (r.department||'-');
+    if (!groups.has(key)) groups.set(key, { summary:[], people:[] });
+    const g = groups.get(key);
+    const rangeStats = personOutputTotals(r.name, closed);
+    const totalStats = personOutputTotals(r.name, jobs);
+    g.summary.push([
+      r.name, WH_PLAIN[r.warehouse]||r.warehouse||'', deptName(r.department, r.warehouse),
+      rangeStats.n, totalStats.n,
+      rangeStats.mins, rangeStats.avgMins,
+      rangeStats.outputTxt,
+    ]);
+    g.people.push({ name: r.name, jobRows: personJobRows(r.name, closed) });
   });
+
+  const summaryHead = ['ชื่อ','คลัง','ฝั่ง','งานในช่วงที่เลือก','งานสะสมทั้งหมด','นาทีรวม (ช่วงที่เลือก)','เฉลี่ยนาที/งาน','จำนวนที่ทำได้ (ช่วงที่เลือก)'];
+  const detailHead = ['ชื่อ','วันที่','งานที่ทำ','เริ่ม','จบ','นาที','ผลลัพธ์ (ส่วนของคนนี้)','สถานะ'];
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+  [...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).forEach(([key, g])=>{
+    const [wh, dept] = key.split('|');
+    const label = `${WH_PLAIN[wh]||wh} ${deptName(dept, wh)}`;
+    const aoa = [summaryHead, ...g.summary, [], ['รายละเอียดงานรายบุคคล (ตามตัวกรองช่วงเวลาปัจจุบัน)'], detailHead];
+    g.people.forEach(p => { p.jobRows.forEach(row => aoa.push(row)); });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:22},{wch:10},{wch:16},{wch:18},{wch:18},{wch:20},{wch:16},{wch:26}];
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(label, usedNames));
+  });
+
   const scope = deptFilter==='ALL' ? 'ทุกฝั่ง' : deptName(deptFilter, whFilter);
   const whScope = whFilter==='ALL' ? 'ทุกคลัง' : (WH_PLAIN[whFilter]||whFilter);
-  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
   const rangeTag = dateRange==='custom' ? `${dateFrom}_ถึง_${dateTo}` : dateRange;
-  a.download = `warehouse-employees_${whScope}_${scope}_${rangeTag}_${todayISO()}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 1000);
-  toast(`ส่งออก ${people.length} คน`, 'ok');
+  XLSX.writeFile(wb, `warehouse-employees_${whScope}_${scope}_${rangeTag}_${todayISO()}.xlsx`);
+  toast(`ส่งออก ${people.length} คน (${groups.size} ชีท)`, 'ok');
 }
 
 function formatResult(details, task){
@@ -1696,6 +1761,66 @@ function renderEmployeesTable(closed){
   }).join('');
 }
 
+// ---------- Skill Matrix — ใครมีสกิลอะไรบ้าง (แต้ม = จำนวนครั้งที่เคยทำสำเร็จ) ----------
+// A grid-of-everyone table reads as a wall of tiny bars — no single person
+// stands out. This is one SCORECARD per person instead (avatar, total-points
+// KPI, then a real bar chart of just *their* skills) — same shape as the
+// employee detail panel's own "งานตามคลัง/งานตามแผนก" cards, reusing hbars().
+// Bars are scaled against that person's own best skill, so within one card
+// the chart genuinely measures *them* — their strongest skill always reads
+// as the longest bar, exactly the "วัดตัวตนระดับบุคคล" framing.
+function renderSkillMatrix(){
+  const wrap = document.getElementById('skillMatrixWrap');
+  if (!wrap) return;
+  const tasksInScope = taskList.filter(t => t.active !== false && (whFilter==='ALL' || t.warehouse===whFilter) && (deptFilter==='ALL' || t.department===deptFilter));
+  if (!tasksInScope.length){ wrap.innerHTML = `<p class="empty-note">ยังไม่มีชนิดงานในขอบเขตนี้</p>`; return; }
+
+  const q = searchTerm;
+  const people = peopleInScope().filter(p => !q || p.name.toLowerCase().includes(q));
+  if (!people.length){ wrap.innerHTML = `<p class="empty-note">${q?`ไม่พบพนักงานที่ตรงกับ "${esc(q)}"`:'ยังไม่มีพนักงานในขอบเขตนี้'}</p>`; return; }
+
+  const countFor = (name, t) => jobs.filter(j => j.task_id===t.id && (j.crew||[]).includes(name)).length;
+
+  const cards = people.map(p=>{
+    // own-department tasks first (even at 0 — a real "never done this" gap),
+    // then any other skill they've picked up elsewhere, both sorted by count.
+    const own = tasksInScope.filter(t => t.department===p.department && t.warehouse===p.warehouse);
+    const other = tasksInScope.filter(t => !(t.department===p.department && t.warehouse===p.warehouse));
+    const rowFor = t => {
+      const n = countFor(p.name, t);
+      return { label: t.name, n, color: deptColor(t.department, t.warehouse), disp: n>0 ? String(n) : 'ยังไม่เคยทำ', _gap: n===0 };
+    };
+    const ownRows = own.map(rowFor).sort((a,b)=> b.n-a.n);
+    const otherRows = other.map(rowFor).filter(r=>r.n>0).sort((a,b)=> b.n-a.n);
+    const rows = [...ownRows, ...otherRows];
+    const total = rows.reduce((s,r)=>s+r.n, 0);
+    const gapCount = ownRows.filter(r=>r._gap).length;
+    return { p, rows, total, gapCount };
+  }).sort((a,b)=> b.total - a.total || a.p.name.localeCompare(b.p.name,'th'));
+
+  const meta = `<div class="skm-meta">${people.length} คน × ${tasksInScope.length} ชนิดงาน · เรียงตามแต้มรวมมากไปน้อย</div>`;
+
+  wrap.innerHTML = `${meta}<div class="skm-card-grid">` + cards.map(({p, rows, total, gapCount})=>{
+    const initials = esc(p.name.trim().slice(0,1));
+    return `<div class="skm-card">
+      <div class="skm-card-head">
+        <span class="emp-avatar" style="width:38px;height:38px;font-size:14px;">${initials}</span>
+        <div class="skm-card-t">
+          <div class="skm-card-name">${esc(p.name)}</div>
+          <div class="skm-card-tags"><span class="wh-tag">${esc(WH_PLAIN[p.warehouse]||p.warehouse||'–')}</span>${deptBadge(p.department, p.warehouse)}</div>
+        </div>
+        <div class="skm-card-total"><b class="num">${total}</b><span>แต้มรวม</span></div>
+      </div>
+      ${gapCount ? `<div class="skm-card-gap-note">⚠ ยังไม่เคยทำ ${gapCount} งานในฝั่งตัวเอง</div>` : ''}
+      <div class="chart-hbars skm-card-bars">${rows.length ? rows.map(r=>`<div class="hbar-row${r._gap?' skm-hbar-gap':''}" title="${esc(r.label)}${r._gap?' — ยังไม่เคยทำ':''}">
+        <span class="hbar-lab">${esc(r.label)}</span>
+        <span class="hbar-track"><i style="width:${r._gap?2:Math.max(4, r.n/Math.max(1,...rows.map(x=>x.n))*100)}%;background:${r._gap?'var(--ink-faint)':esc(r.color)}"></i></span>
+        <b class="hbar-n num">${esc(r.disp)}</b>
+      </div>`).join('') : '<p class="c-empty">ไม่มีชนิดงานในขอบเขตนี้</p>'}</div>
+    </div>`;
+  }).join('') + `</div>`;
+}
+
 // ---- employee detail panel (personal KPIs + day/month/year breakdown) ----
 // Full-width overlay; all figures computed client-side from `jobs`.
 let empPanel = { name:null, range:'all', tab:'day' };
@@ -2243,6 +2368,8 @@ function render(){
   } else if (activeView==='employees'){
     renderEmpRoster();
     renderEmployeesTable(closed);
+  } else if (activeView==='skillmatrix'){
+    renderSkillMatrix();
   } else if (activeView==='tasks'){
     renderDeptAdmin();
     renderTasksAdmin();

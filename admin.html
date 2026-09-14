@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=50">
+<link rel="stylesheet" href="css/admin.css?v=59">
 </head>
 <body>
 
@@ -178,11 +178,50 @@
 
     <!-- ===== VIEW: DETAILS ===== -->
     <section class="view" id="view-details">
+      <div class="dt-toolbar">
+        <div class="dt-tools-left">
+          <div class="searchbox dt-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="dtSearch" placeholder="ค้นหา งาน / ทีม / วันที่…" aria-label="ค้นหาในตาราง">
+            <button type="button" class="dt-search-clear" id="dtSearchClear" hidden aria-label="ล้างคำค้นหา">✕</button>
+          </div>
+          <div class="dt-pop-wrap">
+            <button type="button" class="dt-tbtn" id="dtStatusBtn" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>
+              สถานะ <span class="dt-tcount" id="dtStatusCount" hidden></span>
+            </button>
+            <div class="dt-pop" id="dtStatusPop" hidden></div>
+          </div>
+          <div class="dt-pop-wrap">
+            <button type="button" class="dt-tbtn" id="dtColsBtn" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="16" rx="1"/><rect x="11" y="4" width="4" height="16" rx="1"/><rect x="17" y="4" width="4" height="16" rx="1"/></svg>
+              คอลัมน์
+            </button>
+            <div class="dt-pop" id="dtColsPop" hidden></div>
+          </div>
+        </div>
+        <div class="dt-tools-right">
+          <span class="dt-count" id="dtRowCount"></span>
+        </div>
+      </div>
       <div class="table-wrap">
         <table id="detailsTable">
-          <thead><tr><th>วันที่</th><th>คลัง</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>เริ่ม–จบ</th><th>นาที</th><th>ผลลัพธ์</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+          <thead><tr id="dtHead"></tr></thead>
           <tbody></tbody>
         </table>
+      </div>
+      <div class="dt-pager" id="dtPager">
+        <div class="dt-pager-size">
+          <label for="dtPageSize">แถวต่อหน้า</label>
+          <select id="dtPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select>
+        </div>
+        <div class="dt-pager-info" id="dtPagerInfo"></div>
+        <div class="dt-pager-nav">
+          <button type="button" data-dt-page="first" aria-label="หน้าแรก">⏮</button>
+          <button type="button" data-dt-page="prev" aria-label="หน้าก่อนหน้า">‹</button>
+          <button type="button" data-dt-page="next" aria-label="หน้าถัดไป">›</button>
+          <button type="button" data-dt-page="last" aria-label="หน้าสุดท้าย">⏭</button>
+        </div>
       </div>
     </section>
 
@@ -195,10 +234,12 @@
         </div>
         <form class="add-user-form" id="addDeptForm" hidden autocomplete="off">
           <div class="auf-grid">
+            <div class="field"><label for="ndWh">คลัง</label><select id="ndWh"></select></div>
             <div class="field"><label for="ndCode">รหัส (A–Z ตัวเลข _ · 2–12 ตัว)</label><input type="text" id="ndCode" placeholder="เช่น PKG" maxlength="12" autocomplete="off"></div>
             <div class="field"><label for="ndName">ชื่อเต็ม</label><input type="text" id="ndName" placeholder="เช่น PACKING" autocomplete="off"></div>
             <div class="field"><label for="ndColor">สี</label><input type="color" id="ndColor" value="#0ea5e9"></div>
           </div>
+          <p class="sub" style="margin:4px 0 0;">แผนกที่เพิ่มจะอยู่เฉพาะคลังที่เลือก — อีกคลังไม่เห็นและไม่ได้รับผลกระทบ</p>
           <div class="auf-actions">
             <button type="button" class="btn-sm primary" id="createDeptBtn">เพิ่มแผนก</button>
             <button type="button" class="btn-sm" id="cancelAddDeptBtn">ยกเลิก</button>
@@ -207,7 +248,7 @@
         </form>
         <div class="table-wrap">
           <table id="deptTable">
-            <thead><tr><th>รหัส</th><th>ชื่อ</th><th>สี</th><th>ใช้อยู่</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+            <thead><tr><th>คลัง</th><th>รหัส</th><th>ชื่อ</th><th>สี</th><th>ใช้อยู่</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -369,6 +410,6 @@
 
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=53"></script>
+<script src="js/admin.js?v=57"></script>
 </body>
 </html>

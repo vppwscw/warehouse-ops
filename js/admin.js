@@ -1,28 +1,58 @@
 // ===================== SUPABASE INIT =====================
 
-// Departments are data now (public.departments) — these hold the fallback until
-// loadDepartments() runs, then get replaced. DEPT_KEYS = active only.
-let DEPT_KEYS  = ['INB','OUT','INV'];
-let DEPT_PLAIN = { INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' };
-let DEPT_COLOR = { INB:'#2563eb', OUT:'#e11d48', INV:'#7c3aed' };
-let DEPT_ROWS  = [];   // full rows incl. inactive (for the management view + label lookups)
+// Departments are per-warehouse data now (public.departments, PK
+// (warehouse, code) since 2026-09-14) — คลังใครคลังมัน: the same code can
+// exist in A and B as two unrelated rows (own name/color/active), and adding
+// one to a warehouse never creates or touches a row in the other.
+// DEPT_BY_WH[wh] = {keys:[active codes...], plain:{code:name}, color:{code:hex}}.
+// These seed a fallback (both warehouses = INB/OUT/INV) until loadDepartments() runs.
+// keep this palette in step with the SQL that seeds departments.color on production.
+function seedDeptBucket(){ return { keys:['INB','OUT','INV'],
+  plain:{ INB:'INBOUND', OUT:'OUTBOUND', INV:'INVENTORY' },
+  color:{ INB:'#9E5F1E', OUT:'#276F4E', INV:'#5B4A97' } }; }
+let DEPT_BY_WH = { A: seedDeptBucket(), B: seedDeptBucket() };
+let DEPT_ROWS  = [];   // full rows incl. inactive, each with .warehouse — for the management view
 async function loadDepartments(){
   try{
-    const { data, error } = await sb.from('departments').select('*').order('sort').order('code');
+    const { data, error } = await sb.from('departments').select('*').order('warehouse').order('sort').order('code');
     if (error) throw error;
     if (data && data.length){
-      DEPT_ROWS  = data;
-      DEPT_KEYS  = data.filter(d=>d.active).map(d=>d.code);
-      DEPT_PLAIN = Object.fromEntries(data.map(d=>[d.code, d.name]));
-      DEPT_COLOR = Object.fromEntries(data.map(d=>[d.code, d.color || '#64748b']));
+      DEPT_ROWS = data;
+      const byWh = { A:{keys:[],plain:{},color:{}}, B:{keys:[],plain:{},color:{}} };
+      data.forEach(d=>{
+        const b = byWh[d.warehouse] || (byWh[d.warehouse] = {keys:[],plain:{},color:{}});
+        b.plain[d.code] = d.name;
+        b.color[d.code] = d.color || '#6B7280';
+        if (d.active) b.keys.push(d.code);
+      });
+      DEPT_BY_WH = byWh;
     }
   }catch(e){ /* keep the fallback */ }
 }
-const deptColor = c => DEPT_COLOR[c] || '#64748b';
-const deptName  = c => DEPT_PLAIN[c] || c;
-function deptBadge(c){
-  const col = deptColor(c);
-  return `<span class="badge" style="color:${esc(col)};background:${esc(col)}1f"><span class="dot" style="background:${esc(col)}"></span>${esc(deptName(c))}</span>`;
+// active codes for one warehouse, or the union of both when wh is falsy/'ALL'
+// (used for "ทุกคลัง" contexts — filter chips, side cards, scope line).
+function deptKeysFor(wh){
+  if (wh && wh !== 'ALL') return (DEPT_BY_WH[wh] && DEPT_BY_WH[wh].keys) || [];
+  return [...new Set(WH_KEYS.flatMap(w => (DEPT_BY_WH[w] && DEPT_BY_WH[w].keys) || []))];
+}
+// resolve a department code's name/color for a specific warehouse; without a
+// warehouse (older call sites), fall back to whichever warehouse has that code.
+function deptLookup(code, wh){
+  if (wh && DEPT_BY_WH[wh] && DEPT_BY_WH[wh].plain[code] !== undefined){
+    return { name: DEPT_BY_WH[wh].plain[code], color: DEPT_BY_WH[wh].color[code] || '#6B7280' };
+  }
+  for (const w of WH_KEYS){
+    if (DEPT_BY_WH[w] && DEPT_BY_WH[w].plain[code] !== undefined){
+      return { name: DEPT_BY_WH[w].plain[code], color: DEPT_BY_WH[w].color[code] || '#6B7280' };
+    }
+  }
+  return { name: code, color: '#6B7280' };
+}
+const deptColor = (c, wh) => deptLookup(c, wh).color;
+const deptName  = (c, wh) => deptLookup(c, wh).name;
+function deptBadge(c, wh){
+  const { name, color } = deptLookup(c, wh);
+  return `<span class="badge" style="color:${esc(color)};background:${esc(color)}1f"><span class="dot" style="background:${esc(color)}"></span>${esc(name)}</span>`;
 }
 const WH_KEYS = ['A','B'];
 const WH_PLAIN = { A:'คลัง A', B:'คลัง B' };
@@ -58,7 +88,7 @@ const FALLBACK_TASKS = {
   ],
 };
 let TASKS = { INB:[...FALLBACK_TASKS.INB], OUT:[...FALLBACK_TASKS.OUT], INV:[...FALLBACK_TASKS.INV] };
-const ALL_TASKS = () => DEPT_KEYS.flatMap(d => (TASKS[d]||[]).map(t=>({...t, dept:d})));
+const ALL_TASKS = () => Object.keys(TASKS).flatMap(d => (TASKS[d]||[]).map(t=>({...t, dept:d})));
 const taskById = id => ALL_TASKS().find(t=>t.id===id);
 
 const ICONS = {
@@ -377,7 +407,7 @@ document.getElementById('logoutBtn').innerHTML    = ICONS.logout   + '<span clas
 // which filter controls make sense on each view (others are hidden)
 const VIEW_FILTERS = {
   dashboard: ['range','wh','dept','search'],
-  details:   ['range','wh','dept','search'],
+  details:   ['range','wh','dept'],   // this view has its own search box in the table toolbar
   queue:     ['wh','dept','search'],
   tasks:     ['wh','dept','search'],
   employees: ['wh','dept','search'],
@@ -409,8 +439,9 @@ function myWhList(){
 function buildDeptChips(){
   const el = document.getElementById('deptChips');
   if (!el) return;
-  if (deptFilter !== 'ALL' && !DEPT_KEYS.includes(deptFilter)) deptFilter = 'ALL';
-  el.innerHTML = [['ALL','ทั้งหมด'], ...DEPT_KEYS.map(d=>[d, deptName(d)])].map(([v,label])=>
+  const keys = deptKeysFor(whFilter);
+  if (deptFilter !== 'ALL' && !keys.includes(deptFilter)) deptFilter = 'ALL';
+  el.innerHTML = [['ALL','ทั้งหมด'], ...keys.map(d=>[d, deptName(d, whFilter)])].map(([v,label])=>
     `<button type="button" class="chip" data-dept="${esc(v)}" aria-pressed="${v===deptFilter}">${esc(label)}</button>`
   ).join('');
 }
@@ -547,7 +578,7 @@ document.addEventListener('click', e=>{
   if (whChip){
     document.querySelectorAll('#whChips .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
     whChip.setAttribute('aria-pressed','true');
-    whFilter = whChip.dataset.wh; render(); return;
+    whFilter = whChip.dataset.wh; buildDeptChips(); render(); return;
   }
   const deptChip = e.target.closest('#deptChips [data-dept]');
   if (deptChip){
@@ -611,8 +642,65 @@ document.addEventListener('click', e=>{
   if (e.target.closest('#toggleAddEmpBtn')){ const f = document.getElementById('addEmpForm'); f.hidden = !f.hidden; return; }
   if (e.target.closest('#cancelAddEmpBtn')){ document.getElementById('addEmpForm').hidden = true; return; }
   if (e.target.closest('#createEmpBtn')){ createEmpFromForm(); return; }
+
+  // ----- งานทั้งหมด data table -----
+  const dtSortTh = e.target.closest('#dtHead [data-dt-sort]');
+  if (dtSortTh){
+    const k = dtSortTh.dataset.dtSort;
+    if (dtState.sortKey === k) dtState.sortDir = dtState.sortDir==='asc' ? 'desc' : 'asc';
+    else { dtState.sortKey = k; dtState.sortDir = 'asc'; }
+    render(); return;
+  }
+  const dtPg = e.target.closest('[data-dt-page]');
+  if (dtPg){
+    const m = dtPg.dataset.dtPage;
+    if (m==='first') dtState.page = 0;
+    else if (m==='prev') dtState.page -= 1;
+    else if (m==='next') dtState.page += 1;
+    else if (m==='last') dtState.page = 1e9;   // clamped in renderDetailsTable
+    render(); return;
+  }
+  if (e.target.closest('#dtStatusBtn')){ toggleDtPop('dtStatusPop','dtStatusBtn'); return; }
+  if (e.target.closest('#dtColsBtn')){ buildDtColsPop(); toggleDtPop('dtColsPop','dtColsBtn'); return; }
+  if (e.target.closest('#dtSearchClear')){
+    dtState.q = ''; dtState.page = 0;
+    document.getElementById('dtSearch').value = '';
+    document.getElementById('dtSearchClear').hidden = true;
+    render(); return;
+  }
+  if (!e.target.closest('#view-details .dt-pop-wrap')){
+    document.querySelectorAll('#view-details .dt-pop').forEach(p=>{ p.hidden = true; });
+    document.querySelectorAll('#dtStatusBtn,#dtColsBtn').forEach(b=>b.setAttribute('aria-expanded','false'));
+  }
 });
 document.getElementById('searchInput').addEventListener('input', e=>{ searchTerm = e.target.value.trim().toLowerCase(); render(); });
+
+document.getElementById('dtSearch').addEventListener('input', e=>{
+  dtState.q = e.target.value.trim().toLowerCase();
+  dtState.page = 0;
+  document.getElementById('dtSearchClear').hidden = !dtState.q;
+  render();
+});
+document.addEventListener('change', e=>{
+  const st = e.target.closest('[data-dt-status]');
+  if (st){
+    const s = st.dataset.dtStatus;
+    dtState.statuses = st.checked
+      ? [...dtState.statuses, s]
+      : dtState.statuses.filter(x=>x!==s);
+    dtState.page = 0; render(); return;
+  }
+  const cl = e.target.closest('[data-dt-col]');
+  if (cl){
+    if (cl.checked) dtState.hidden.delete(cl.dataset.dtCol);
+    else dtState.hidden.add(cl.dataset.dtCol);
+    render(); return;
+  }
+  if (e.target.id === 'dtPageSize'){
+    dtState.size = Number(e.target.value) || 25;
+    dtState.page = 0; render(); return;
+  }
+});
 
 // ---------- data grouping (jobs table stores one row per employee) ----------
 function groupJobs(rows){
@@ -677,7 +765,7 @@ function exportJobsCsv(){
       : num(d.qty);
     lines.push([
       d.date||'', WH_PLAIN[j.warehouse]||j.warehouse||'',
-      DEPT_PLAIN[j.department]||j.department||'',
+      deptName(j.department, j.warehouse),
       task ? task.label : (j.task_id||''),
       (j.crew||[]).join(' / '),
       d.start||'', d.end||'', (d.mins==null?'':num(d.mins)),
@@ -686,7 +774,7 @@ function exportJobsCsv(){
       STATUS_LABEL[j.status||'approved'] || j.status || '',
     ].map(csvCell).join(','));
   });
-  const scope = deptFilter==='ALL' ? 'ทุกฝั่ง' : (DEPT_PLAIN[deptFilter]||deptFilter);
+  const scope = deptFilter==='ALL' ? 'ทุกฝั่ง' : deptName(deptFilter, whFilter);
   const whScope = whFilter==='ALL' ? 'ทุกคลัง' : (WH_PLAIN[whFilter]||whFilter);
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -771,9 +859,9 @@ function renderActionStrip(){
 function renderScopeLine(closed){
   const el = document.getElementById('scopeLine');
   if (!el) return;
-  const depts = deptFilter==='ALL' ? DEPT_KEYS : [deptFilter];
+  const depts = deptFilter==='ALL' ? deptKeysFor(whFilter) : [deptFilter];
   const dots = depts.map(d=>`<span class="legend-dot" style="background:var(--${d.toLowerCase()})"></span>`).join('');
-  const deptTxt = deptFilter==='ALL' ? 'ทุกฝั่ง' : DEPT_PLAIN[deptFilter];
+  const deptTxt = deptFilter==='ALL' ? 'ทุกฝั่ง' : deptName(deptFilter, whFilter);
   const whTxt = whFilter==='ALL' ? 'ทุกคลัง' : WH_PLAIN[whFilter];
   let s = `${dots} กำลังดู · <b>${esc(whTxt)}</b> · <b>${esc(deptTxt)}</b> · <b>${esc(rangeLabel())}</b> · ${closed.length} งาน`;
   if (searchTerm) s += ` · ค้นหา "${esc(searchTerm)}"`;
@@ -888,7 +976,7 @@ function trendDays(){
 function renderTrend(){
   const days = trendDays();
   const idx  = Object.fromEntries(days.map((d,i)=>[d,i]));
-  const series = DEPT_KEYS.map(dept=>({ dept, color:deptColor(dept), vals:days.map(()=>0) }));
+  const series = deptKeysFor(whFilter).map(dept=>({ dept, color:deptColor(dept, whFilter), vals:days.map(()=>0) }));
   const byDept = Object.fromEntries(series.map(s=>[s.dept, s]));
   jobs.forEach(j=>{
     const d = (j.details && j.details.date);
@@ -918,17 +1006,27 @@ function renderTrend(){
     return d;
   };
   let lower = days.map(()=>0);
-  const bands = series.map(s=>{
+  const defs = [];
+  const bands = series.map((s,si)=>{
     const upper = lower.map((lo,i)=>lo + s.vals[i]);
     const top = upper.map((v,i)=>[X(i), Y(v)]);
     const bot = lower.map((v,i)=>[X(i), Y(v)]).reverse();
     lower = upper;
-    return `<path d="${smooth(top,true)} ${smooth(bot,false)} Z" fill="${esc(s.color)}" fill-opacity=".85" stroke="var(--surface)" stroke-width="1"/>`;
+    const gid = 'tg'+si;
+    defs.push(`<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">`
+      + `<stop offset="0" stop-color="${esc(s.color)}" stop-opacity=".92"/>`
+      + `<stop offset="1" stop-color="${esc(s.color)}" stop-opacity=".55"/></linearGradient>`);
+    return `<path d="${smooth(top,true)} ${smooth(bot,false)} Z" fill="url(#${gid})" stroke="var(--surface)" stroke-width="1"/>`;
   }).join('');
+  // emphasised endpoint — where the stack stands today
+  const lastTotal = totals[totals.length-1] || 0;
+  const endDot = lastTotal
+    ? `<circle cx="${X(days.length-1).toFixed(1)}" cy="${Y(lastTotal).toFixed(1)}" r="3.5" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="1.5"/>`
+    : '';
 
   const grid = [0,.25,.5,.75,1].map(f=>{
     const gy = Y(max*f);
-    return `<line x1="${PL}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="var(--line)"/>`
+    return `<line x1="${PL}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="var(--line)" stroke-width="${f===0?1.25:1}"/>`
          + `<text x="${PL-6}" y="${gy+3}" text-anchor="end" class="c-axis">${Math.round(max*f)}</text>`;
   }).join('');
   const step = Math.max(1, Math.ceil(days.length/6));
@@ -938,16 +1036,17 @@ function renderTrend(){
   document.getElementById('trendSub').textContent = days.length + ' วันล่าสุด';
   document.getElementById('trendChart').innerHTML =
     `<svg viewBox="0 0 ${W} ${H}" class="c-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="แนวโน้มงานรายวัน">
-       ${grid}${bands}${xlab}
+       <defs>${defs.join('')}</defs>
+       ${grid}${bands}${endDot}${xlab}
      </svg>`;
   document.getElementById('trendLegend').innerHTML = series.map(s=>
-    `<span class="lg"><i style="background:${esc(s.color)}"></i>${esc(deptName(s.dept))}</span>`).join('');
+    `<span class="lg"><i style="background:${esc(s.color)}"></i>${esc(deptName(s.dept, whFilter))}</span>`).join('');
 }
 
 // donut — job share by department
 function renderDeptDonut(closed){
-  const data = DEPT_KEYS
-    .map(d=>({ d, n:closed.filter(j=>j.department===d).length, c:deptColor(d) }))
+  const data = deptKeysFor(whFilter)
+    .map(d=>({ d, n:closed.filter(j=>j.department===d).length, c:deptColor(d, whFilter) }))
     .filter(x=>x.n>0);
   const total = data.reduce((s,x)=>s+x.n, 0);
   const box = document.getElementById('deptDonut');
@@ -960,7 +1059,7 @@ function renderDeptDonut(closed){
       + ` stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})"/>`;
     off += len; return seg;
   }).join('');
-  const legend = data.map(x=>`<li><span class="lg"><i style="background:${esc(x.c)}"></i>${esc(deptName(x.d))}</span>`
+  const legend = data.map(x=>`<li><span class="lg"><i style="background:${esc(x.c)}"></i>${esc(deptName(x.d, whFilter))}</span>`
     + `<b class="num">${x.n}</b><span class="c-pct">${Math.round(x.n/total*100)}%</span></li>`).join('');
   box.innerHTML =
     `<svg viewBox="0 0 160 160" class="donut-svg" role="img" aria-label="สัดส่วนงานตามฝั่ง">
@@ -999,7 +1098,7 @@ function renderTopTasks(closed){
   closed.forEach(j=>{
     const t = taskById(j.task_id);
     const label = t ? t.label : (j.task_id || 'ไม่ทราบ');
-    const cur = agg.get(label) || { n:0, color:deptColor(j.department) };
+    const cur = agg.get(label) || { n:0, color:deptColor(j.department, j.warehouse) };
     cur.n++; agg.set(label, cur);
   });
   const rows = [...agg.entries()]
@@ -1017,7 +1116,7 @@ function jobRowHTML(j){
   return `<tr>
     <td class="mono">${esc(d.date)}</td>
     <td><span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span></td>
-    <td>${deptBadge(j.department)}</td>
+    <td>${deptBadge(j.department, j.warehouse)}</td>
     <td class="td-task">${esc(task?task.label:j.task_id)}</td>
     <td>${esc((j.crew||[]).join(', '))}</td>
     <td class="mono">${esc(d.start||'–')}–${esc(d.end||'–')}</td>
@@ -1052,10 +1151,117 @@ function renderDashJobs(closed){
     jobsPreset==='pending' ? 'ไม่มีงานรออนุมัติในช่วงนี้' : 'ยังไม่มีงานที่บันทึกในช่วงนี้');
 }
 
+// ---------- "งานทั้งหมด" data table: sort + status facet + column toggle + pager ----------
+// Column order here is 1:1 with the <td> order in jobRowHTML() — the CSS
+// column-hide rules key off nth-child, so keep the two in lockstep.
+const DT_COLS = [
+  { key:'date',   label:'วันที่',   always:true,  sort:j => ((j.details&&j.details.date)||'') + ((j.details&&j.details.start)||'') },
+  { key:'wh',     label:'คลัง',     always:false, sort:j => j.warehouse || '' },
+  { key:'dept',   label:'ฝั่ง',     always:false, sort:j => j.department || '' },
+  { key:'task',   label:'งาน',     always:true,  sort:j => { const t = taskById(j.task_id); return (t ? t.label : j.task_id) || ''; } },
+  { key:'crew',   label:'ทีม',     always:false, sort:j => (j.crew||[]).join(', ') },
+  { key:'time',   label:'เริ่ม–จบ', always:false, sort:j => (j.details&&j.details.start) || '' },
+  { key:'mins',   label:'นาที',    always:false, sort:j => { const m = j.details&&j.details.mins; return m == null ? -1 : Number(m); } },
+  { key:'result', label:'ผลลัพธ์',  always:true,  sort:null },
+  { key:'status', label:'สถานะ',   always:true,  sort:j => j.status || 'approved' },
+  { key:'act',    label:'จัดการ',   always:true,  sort:null },
+];
+const DT_STATUS_ORDER = ['open','pending','approved','rejected'];
+const dtState = { sortKey:'date', sortDir:'desc', page:0, size:25, statuses:[], q:'', hidden:new Set() };
+
+function renderDtHead(){
+  const head = document.getElementById('dtHead');
+  if (!head) return;
+  head.innerHTML = DT_COLS.map(c=>{
+    const sortable = !!c.sort;
+    const active = sortable && dtState.sortKey===c.key;
+    const caret = active ? `<span class="dt-caret">${dtState.sortDir==='asc'?'▲':'▼'}</span>` : '';
+    return `<th class="${sortable?'dt-sortable':''}${active?' dt-sorted':''}"`
+      + `${sortable?` data-dt-sort="${c.key}"`:''}>${esc(c.label)}${caret}</th>`;
+  }).join('');
+}
+function buildDtStatusPop(pool){
+  const counts = {};
+  pool.forEach(j=>{ const s = j.status || 'approved'; counts[s] = (counts[s]||0) + 1; });
+  const seen = DT_STATUS_ORDER.filter(s=>counts[s]);
+  document.getElementById('dtStatusPop').innerHTML = `<div class="dt-pop-h">กรองสถานะ</div>` + (seen.length
+    ? seen.map(s=>`<label class="dt-pop-row"><input type="checkbox" data-dt-status="${s}" ${dtState.statuses.includes(s)?'checked':''}>`
+        + `<span>${esc(STATUS_LABEL[s]||s)}</span><span class="dt-pop-n">${counts[s]}</span></label>`).join('')
+    : `<div class="dt-pop-empty">ไม่มีข้อมูล</div>`);
+}
+function syncDtStatusBadge(){
+  const badge = document.getElementById('dtStatusCount');
+  badge.hidden = !dtState.statuses.length;
+  badge.textContent = dtState.statuses.length;
+}
+function buildDtColsPop(){
+  document.getElementById('dtColsPop').innerHTML = `<div class="dt-pop-h">แสดงคอลัมน์</div>`
+    + DT_COLS.filter(c=>!c.always).map(c=>`<label class="dt-pop-row">`
+      + `<input type="checkbox" data-dt-col="${c.key}" ${dtState.hidden.has(c.key)?'':'checked'}>`
+      + `<span>${esc(c.label)}</span></label>`).join('');
+}
+function renderDtPager(total, start, shown, pages){
+  document.getElementById('dtPagerInfo').innerHTML = total
+    ? `<span class="dt-strong">${start+1}–${start+shown}</span> จาก <span class="dt-strong">${total}</span>`
+    : '0 รายการ';
+  const set = (sel, dis) => { const b = document.querySelector(sel); if (b) b.disabled = dis; };
+  set('[data-dt-page="first"]', dtState.page<=0);
+  set('[data-dt-page="prev"]',  dtState.page<=0);
+  set('[data-dt-page="next"]',  dtState.page>=pages-1);
+  set('[data-dt-page="last"]',  dtState.page>=pages-1);
+  const sz = document.getElementById('dtPageSize');
+  if (sz && sz.value !== String(dtState.size)) sz.value = String(dtState.size);
+}
+function toggleDtPop(popId, btnId){
+  const pop = document.getElementById(popId);
+  const willOpen = pop.hidden;
+  document.querySelectorAll('#view-details .dt-pop').forEach(p=>{ p.hidden = true; });
+  document.querySelectorAll('#dtStatusBtn,#dtColsBtn').forEach(b=>b.setAttribute('aria-expanded','false'));
+  pop.hidden = !willOpen;
+  document.getElementById(btnId).setAttribute('aria-expanded', String(willOpen));
+}
+
 function renderDetailsTable(closed){
-  const key = j => ((j.details&&j.details.date)||'') + ((j.details&&j.details.start)||'');
-  const rows = [...closed].sort((a,b)=>key(b).localeCompare(key(a)));
-  renderJobRows(document.querySelector('#detailsTable tbody'), rows, 'ไม่พบรายการที่ตรงกับตัวกรอง');
+  renderDtHead();
+  syncDtStatusBadge();
+  // rebuild the facet list only while it's closed — rebuilding it open would
+  // swap out the checkbox the user is mid-click on. Counts only move when the
+  // outer filter changes, and that path re-renders anyway.
+  if (document.getElementById('dtStatusPop').hidden) buildDtStatusPop(closed);
+  const tbl = document.getElementById('detailsTable');
+  DT_COLS.forEach(c=>{ if (!c.always) tbl.classList.toggle('dt-hide-'+c.key, dtState.hidden.has(c.key)); });
+
+  let rows = closed.filter(j=>{
+    if (dtState.statuses.length && !dtState.statuses.includes(j.status||'approved')) return false;
+    if (dtState.q){
+      const t = taskById(j.task_id);
+      const hay = ((t?t.label:'') + ' ' + (j.crew||[]).join(' ') + ' ' + ((j.details&&j.details.date)||'')).toLowerCase();
+      if (!hay.includes(dtState.q)) return false;
+    }
+    return true;
+  });
+
+  const col = DT_COLS.find(c=>c.key===dtState.sortKey);
+  if (col && col.sort){
+    const dir = dtState.sortDir==='asc' ? 1 : -1;
+    rows = [...rows].sort((a,b)=>{
+      const va = col.sort(a), vb = col.sort(b);
+      if (va < vb) return -dir;
+      if (va > vb) return dir;
+      return 0;
+    });
+  }
+
+  const total = rows.length;
+  const pages = Math.max(1, Math.ceil(total / dtState.size));
+  dtState.page = Math.min(Math.max(dtState.page, 0), pages - 1);
+  const start = dtState.page * dtState.size;
+  const pageRows = rows.slice(start, start + dtState.size);
+
+  const rc = document.getElementById('dtRowCount');
+  if (rc) rc.textContent = total ? `${total} รายการ` : '';
+  renderJobRows(tbl.querySelector('tbody'), pageRows, 'ไม่พบรายการที่ตรงกับตัวกรอง');
+  renderDtPager(total, start, pageRows.length, pages);
 }
 
 async function setJobStatus(jobId, status){
@@ -1127,13 +1333,13 @@ function renderQueue(){
   const ro = isReadOnly();
 
   const bar = document.getElementById('qBatchBar');
-  const byDept = DEPT_KEYS.map(d=>({ d, n: list.filter(x=>x.department===d).length })).filter(x=>x.n);
+  const byDept = deptKeysFor(whFilter).map(d=>({ d, n: list.filter(x=>x.department===d).length })).filter(x=>x.n);
   if (ro || byDept.length < 1){
     bar.hidden = true; bar.innerHTML = '';
   } else {
     bar.hidden = false;
     bar.innerHTML = `<span class="q-batch-lbl">อนุมัติทั้งฝั่ง:</span>` +
-      byDept.map(({d,n})=>`<button type="button" class="btn-sm" data-approve-dept="${d}">${DEPT_PLAIN[d]} (${n})</button>`).join('');
+      byDept.map(({d,n})=>`<button type="button" class="btn-sm" data-approve-dept="${d}">${esc(deptName(d, whFilter))} (${n})</button>`).join('');
   }
 
   const el = document.getElementById('qList');
@@ -1147,11 +1353,11 @@ function renderQueue(){
   const html = scored.map(({j})=>{
     const task = taskById(j.task_id); const d = j.details || {};
     const r = urgencyReason(j, list);
-    return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}" style="border-left-color:${esc(deptColor(j.department))}">
+    return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}" style="border-left-color:${esc(deptColor(j.department, j.warehouse))}">
       <div class="q-main">
         <div class="q-top">
           <span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span>
-          ${deptBadge(j.department)}
+          ${deptBadge(j.department, j.warehouse)}
           <span class="pill ${r.cls}">${esc(r.txt)}</span>
         </div>
         <div class="q-task">${esc(task ? task.label : j.task_id)}</div>
@@ -1171,7 +1377,7 @@ function renderQueue(){
 async function approveDept(dept){
   const list = queuePending().filter(j=>j.department===dept);
   if (!list.length) return;
-  const okGo = await confirmModal(`อนุมัติงานฝั่ง ${DEPT_PLAIN[dept]} ทั้งหมด ${list.length} งาน?`, { yes:'อนุมัติทั้งหมด' });
+  const okGo = await confirmModal(`อนุมัติงานฝั่ง ${esc(deptName(dept, whFilter))} ทั้งหมด ${list.length} งาน?`, { yes:'อนุมัติทั้งหมด' });
   if (!okGo) return;
   const ids = list.flatMap(j => (j.rowIds && j.rowIds.length) ? j.rowIds : [j.id]);
   const { error } = await sb.from('jobs').update({
@@ -1203,10 +1409,13 @@ function renderEmpRoster(){
   if (bar) bar.hidden = ro;
   if (wrap) wrap.hidden = ro;
   if (ro){ const f = document.getElementById('addEmpForm'); if (f) f.hidden = true; return; }
-  const neDept = document.getElementById('neDept');
-  if (neDept && !neDept.options.length) neDept.innerHTML = deptOptions(DEPT_KEYS[0]);
   const neWh = document.getElementById('neWh');
-  if (neWh && !neWh.options.length) neWh.innerHTML = WH_KEYS.map(w=>`<option value="${w}">${WH_PLAIN[w]}</option>`).join('');
+  const neDept = document.getElementById('neDept');
+  if (neWh && !neWh.options.length){
+    neWh.innerHTML = WH_KEYS.map(w=>`<option value="${w}">${WH_PLAIN[w]}</option>`).join('');
+    neWh.addEventListener('change', ()=>{ if (neDept) neDept.innerHTML = deptOptions(neWh.value); });
+  }
+  if (neDept && !neDept.options.length) neDept.innerHTML = deptOptions(neWh ? neWh.value : 'A');
   const tb = document.querySelector('#empRosterTable tbody');
   if (!tb) return;
   const list = allEmployees.filter(em => whFilter==='ALL' || em.warehouse===whFilter);
@@ -1216,7 +1425,7 @@ function renderEmpRoster(){
     return `<tr class="${on?'':'row-inactive'}">
       <td>${esc(em.name)}</td>
       <td><span class="wh-tag">${esc(WH_PLAIN[em.warehouse]||em.warehouse||'–')}</span></td>
-      <td>${deptBadge(em.department)}</td>
+      <td>${deptBadge(em.department, em.warehouse)}</td>
       <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
       <td>
         <button type="button" class="mini-btn ${on?'reject':'approve'}" data-emp-toggle="${esc(em.id)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
@@ -1247,7 +1456,7 @@ function renderTasksAdmin(){
     return `<tr class="${on?'':'row-inactive'}">
       <td>${esc(t.name)}${t.unit_label ? ` <span style="color:var(--ink-dim);font-size:12px;">· ${esc(t.unit_label)}</span>` : ''}</td>
       <td><span class="wh-tag">${esc(WH_PLAIN[t.warehouse]||t.warehouse||'–')}</span></td>
-      <td>${deptBadge(t.department)}</td>
+      <td>${deptBadge(t.department, t.warehouse)}</td>
       <td class="mono">${linked || ''}</td>
       ${ro ? '' : `<td>
         <button type="button" class="mini-btn ${on?'reject':'approve'}" data-task-toggle="${esc(t.id)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
@@ -1284,6 +1493,10 @@ async function deleteTask(id){
 }
 
 // ---------- ADMIN-only: departments (add / toggle / delete) ----------
+// Per-warehouse (2026-09-14): the table shows only the currently selected
+// คลัง chip's rows (both when "ทั้งหมด" is picked, each tagged with its
+// warehouse). A row's identity is (warehouse, code) — never code alone,
+// since the same code can exist independently in both warehouses.
 function renderDeptAdmin(){
   const wrap = document.getElementById('deptAdmin');
   if (!wrap) return;
@@ -1291,28 +1504,33 @@ function renderDeptAdmin(){
   const isAdm = profile && profile.role === 'ADMIN' && DEPT_ROWS.length > 0;
   wrap.hidden = !isAdm;
   if (!isAdm) return;
+  const ndWh = document.getElementById('ndWh');
+  if (ndWh && !ndWh.options.length) ndWh.innerHTML = WH_KEYS.map(w=>`<option value="${w}">${WH_PLAIN[w]}</option>`).join('');
+  if (ndWh && whFilter !== 'ALL') ndWh.value = whFilter;
   const tb = document.querySelector('#deptTable tbody');
   if (!tb) return;
-  const usage = code => {
-    const inScope = scopes.filter(s=>s.department===code).length;
-    const inTasks = taskList.filter(t=>t.department===code).length;
-    const inEmp   = allEmployees.filter(e=>e.department===code).length;
+  const usage = (wh, code) => {
+    const inScope = scopes.filter(s=>s.warehouse===wh && s.department===code).length;
+    const inTasks = taskList.filter(t=>t.warehouse===wh && t.department===code).length;
+    const inEmp   = allEmployees.filter(e=>e.warehouse===wh && e.department===code).length;
     return { inScope, inTasks, inEmp, total: inScope+inTasks+inEmp };
   };
-  tb.innerHTML = (DEPT_ROWS.length ? DEPT_ROWS : DEPT_KEYS.map(c=>({code:c,name:deptName(c),color:deptColor(c),active:true})))
-    .map(d=>{
-      const u = usage(d.code);
+  const rows = DEPT_ROWS.filter(d => whFilter==='ALL' || d.warehouse===whFilter);
+  tb.innerHTML = rows.map(d=>{
+      const u = usage(d.warehouse, d.code);
       const on = d.active !== false;
+      const key = d.warehouse + ':' + d.code;
       return `<tr class="${on?'':'row-inactive'}">
+        <td><span class="wh-tag">${esc(WH_PLAIN[d.warehouse]||d.warehouse)}</span></td>
         <td class="mono"><b>${esc(d.code)}</b></td>
-        <td><input type="text" class="code-input" data-dept-name="${esc(d.code)}" value="${esc(d.name)}" style="width:150px"></td>
-        <td><input type="color" data-dept-color="${esc(d.code)}" value="${esc(d.color||'#64748b')}"></td>
+        <td><input type="text" class="code-input" data-dept-name="${esc(key)}" value="${esc(d.name)}" style="width:150px"></td>
+        <td><input type="color" data-dept-color="${esc(key)}" value="${esc(d.color||'#6B7280')}"></td>
         <td class="mono">${u.total ? `${u.total} (scope ${u.inScope} · งาน ${u.inTasks} · คน ${u.inEmp})` : '–'}</td>
         <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
         <td>
-          <button type="button" class="mini-btn approve" data-dept-save="${esc(d.code)}">บันทึก</button>
-          <button type="button" class="mini-btn ${on?'reject':'approve'}" data-dept-toggle="${esc(d.code)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
-          ${u.total ? '' : `<button type="button" class="mini-btn reject" data-dept-del="${esc(d.code)}">ลบถาวร</button>`}
+          <button type="button" class="mini-btn approve" data-dept-save="${esc(key)}">บันทึก</button>
+          <button type="button" class="mini-btn ${on?'reject':'approve'}" data-dept-toggle="${esc(key)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
+          ${u.total ? '' : `<button type="button" class="mini-btn reject" data-dept-del="${esc(key)}">ลบถาวร</button>`}
         </td>
       </tr>`;
     }).join('');
@@ -1326,43 +1544,48 @@ async function reloadDeptsEverywhere(){
 async function createDeptFromForm(){
   if (!profile || profile.role !== 'ADMIN') return;
   const hint = document.getElementById('addDeptHint');
+  const wh = document.getElementById('ndWh').value;
   const code = document.getElementById('ndCode').value.trim().toUpperCase();
   const name = document.getElementById('ndName').value.trim();
-  const color = document.getElementById('ndColor').value || '#64748b';
+  const color = document.getElementById('ndColor').value || '#6B7280';
+  if (!WH_KEYS.includes(wh)){ hint.textContent = 'เลือกคลัง'; return; }
   if (!/^[A-Z][A-Z0-9_]{1,11}$/.test(code)){ hint.textContent = 'รหัสต้องขึ้นต้นด้วยตัวอักษร A–Z ยาว 2–12 ตัว (A–Z ตัวเลข _)'; return; }
   if (!name){ hint.textContent = 'กรอกชื่อเต็ม'; return; }
-  if (DEPT_ROWS.some(d=>d.code===code)){ hint.textContent = `รหัส "${code}" มีอยู่แล้ว`; return; }
+  if (DEPT_ROWS.some(d=>d.code===code && d.warehouse===wh)){ hint.textContent = `รหัส "${code}" มีอยู่แล้วใน${WH_PLAIN[wh]}`; return; }
   hint.textContent = 'กำลังเพิ่ม...';
-  const sort = (Math.max(0, ...DEPT_ROWS.map(d=>d.sort||0)) + 10);
-  const { error } = await sb.from('departments').insert({ code, name, color, sort, active: true });
+  const sort = (Math.max(0, ...DEPT_ROWS.filter(d=>d.warehouse===wh).map(d=>d.sort||0)) + 10);
+  const { error } = await sb.from('departments').insert({ code, name, color, sort, active: true, warehouse: wh });
   if (error){ hint.textContent = 'ไม่สำเร็จ: ' + mapDbError(error); return; }
   ['ndCode','ndName'].forEach(id=>{ document.getElementById(id).value=''; });
   document.getElementById('addDeptForm').hidden = true;
   hint.textContent = '';
-  toast(`เพิ่มแผนก ${code} แล้ว`, 'ok');
+  toast(`เพิ่มแผนก ${code} ใน${WH_PLAIN[wh]}แล้ว`, 'ok');
   await reloadDeptsEverywhere();
 }
-async function saveDeptRow(code){
+async function saveDeptRow(key){
   if (!profile || profile.role !== 'ADMIN') return;
-  const name = document.querySelector(`[data-dept-name="${code}"]`).value.trim();
-  const color = document.querySelector(`[data-dept-color="${code}"]`).value;
+  const [wh, code] = key.split(':');
+  const name = document.querySelector(`[data-dept-name="${key}"]`).value.trim();
+  const color = document.querySelector(`[data-dept-color="${key}"]`).value;
   if (!name){ toast('ชื่อแผนกว่างไม่ได้'); return; }
-  const { error } = await sb.from('departments').update({ name, color }).eq('code', code);
+  const { error } = await sb.from('departments').update({ name, color }).eq('warehouse', wh).eq('code', code);
   if (error){ toast('บันทึกไม่สำเร็จ: ' + mapDbError(error)); return; }
   toast('บันทึกแล้ว', 'ok');
   await reloadDeptsEverywhere();
 }
-async function toggleDeptActive(code, next){
+async function toggleDeptActive(key, next){
   if (!profile || profile.role !== 'ADMIN') return;
-  const { error } = await sb.from('departments').update({ active: next }).eq('code', code);
+  const [wh, code] = key.split(':');
+  const { error } = await sb.from('departments').update({ active: next }).eq('warehouse', wh).eq('code', code);
   if (error){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
   await reloadDeptsEverywhere();
 }
-async function deleteDept(code){
+async function deleteDept(key){
   if (!profile || profile.role !== 'ADMIN') return;
-  const go = await confirmModal(`ลบแผนก "${code}" ถาวร?\nลบได้เฉพาะแผนกที่ยังไม่มี scope / ชนิดงาน / พนักงาน ผูกอยู่`, { danger:true, yes:'ลบถาวร' });
+  const [wh, code] = key.split(':');
+  const go = await confirmModal(`ลบแผนก "${code}" (${WH_PLAIN[wh]}) ถาวร?\nลบได้เฉพาะแผนกที่ยังไม่มี scope / ชนิดงาน / พนักงาน ผูกอยู่ · ไม่กระทบแผนกรหัสเดียวกันในอีกคลัง`, { danger:true, yes:'ลบถาวร' });
   if (!go) return;
-  const { error } = await sb.from('departments').delete().eq('code', code);
+  const { error } = await sb.from('departments').delete().eq('warehouse', wh).eq('code', code);
   if (error){
     if (error.code === '23503' || /foreign key/i.test(error.message||'')) toast('แผนกนี้ยังมีข้อมูลผูกอยู่ — ใช้ "ปิดใช้งาน" แทน');
     else toast('ลบไม่สำเร็จ: ' + mapDbError(error));
@@ -1427,7 +1650,7 @@ function renderEmployeesTable(closed){
     const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
     const initials = esc(r.name.trim().slice(0,1));
     const deptCell = r.department
-      ? `${deptBadge(r.department)}`
+      ? `${deptBadge(r.department, whFilter!=='ALL'?whFilter:undefined)}`
       : '<span class="td-sub">–</span>';
     return `<tr class="emp-row" data-emp="${esc(r.name)}" tabindex="0" role="button" aria-label="ดูรายละเอียด ${esc(r.name)}">
       <td><span class="emp-name-cell"><span class="emp-avatar">${initials}</span>${esc(r.name)}</span></td>
@@ -1470,7 +1693,7 @@ function openEmpPanel(name){
   // home department from the roster (mobile logs one department per person)
   const rEntry   = roster.find(r=>r.name===name);
   const homeDept = (rEntry && rEntry.department) || [...new Set(mine.map(j=>j.department))][0];
-  document.getElementById('emDept').innerHTML = deptBadge(homeDept)
+  document.getElementById('emDept').innerHTML = deptBadge(homeDept, rEntry && rEntry.warehouse)
     + (rEntry && rEntry.warehouse ? ` <span class="emp-home-wh">คลังหลัก ${esc(rEntry.warehouse)}</span>` : '');
   document.querySelectorAll('#emRange .chip').forEach(c=>c.setAttribute('aria-pressed', String(c.dataset.er==='all')));
   document.querySelectorAll('#emTabs .chip').forEach(c=>c.setAttribute('aria-pressed', String(c.dataset.et==='day')));
@@ -1603,8 +1826,9 @@ document.addEventListener('keydown', e=>{
 function roleOptions(sel){
   return ROLE_ORDER.map(r=>`<option value="${r}" ${sel===r?'selected':''}>${ROLE_LABEL[r]}</option>`).join('');
 }
-function deptOptions(sel){
-  return DEPT_KEYS.map(d=>`<option value="${d}" ${sel===d?'selected':''}>${DEPT_PLAIN[d]}</option>`).join('');
+function deptOptions(wh, sel){
+  const keys = deptKeysFor(wh);
+  return keys.map(d=>`<option value="${d}" ${sel===d?'selected':''}>${esc(deptName(d, wh))}</option>`).join('');
 }
 // A SUPERVISOR / USER may cover more than one department (profiles.departments).
 function userDepts(u){
@@ -1613,8 +1837,8 @@ function userDepts(u){
 }
 function deptCheckboxes(selected, cls, disabled){
   const set = new Set(selected || []);
-  return `<span class="dept-cb-row">` + DEPT_KEYS.map(d=>
-    `<label class="dept-cb"><input type="checkbox" class="${cls}" value="${d}" ${set.has(d)?'checked':''} ${disabled?'disabled':''}> ${esc(DEPT_PLAIN[d]||d)}</label>`
+  return `<span class="dept-cb-row">` + deptKeysFor(null).map(d=>
+    `<label class="dept-cb"><input type="checkbox" class="${cls}" value="${d}" ${set.has(d)?'checked':''} ${disabled?'disabled':''}> ${esc(deptName(d))}</label>`
   ).join('') + `</span>`;
 }
 
@@ -1622,13 +1846,18 @@ function deptCheckboxes(selected, cls, disabled){
 function userScopePairs(uid){
   return scopes.filter(s=>s.profile_id===uid).map(s=>({ warehouse:s.warehouse, department:s.department }));
 }
+// Departments are per-warehouse now — a single dept×warehouse grid would imply
+// a shared row set that no longer exists, so each warehouse gets its own
+// checkbox column built from *its own* department list (คลังใครคลังมัน).
 function scopeGridHTML(pairs, cls){
   const set = new Set((pairs||[]).map(p=>p.warehouse+':'+p.department));
-  return `<table class="scope-grid"><thead><tr><th></th>${WH_KEYS.map(w=>`<th title="${esc(WH_PLAIN[w])}">${esc(w)}</th>`).join('')}</tr></thead><tbody>`
-    + DEPT_KEYS.map(d=>`<tr><th title="${esc(DEPT_PLAIN[d])}">${esc(d)}</th>` + WH_KEYS.map(w=>
-        `<td><input type="checkbox" class="${cls}" data-wh="${w}" data-dept="${d}"${set.has(w+':'+d)?' checked':''}></td>`
-      ).join('') + `</tr>`).join('')
-    + `</tbody></table>`;
+  return `<div class="scope-grid-wh">` + WH_KEYS.map(w=>{
+    const keys = deptKeysFor(w);
+    const body = keys.length
+      ? keys.map(d=>`<label class="dept-cb"><input type="checkbox" class="${cls}" data-wh="${w}" data-dept="${d}"${set.has(w+':'+d)?' checked':''}> ${esc(deptName(d, w))}</label>`).join('')
+      : `<span class="td-sub">ยังไม่มีแผนก</span>`;
+    return `<div class="scope-grid-col"><b>${esc(WH_PLAIN[w])}</b>${body}</div>`;
+  }).join('') + `</div>`;
 }
 function readScopeGrid(root, cls){
   return [...root.querySelectorAll('.'+cls+':checked')].map(c=>({ warehouse:c.dataset.wh, department:c.dataset.dept }));
@@ -1636,8 +1865,8 @@ function readScopeGrid(root, cls){
 function scopeSummary(pairs){
   if (!pairs.length) return '<span class="td-sub">ยังไม่กำหนด</span>';
   return WH_KEYS.filter(w=>pairs.some(p=>p.warehouse===w)).map(w=>{
-    const ds = DEPT_KEYS.filter(d=>pairs.some(p=>p.warehouse===w && p.department===d));
-    return `<span class="scope-sum"><b>${esc(WH_PLAIN[w])}</b> ` + ds.map(d=>esc(DEPT_PLAIN[d])).join(', ') + `</span>`;
+    const ds = deptKeysFor(w).filter(d=>pairs.some(p=>p.warehouse===w && p.department===d));
+    return `<span class="scope-sum"><b>${esc(WH_PLAIN[w])}</b> ` + ds.map(d=>esc(deptName(d, w))).join(', ') + `</span>`;
   }).join(' ');
 }
 // desired vs current -> {add:[], del:[staff_scope rows]}

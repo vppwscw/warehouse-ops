@@ -162,11 +162,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{outline:none;}
   font-size:var(--fs-11);font-weight:600;letter-spacing:var(--track-label);text-transform:uppercase;color:var(--ink-3);
 }
 .sidebar #acctActions button{
-  display:flex;align-items:center;gap:11px;width:100%;height:auto;
+  display:flex;align-items:center;justify-content:flex-start;gap:11px;width:100%;height:auto;
   text-align:left;padding:8px 12px;border:none;border-radius:8px;
   background:none;color:var(--ink-dim);font-size:13px;font-weight:500;
   transition:background .15s,color .15s;
 }
+/* .gear-btn's base rule sets justify-content:center for its icon-only use
+   elsewhere (topbar circular button) — without this override it wins here
+   too and centers "ผู้ใช้งานระบบ" instead of left-aligning like its siblings
+   (2026-09-17 fix). */
 .sidebar #acctActions button:hover{background:var(--surface-2);color:var(--ink);}
 .sidebar #acctActions .act-tx{display:inline;margin:0;}
 .sidebar #acctActions .gear-btn[aria-current="true"]{

@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=63">
+<link rel="stylesheet" href="css/admin.css?v=64">
 </head>
 <body>
 
@@ -89,20 +89,11 @@
       </div>
       <div class="fb-group" id="whGroup">
         <span class="fb-label">คลัง</span>
-        <div class="seg" id="whChips">
-          <button type="button" class="chip" data-wh="ALL" aria-pressed="true">ทั้งหมด</button>
-          <button type="button" class="chip" data-wh="A" aria-pressed="false">A</button>
-          <button type="button" class="chip" data-wh="B" aria-pressed="false">B</button>
-        </div>
+        <select class="fb-select" id="whSelect"></select>
       </div>
       <div class="fb-group" id="deptGroup">
         <span class="fb-label">ฝั่ง</span>
-        <div class="seg" id="deptChips">
-          <button type="button" class="chip" data-dept="ALL" aria-pressed="true">ทั้งหมด</button>
-          <button type="button" class="chip" data-dept="INB" aria-pressed="false">INBOUND</button>
-          <button type="button" class="chip" data-dept="OUT" aria-pressed="false">OUTBOUND</button>
-          <button type="button" class="chip" data-dept="INV" aria-pressed="false">INVENTORY</button>
-        </div>
+        <select class="fb-select" id="deptSelect"></select>
       </div>
       <div class="searchbox" id="searchGroup">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -420,6 +411,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=65"></script>
+<script src="js/admin.js?v=66"></script>
 </body>
 </html>

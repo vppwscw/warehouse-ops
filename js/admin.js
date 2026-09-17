@@ -439,16 +439,16 @@ function myWhList(){
   return [...new Set(scopes.filter(s=>s.profile_id===uid).map(s=>s.warehouse))].sort();
 }
 function buildDeptChips(){
-  const el = document.getElementById('deptChips');
+  const el = document.getElementById('deptSelect');
   if (!el) return;
   const keys = deptKeysFor(whFilter);
   if (deptFilter !== 'ALL' && !keys.includes(deptFilter)) deptFilter = 'ALL';
   el.innerHTML = [['ALL','ทั้งหมด'], ...keys.map(d=>[d, deptName(d, whFilter)])].map(([v,label])=>
-    `<button type="button" class="chip" data-dept="${esc(v)}" aria-pressed="${v===deptFilter}">${esc(label)}</button>`
+    `<option value="${esc(v)}" ${v===deptFilter?'selected':''}>${esc(label)}</option>`
   ).join('');
 }
 function renderWhChips(){
-  const el = document.getElementById('whChips');
+  const el = document.getElementById('whSelect');
   const grp = document.getElementById('whGroup');
   if (!el || !grp) return;
   const isAdm = profile && profile.role === 'ADMIN';
@@ -466,7 +466,7 @@ function renderWhChips(){
   const valid = opts.map(o=>o[0]);
   if (!valid.includes(whFilter)) whFilter = valid[0];
   el.innerHTML = opts.map(([v,label])=>
-    `<button type="button" class="chip" data-wh="${esc(v)}" aria-pressed="${v===whFilter}">${esc(label)}</button>`
+    `<option value="${esc(v)}" ${v===whFilter?'selected':''}>${esc(label)}</option>`
   ).join('');
 }
 
@@ -512,6 +512,11 @@ function setJobsPreset(preset){
     p.setAttribute('aria-pressed', p.dataset.preset===preset));
   if (activeView!=='dashboard') goView('dashboard'); else render();
 }
+
+document.addEventListener('change', e=>{
+  if (e.target.id === 'whSelect'){ whFilter = e.target.value; buildDeptChips(); render(); return; }
+  if (e.target.id === 'deptSelect'){ deptFilter = e.target.value; render(); return; }
+});
 
 document.addEventListener('click', e=>{
   if (e.target.closest('#retryBtn')){ refreshAll(); return; }
@@ -576,19 +581,6 @@ document.addEventListener('click', e=>{
     const pop = document.getElementById('datePop');
     if (pop && !pop.hidden) pop.hidden = true;
   }
-  const whChip = e.target.closest('#whChips [data-wh]');
-  if (whChip){
-    document.querySelectorAll('#whChips .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
-    whChip.setAttribute('aria-pressed','true');
-    whFilter = whChip.dataset.wh; buildDeptChips(); render(); return;
-  }
-  const deptChip = e.target.closest('#deptChips [data-dept]');
-  if (deptChip){
-    document.querySelectorAll('#deptChips .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
-    deptChip.setAttribute('aria-pressed','true');
-    deptFilter = deptChip.dataset.dept; render(); return;
-  }
-
   const presetBtn = e.target.closest('#jobsPresets [data-preset]');
   if (presetBtn){ setJobsPreset(presetBtn.dataset.preset); return; }
 
@@ -2318,10 +2310,10 @@ function clearFilters(){
   dateRange = 'all'; deptFilter = 'ALL'; whFilter = 'ALL'; searchTerm = ''; dateFrom = dateTo = null;
   const s = document.getElementById('searchInput'); if (s) s.value = '';
   document.querySelectorAll('#rangeChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.range==='all'));
-  document.querySelectorAll('#deptChips .chip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.dept==='ALL'));
   const dp = document.getElementById('datePop'); if (dp) dp.hidden = true;
   syncDatePick();
   renderWhChips();   // resets whFilter to a valid value for this user
+  buildDeptChips();
   render();
 }
 

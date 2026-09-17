@@ -290,7 +290,7 @@ function toast(msg, kind){
   el.className = 'toast ' + (kind === 'ok' ? 'toast-ok' : 'toast-err');
   el.textContent = msg;
   host.appendChild(el);
-  setTimeout(()=>{ el.classList.add('leaving'); setTimeout(()=>el.remove(), 220); }, kind === 'ok' ? 2600 : 4400);
+  setTimeout(()=>{ el.classList.add('leaving'); setTimeout(()=>el.remove(), 130); }, kind === 'ok' ? 2600 : 4400);
 }
 
 // In-page confirm — replaces confirm(). Resolves true/false.
@@ -1272,7 +1272,7 @@ function hbars(box, rows){
   box.innerHTML = rows.length
     ? rows.map(r=>`<div class="hbar-row">
         <span class="hbar-lab" title="${esc(r.label)}">${esc(r.label)}</span>
-        <span class="hbar-track"><i style="width:${Math.max(2, r.n/max*100)}%;background:${esc(r.color||'var(--accent)')}"></i></span>
+        <span class="hbar-track"><i style="transform:scaleX(${(Math.max(2, r.n/max*100)/100).toFixed(4)});background:${esc(r.color||'var(--accent)')}"></i></span>
         <b class="hbar-n num">${r.disp != null ? esc(r.disp) : r.n}</b>
       </div>`).join('')
     : '<p class="c-empty">ยังไม่มีข้อมูล</p>';

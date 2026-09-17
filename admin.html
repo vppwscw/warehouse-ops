@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=64">
+<link rel="stylesheet" href="css/admin.css?v=65">
 </head>
 <body>
 
@@ -228,7 +228,7 @@
             <div class="field"><label for="ndWh">คลัง</label><select id="ndWh"></select></div>
             <div class="field"><label for="ndCode">รหัส (A–Z ตัวเลข _ · 2–12 ตัว)</label><input type="text" id="ndCode" placeholder="เช่น PKG" maxlength="12" autocomplete="off"></div>
             <div class="field"><label for="ndName">ชื่อเต็ม</label><input type="text" id="ndName" placeholder="เช่น PACKING" autocomplete="off"></div>
-            <div class="field"><label for="ndColor">สี</label><input type="color" id="ndColor" value="#0ea5e9"></div>
+            <div class="field"><label for="ndColor">สี</label><input type="color" id="ndColor" value="#08638c"><span class="color-contrast-hint" id="ndColorHint"></span></div>
           </div>
           <p class="sub" style="margin:4px 0 0;">แผนกที่เพิ่มจะอยู่เฉพาะคลังที่เลือก — อีกคลังไม่เห็นและไม่ได้รับผลกระทบ</p>
           <div class="auf-actions">
@@ -247,7 +247,7 @@
       <p class="sub" id="tasksViewNote" style="margin:0 0 14px;">หัวหน้างานเพิ่มชนิดงานได้จากแอปมือถือ · ที่นี่ปิดใช้งานหรือลบถาวรได้ (ADMIN)</p>
       <div class="table-wrap">
         <table id="tasksTable">
-          <thead><tr><th>ชื่องาน</th><th>คลัง</th><th>ฝั่ง</th><th>งานที่ผูกอยู่</th><th>จัดการ</th></tr></thead>
+          <thead id="tasksHead"><tr></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -282,7 +282,7 @@
       </div>
       <div class="table-wrap">
         <table id="employeesTable">
-          <thead><tr><th>พนักงาน</th><th>คลัง</th><th>ฝั่ง</th><th>งานที่เคยทำ (ช่วงที่เลือก)</th><th>งานสะสมทั้งหมด</th></tr></thead>
+          <thead id="employeesHead"><tr></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -404,13 +404,13 @@
   </div>
 </div>
 
-<div id="toastHost"></div>
+<div id="toastHost" role="status" aria-live="polite"></div>
 
 <footer class="build-footer">Skill Matrix &middot; production build</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=66"></script>
+<script src="js/admin.js?v=67"></script>
 </body>
 </html>

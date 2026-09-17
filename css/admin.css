@@ -11,18 +11,18 @@
        white cards so panels read as objects on a surface, not floating shapes. — */
   --ground:#EDF0F3; --surface:#FFFFFF; --surface-2:#E4E8ED; --surface-3:#D8DDE4;
   --line:#DCE0E6; --line-strong:#C4CAD3;
-  --ink:#1A1D21; --ink-2:#545B65; --ink-3:#78808A;
+  --ink:#1A1D21; --ink-2:#545B65; --ink-3:#626871; /* darkened 2026-09-17: was #78808A, 4.00:1 on surface / 3.49:1 on ground — failed AA small text. Now 5.62:1 / 4.91:1 */
 
   /* — steel-blue accent — */
   --accent:#1B5E8C; --accent-hover:#164E76; --accent-wash:#E9F0F5; --accent-ink:#FFFFFF;
 
   /* — semantic status (never the accent, never a dept colour) — */
   --ok:#1E7A4B;   --ok-wash:#E3F1E9;
-  --warn:#9A6410; --warn-wash:#F4EAD8;
+  --warn:#8D5C0E; --warn-wash:#F4EAD8; /* darkened 2026-09-17: was #9A6410, 4.19:1 on warn-wash — failed AA. Now 4.80:1 */
   --crit:#AE3A32; --crit-wash:#F4E0DE;
 
   /* — categorical: department "label ink" set — */
-  --inb:#9E5F1E; --inb-bg:#F0E6D7;
+  --inb:#91571B; --inb-bg:#F0E6D7; /* darkened 2026-09-17: was #9E5F1E, 4.14:1 on inb-bg — failed AA. Now 4.75:1 */
   --out:#276F4E; --out-bg:#DDEBE3;
   --inv:#5B4A97; --inv-bg:#E5E0F0;
 
@@ -234,6 +234,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{outline:none;}
 .dept-admin .add-user-form{margin:0 0 12px;}
 .dept-admin input[type="color"]{width:44px;height:31px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);cursor:pointer;}
 #deptTable td .mono, #deptTable td.mono{font-variant-numeric:tabular-nums;}
+/* WCAG contrast guard hint for the department colour picker (2026-09-17) —
+   text on the actual tinted badge background, computed live in JS. */
+.color-contrast-hint{margin-left:8px;font-size:var(--fs-11);font-weight:600;white-space:nowrap;}
+.color-contrast-hint .cc-ok{color:var(--ok);}
+.color-contrast-hint .cc-fail{color:var(--crit);}
+#deptTable td:has(input[type="color"]){display:flex;align-items:center;}
 
 /* panels — flat surfaces on the ground: definition from the hairline + type, no shadow */
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-2);padding:16px 20px;margin-bottom:16px;}
@@ -454,10 +460,10 @@ tbody tr:hover{background:var(--surface-2);}
 .dt-count{font-size:12px;color:var(--ink-dim);font-weight:600;font-variant-numeric:tabular-nums;}
 #detailsTable td{white-space:nowrap;}
 #detailsTable td:nth-child(4),#detailsTable td:nth-child(5){max-width:200px;overflow:hidden;text-overflow:ellipsis;}
-#detailsTable thead th.dt-sortable{cursor:pointer;user-select:none;white-space:nowrap;}
-#detailsTable thead th.dt-sortable:hover{color:var(--ink);}
-#detailsTable thead th.dt-sorted{color:var(--accent);}
-#detailsTable thead th .dt-caret{font-size:9px;margin-left:3px;vertical-align:1px;}
+thead th.dt-sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+thead th.dt-sortable:hover{color:var(--ink);}
+thead th.dt-sorted{color:var(--accent);}
+thead th .dt-caret{font-size:9px;margin-left:3px;vertical-align:1px;}
 #detailsTable.dt-hide-wh   th:nth-child(2), #detailsTable.dt-hide-wh   td:nth-child(2),
 #detailsTable.dt-hide-dept th:nth-child(3), #detailsTable.dt-hide-dept td:nth-child(3),
 #detailsTable.dt-hide-crew th:nth-child(5), #detailsTable.dt-hide-crew td:nth-child(5),

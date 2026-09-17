@@ -54,6 +54,48 @@ function deptBadge(c, wh){
   const { name, color } = deptLookup(c, wh);
   return `<span class="badge" style="color:${esc(color)};background:${esc(color)}1f"><span class="dot" style="background:${esc(color)}"></span>${esc(name)}</span>`;
 }
+
+// ---- WCAG contrast guard for ADMIN-picked department colours ----
+// deptBadge() renders text in `color` on a background of `color` tinted to
+// ~12% opacity (hex suffix "1f") over the page's white card. A colour that
+// looks fine as a swatch can still fail 4.5:1 once tinted that light — so
+// check against the *actual rendered* background, not the raw swatch.
+function hexToRgb(hex){
+  const h = hex.replace('#','');
+  return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
+}
+function relLuminance([r,g,b]){
+  const f = v => { v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); };
+  const [rl,gl,bl] = [f(r),f(g),f(b)];
+  return 0.2126*rl + 0.7152*gl + 0.0722*bl;
+}
+function contrastRatio(hexA, hexB){
+  const l1 = relLuminance(hexToRgb(hexA)), l2 = relLuminance(hexToRgb(hexB));
+  const [hi,lo] = l1>l2 ? [l1,l2] : [l2,l1];
+  return (hi+0.05)/(lo+0.05);
+}
+function tintOverWhite(hex, alpha){       // alpha 0..1, mimics CSS "<hex>1f" over #FFFFFF
+  const [r,g,b] = hexToRgb(hex).map(v => Math.round(v*alpha + 255*(1-alpha)));
+  return `#${[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('')}`;
+}
+function deptColorRatio(hex){
+  return contrastRatio(hex, tintOverWhite(hex, 0x1f/255));
+}
+function deptColorHint(hex){
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex||'')) return { ok:true, html:'' };
+  const ratio = deptColorRatio(hex);
+  const ok = ratio >= 4.5;
+  const html = ok
+    ? `<span class="cc-ok">✓ ${ratio.toFixed(1)}:1</span>`
+    : `<span class="cc-fail">⚠ ${ratio.toFixed(1)}:1 — อ่านยาก เข้มขึ้นอีก</span>`;
+  return { ok, ratio, html };
+}
+function refreshColorHint(inputEl, hintEl){
+  if (!inputEl || !hintEl) return true;
+  const { ok, html } = deptColorHint(inputEl.value);
+  hintEl.innerHTML = html;
+  return ok;
+}
 const WH_KEYS = ['A','B'];
 const WH_PLAIN = { A:'คลัง A', B:'คลัง B' };
 const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
@@ -239,7 +281,11 @@ document.getElementById('changePwBtn').addEventListener('click', ()=>{
 // "prevent additional dialogs" checkbox both suppress.
 function toast(msg, kind){
   let host = document.getElementById('toastHost');
-  if (!host){ host = document.createElement('div'); host.id = 'toastHost'; document.body.appendChild(host); }
+  if (!host){
+    host = document.createElement('div'); host.id = 'toastHost';
+    host.setAttribute('role', 'status'); host.setAttribute('aria-live', 'polite');
+    document.body.appendChild(host);
+  }
   const el = document.createElement('div');
   el.className = 'toast ' + (kind === 'ok' ? 'toast-ok' : 'toast-err');
   el.textContent = msg;
@@ -518,6 +564,12 @@ document.addEventListener('change', e=>{
   if (e.target.id === 'deptSelect'){ deptFilter = e.target.value; render(); return; }
 });
 
+document.addEventListener('input', e=>{
+  if (e.target.id === 'ndColor'){ refreshColorHint(e.target, document.getElementById('ndColorHint')); return; }
+  const key = e.target.dataset && e.target.dataset.deptColor;
+  if (key){ refreshColorHint(e.target, document.querySelector(`[data-dept-color-hint="${key}"]`)); return; }
+});
+
 document.addEventListener('click', e=>{
   if (e.target.closest('#retryBtn')){ refreshAll(); return; }
   if (e.target.closest('[data-clear-filters]')){ clearFilters(); return; }
@@ -608,7 +660,9 @@ document.addEventListener('click', e=>{
   const taskDelBtn = e.target.closest('[data-task-del]');
   if (taskDelBtn){ deleteTask(taskDelBtn.dataset.taskDel); return; }
 
-  if (e.target.closest('#toggleAddDeptBtn')){ const f = document.getElementById('addDeptForm'); f.hidden = !f.hidden; return; }
+  if (e.target.closest('#toggleAddDeptBtn')){ const f = document.getElementById('addDeptForm'); f.hidden = !f.hidden;
+    if (!f.hidden) refreshColorHint(document.getElementById('ndColor'), document.getElementById('ndColorHint'));
+    return; }
   if (e.target.closest('#cancelAddDeptBtn')){ document.getElementById('addDeptForm').hidden = true; return; }
   if (e.target.closest('#createDeptBtn')){ createDeptFromForm(); return; }
   const deptSaveBtn = e.target.closest('[data-dept-save]');
@@ -646,6 +700,11 @@ document.addEventListener('click', e=>{
     else { dtState.sortKey = k; dtState.sortDir = 'asc'; }
     render(); return;
   }
+
+  const taskSortTh = e.target.closest('#tasksHead [data-task-sort]');
+  if (taskSortTh){ toggleSort(taskSort, taskSortTh.dataset.taskSort); renderTasksAdmin(); return; }
+  const empSortTh = e.target.closest('#employeesHead [data-emp-sort]');
+  if (empSortTh){ toggleSort(empSort, empSortTh.dataset.empSort); render(); return; }
 
   const dtPg = e.target.closest('[data-dt-page]');
   if (dtPg){
@@ -1267,8 +1326,9 @@ function renderDtHead(){
     const sortable = !!c.sort;
     const active = sortable && dtState.sortKey===c.key;
     const caret = active ? `<span class="dt-caret">${dtState.sortDir==='asc'?'▲':'▼'}</span>` : '';
+    const ariaSort = !sortable ? '' : active ? (dtState.sortDir==='asc'?'ascending':'descending') : 'none';
     return `<th class="${sortable?'dt-sortable':''}${active?' dt-sorted':''}"`
-      + `${sortable?` data-dt-sort="${c.key}"`:''}>${esc(c.label)}${caret}</th>`;
+      + `${sortable?` data-dt-sort="${c.key}" aria-sort="${ariaSort}"`:''}>${esc(c.label)}${caret}</th>`;
   }).join('');
 }
 function buildDtStatusPop(pool){
@@ -1526,6 +1586,52 @@ function renderEmpRoster(){
   }).join('');
 }
 
+// ---------- generic sortable table head (ชนิดงาน / พนักงาน — งานทั้งหมด has its own dtState) ----------
+function renderSortHead(headEl, cols, state, sortAttr){
+  if (!headEl) return;
+  headEl.innerHTML = `<tr>${cols.map(c=>{
+    const sortable = !!c.sort;
+    const active = sortable && state.key === c.key;
+    const caret = active ? `<span class="dt-caret">${state.dir==='asc'?'▲':'▼'}</span>` : '';
+    const ariaSort = !sortable ? '' : active ? (state.dir==='asc'?'ascending':'descending') : 'none';
+    return `<th class="${sortable?'dt-sortable':''}${active?' dt-sorted':''}"`
+      + `${sortable?` data-${sortAttr}="${c.key}" aria-sort="${ariaSort}"`:''}>${esc(c.label)}${caret}</th>`;
+  }).join('')}</tr>`;
+}
+function applySort(list, cols, state){
+  const col = cols.find(c=>c.key===state.key);
+  if (!col || !col.sort) return list;
+  const sorted = list.slice().sort((a,b)=>{
+    const av = col.sort(a), bv = col.sort(b);
+    return av < bv ? -1 : av > bv ? 1 : 0;
+  });
+  if (state.dir === 'desc') sorted.reverse();
+  return sorted;
+}
+function toggleSort(state, key){
+  if (state.key === key) state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+  else { state.key = key; state.dir = 'asc'; }
+}
+
+const TASK_COLS = [
+  { key:'name',   label:'ชื่องาน',       sort:t => t.name || '' },
+  { key:'wh',     label:'คลัง',          sort:t => t.warehouse || '' },
+  { key:'dept',   label:'ฝั่ง',          sort:t => deptName(t.department, t.warehouse) },
+  { key:'linked', label:'งานที่ผูกอยู่',  sort:null },   // computed count, not on raw row — skip sort
+  { key:'act',    label:'จัดการ',        sort:null },
+];
+const taskSort = { key:'name', dir:'asc' };
+
+// sort fns read the enriched {r, inRange, total} shape built in renderEmployeesTable
+const EMP_COLS = [
+  { key:'name',    label:'พนักงาน',                       sort:e => e.r.name || '' },
+  { key:'wh',      label:'คลัง',                          sort:e => e.r.warehouse || '' },
+  { key:'dept',    label:'ฝั่ง',                          sort:e => deptName(e.r.department, e.r.warehouse) },
+  { key:'inRange', label:'งานที่เคยทำ (ช่วงที่เลือก)',     sort:e => e.inRange },
+  { key:'total',   label:'งานสะสมทั้งหมด',                 sort:e => e.total },
+];
+const empSort = { key:'name', dir:'asc' };
+
 // ---------- task types (ชนิดงาน view) ----------
 async function refreshTasksAdmin(){
   try{
@@ -1539,7 +1645,8 @@ function renderTasksAdmin(){
   const cols = ro ? 4 : 5;
   const tb = document.querySelector('#tasksTable tbody');
   if (!tb) return;
-  const list = taskList.filter(t => whFilter==='ALL' || t.warehouse===whFilter);
+  renderSortHead(document.getElementById('tasksHead'), ro ? TASK_COLS.slice(0,-1) : TASK_COLS, taskSort, 'task-sort');
+  const list = applySort(taskList.filter(t => whFilter==='ALL' || t.warehouse===whFilter), TASK_COLS, taskSort);
   if (!list.length){ tb.innerHTML = `<tr><td colspan="${cols}" class="empty-note">ยังไม่มีชนิดงาน${whFilter!=='ALL'?'ในคลังนี้':''} — หัวหน้างานเพิ่มได้จากแอปมือถือ</td></tr>`; return; }
   tb.innerHTML = list.map(t=>{
     const on = t.active !== false;
@@ -1615,7 +1722,7 @@ function renderDeptAdmin(){
         <td><span class="wh-tag">${esc(WH_PLAIN[d.warehouse]||d.warehouse)}</span></td>
         <td class="mono"><b>${esc(d.code)}</b></td>
         <td><input type="text" class="code-input" data-dept-name="${esc(key)}" value="${esc(d.name)}" style="width:150px"></td>
-        <td><input type="color" data-dept-color="${esc(key)}" value="${esc(d.color||'#6B7280')}"></td>
+        <td><input type="color" data-dept-color="${esc(key)}" value="${esc(d.color||'#6B7280')}"><span class="color-contrast-hint" data-dept-color-hint="${esc(key)}"></span></td>
         <td class="mono">${u.total ? `${u.total} (scope ${u.inScope} · งาน ${u.inTasks} · คน ${u.inEmp})` : '–'}</td>
         <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
         <td>
@@ -1625,6 +1732,10 @@ function renderDeptAdmin(){
         </td>
       </tr>`;
     }).join('');
+  rows.forEach(d=>{
+    const key = d.warehouse + ':' + d.code;
+    refreshColorHint(document.querySelector(`[data-dept-color="${key}"]`), document.querySelector(`[data-dept-color-hint="${key}"]`));
+  });
 }
 async function reloadDeptsEverywhere(){
   await loadDepartments();
@@ -1643,6 +1754,7 @@ async function createDeptFromForm(){
   if (!/^[A-Z][A-Z0-9_]{1,11}$/.test(code)){ hint.textContent = 'รหัสต้องขึ้นต้นด้วยตัวอักษร A–Z ยาว 2–12 ตัว (A–Z ตัวเลข _)'; return; }
   if (!name){ hint.textContent = 'กรอกชื่อเต็ม'; return; }
   if (DEPT_ROWS.some(d=>d.code===code && d.warehouse===wh)){ hint.textContent = `รหัส "${code}" มีอยู่แล้วใน${WH_PLAIN[wh]}`; return; }
+  if (!deptColorHint(color).ok){ hint.textContent = `สีนี้อ่านยากเกินไป (contrast ${deptColorRatio(color).toFixed(1)}:1, ต้อง ≥4.5:1) — เลือกสีเข้มขึ้น`; return; }
   hint.textContent = 'กำลังเพิ่ม...';
   const sort = (Math.max(0, ...DEPT_ROWS.filter(d=>d.warehouse===wh).map(d=>d.sort||0)) + 10);
   const { error } = await sb.from('departments').insert({ code, name, color, sort, active: true, warehouse: wh });
@@ -1659,6 +1771,7 @@ async function saveDeptRow(key){
   const name = document.querySelector(`[data-dept-name="${key}"]`).value.trim();
   const color = document.querySelector(`[data-dept-color="${key}"]`).value;
   if (!name){ toast('ชื่อแผนกว่างไม่ได้'); return; }
+  if (!deptColorHint(color).ok){ toast(`สีนี้อ่านยากเกินไป (contrast ${deptColorRatio(color).toFixed(1)}:1, ต้อง ≥4.5:1) — เลือกสีเข้มขึ้น`); return; }
   const { error } = await sb.from('departments').update({ name, color }).eq('warehouse', wh).eq('code', code);
   if (error){ toast('บันทึกไม่สำเร็จ: ' + mapDbError(error)); return; }
   toast('บันทึกแล้ว', 'ok');
@@ -1735,10 +1848,14 @@ async function deleteEmp(id){
 function renderEmployeesTable(closed){
   const people = peopleInScope();
   const tbody = document.querySelector('#employeesTable tbody');
+  renderSortHead(document.getElementById('employeesHead'), EMP_COLS, empSort, 'emp-sort');
   if (people.length===0){ tbody.innerHTML = emptyRow(5, 'ยังไม่มีพนักงานในขอบเขตนี้'); return; }
-  tbody.innerHTML = people.map(r=>{
-    const inRange = closed.filter(j=>(j.crew||[]).includes(r.name)).length;
-    const total = jobs.filter(j=>(j.crew||[]).includes(r.name)).length;
+  const enriched = people.map(r=>({
+    r,
+    inRange: closed.filter(j=>(j.crew||[]).includes(r.name)).length,
+    total: jobs.filter(j=>(j.crew||[]).includes(r.name)).length,
+  }));
+  tbody.innerHTML = applySort(enriched, EMP_COLS, empSort).map(({r,inRange,total})=>{
     const initials = esc(r.name.trim().slice(0,1));
     const deptCell = r.department
       ? `${deptBadge(r.department, r.warehouse)}`

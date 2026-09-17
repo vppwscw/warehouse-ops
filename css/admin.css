@@ -236,10 +236,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{outline:none;}
 #deptTable td .mono, #deptTable td.mono{font-variant-numeric:tabular-nums;}
 /* WCAG contrast guard hint for the department colour picker (2026-09-17) —
    text on the actual tinted badge background, computed live in JS. */
-.color-contrast-hint{margin-left:8px;font-size:var(--fs-11);font-weight:600;white-space:nowrap;}
+.color-contrast-hint{display:inline-block;margin-left:8px;font-size:var(--fs-11);font-weight:600;white-space:nowrap;vertical-align:middle;}
 .color-contrast-hint .cc-ok{color:var(--ok);}
 .color-contrast-hint .cc-fail{color:var(--crit);}
-#deptTable td:has(input[type="color"]){display:flex;align-items:center;}
+/* was display:flex on the <td> itself — that pulls it out of table layout and
+   breaks the row's border-bottom alignment against the other cells (2026-09-17
+   fix). vertical-align keeps the swatch + hint on one line without touching
+   the cell's table-cell display. */
+#deptTable td input[type="color"]{vertical-align:middle;}
 
 /* panels — flat surfaces on the ground: definition from the hairline + type, no shadow */
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-2);padding:16px 20px;margin-bottom:16px;}

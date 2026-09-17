@@ -155,6 +155,30 @@ let dateRange = 'today', deptFilter = 'ALL', whFilter = 'ALL', searchTerm = '', 
 let dateFrom = null, dateTo = null;   // ISO yyyy-mm-dd, used when dateRange === 'custom'
 let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
 let prevKpi = {};        // last-rendered KPI values, for the counter animation
+
+// ---------- URL hash deep-link (2026-09-17) ----------
+// view + คลัง + ฝั่ง + ช่วงวัน ผูกกับ #hash ไว้ — refresh/แชร์ลิงก์แล้วไม่เสีย
+// state. ใช้ replaceState (ไม่ pushState) ผู้ใช้กด back แล้วไม่โดนสแปม
+// ประวัติทีละคลิกฟิลเตอร์. ไม่รวม dateFrom/dateTo (custom range) — กรณีนั้น
+// เก็บแค่ session ปัจจุบัน ยอมรับได้เพราะซับซ้อนเกินไปสำหรับ deep-link
+function readHashState(){
+  const p = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const out = {};
+  if (p.has('view')) out.view = p.get('view');
+  if (p.has('wh'))   out.wh   = p.get('wh');
+  if (p.has('dept')) out.dept = p.get('dept');
+  if (p.has('range') && p.get('range') !== 'custom') out.range = p.get('range');
+  return out;
+}
+function writeHashState(){
+  const p = new URLSearchParams();
+  p.set('view', activeView);
+  if (whFilter   !== 'ALL') p.set('wh', whFilter);
+  if (deptFilter !== 'ALL') p.set('dept', deptFilter);
+  if (dateRange  !== 'custom') p.set('range', dateRange);
+  const hash = '#' + p.toString();
+  if (location.hash !== hash) history.replaceState(null, '', hash);
+}
 let firstLoad = true;    // true until the first successful data load (drives the skeleton)
 let loadError = null;    // set when the initial jobs load fails (drives the error card)
 
@@ -359,7 +383,12 @@ async function afterLogin(user){
   buildDeptChips();
   await loadTasksFromDb();
   wireRealtime();
-  goView('dashboard');
+  const hashed = readHashState();
+  if (hashed.wh)    whFilter   = hashed.wh;
+  if (hashed.dept)  deptFilter = hashed.dept;
+  if (hashed.range) dateRange  = hashed.range;
+  const validView = hashed.view && Object.prototype.hasOwnProperty.call(VIEW_FILTERS, hashed.view);
+  goView(validView ? hashed.view : 'dashboard');
   await refreshAll();
 }
 
@@ -564,6 +593,16 @@ document.addEventListener('change', e=>{
   if (e.target.id === 'deptSelect'){ deptFilter = e.target.value; render(); return; }
 });
 
+// keyboard support for the sortable table headers (mouse-only before —
+// clickable <th> with no key handler is a keyboard-nav dead end)
+document.addEventListener('keydown', e=>{
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const th = e.target.closest('[data-dt-sort],[data-task-sort],[data-emp-sort]');
+  if (!th) return;
+  e.preventDefault();
+  th.click();
+});
+
 document.addEventListener('input', e=>{
   if (e.target.id === 'ndColor'){ refreshColorHint(e.target, document.getElementById('ndColorHint')); return; }
   const key = e.target.dataset && e.target.dataset.deptColor;
@@ -707,13 +746,19 @@ document.addEventListener('click', e=>{
     const k = dtSortTh.dataset.dtSort;
     if (dtState.sortKey === k) dtState.sortDir = dtState.sortDir==='asc' ? 'desc' : 'asc';
     else { dtState.sortKey = k; dtState.sortDir = 'asc'; }
-    render(); return;
+    render(); refocusSort('#dtHead', 'data-dt-sort', k); return;
   }
 
   const taskSortTh = e.target.closest('#tasksHead [data-task-sort]');
-  if (taskSortTh){ toggleSort(taskSort, taskSortTh.dataset.taskSort); renderTasksAdmin(); return; }
+  if (taskSortTh){
+    const k = taskSortTh.dataset.taskSort;
+    toggleSort(taskSort, k); renderTasksAdmin(); refocusSort('#tasksHead', 'data-task-sort', k); return;
+  }
   const empSortTh = e.target.closest('#employeesHead [data-emp-sort]');
-  if (empSortTh){ toggleSort(empSort, empSortTh.dataset.empSort); render(); return; }
+  if (empSortTh){
+    const k = empSortTh.dataset.empSort;
+    toggleSort(empSort, k); render(); refocusSort('#employeesHead', 'data-emp-sort', k); return;
+  }
 
   const dtPg = e.target.closest('[data-dt-page]');
   if (dtPg){
@@ -1374,7 +1419,7 @@ function renderDtHead(){
     const caret = active ? `<span class="dt-caret">${dtState.sortDir==='asc'?'▲':'▼'}</span>` : '';
     const ariaSort = !sortable ? '' : active ? (dtState.sortDir==='asc'?'ascending':'descending') : 'none';
     return `<th class="${sortable?'dt-sortable':''}${active?' dt-sorted':''}"`
-      + `${sortable?` data-dt-sort="${c.key}" aria-sort="${ariaSort}"`:''}>${esc(c.label)}${caret}</th>`;
+      + `${sortable?` data-dt-sort="${c.key}" aria-sort="${ariaSort}" tabindex="0" role="button"`:''}>${esc(c.label)}${caret}</th>`;
   }).join('');
 }
 function buildDtStatusPop(pool){
@@ -1641,7 +1686,7 @@ function renderSortHead(headEl, cols, state, sortAttr){
     const caret = active ? `<span class="dt-caret">${state.dir==='asc'?'▲':'▼'}</span>` : '';
     const ariaSort = !sortable ? '' : active ? (state.dir==='asc'?'ascending':'descending') : 'none';
     return `<th class="${sortable?'dt-sortable':''}${active?' dt-sorted':''}"`
-      + `${sortable?` data-${sortAttr}="${c.key}" aria-sort="${ariaSort}"`:''}>${esc(c.label)}${caret}</th>`;
+      + `${sortable?` data-${sortAttr}="${c.key}" aria-sort="${ariaSort}" tabindex="0" role="button"`:''}>${esc(c.label)}${caret}</th>`;
   }).join('')}</tr>`;
 }
 function applySort(list, cols, state){
@@ -1657,6 +1702,13 @@ function applySort(list, cols, state){
 function toggleSort(state, key){
   if (state.key === key) state.dir = state.dir === 'asc' ? 'desc' : 'asc';
   else { state.key = key; state.dir = 'asc'; }
+}
+// sorting rebuilds the <thead> innerHTML, which destroys the focused <th> —
+// keyboard users would otherwise lose their place on every sort. Re-focus
+// the same column's new element by its data attribute.
+function refocusSort(headSel, attr, key){
+  const th = document.querySelector(`${headSel} [${attr}="${key}"]`);
+  if (th) th.focus();
 }
 
 const TASK_COLS = [
@@ -2531,6 +2583,7 @@ function render(){
   } else if (activeView==='users'){
     renderUsersTable();
   }
+  writeHashState();
 }
 
 // ---------- data refresh ----------

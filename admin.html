@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=65">
+<link rel="stylesheet" href="css/admin.css?v=66">
 </head>
 <body>
 
@@ -118,9 +118,15 @@
               <h2>แนวโน้มงานรายวัน</h2>
               <p class="panel-sub" id="trendSub">7 วันล่าสุด</p>
             </div>
-            <div class="chip-legend" id="trendLegend"></div>
+            <div class="trend-head-actions">
+              <div class="chip-legend" id="trendLegend"></div>
+              <button type="button" class="btn-sm" id="trendTableToggle" aria-expanded="false">ดูตาราง</button>
+            </div>
           </div>
           <div class="chart-trend" id="trendChart"></div>
+          <div class="table-wrap trend-table-wrap" id="trendTableWrap" hidden>
+            <table id="trendTable"><thead></thead><tbody></tbody></table>
+          </div>
         </div>
 
         <div class="panel g-donut">
@@ -411,6 +417,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=2"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=67"></script>
+<script src="js/admin.js?v=68"></script>
 </body>
 </html>

@@ -308,6 +308,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{outline:none;}
 .c-axis{fill:var(--ink-3);font-size:11px;font-family:'IBM Plex Mono',monospace;}
 .c-empty{font-size:12px;color:var(--ink-faint);text-align:center;padding:26px 0;margin:0;}
 .chip-legend{display:flex;flex-wrap:wrap;gap:10px;}
+.trend-head-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.trend-table-wrap{margin-top:14px;max-height:280px;overflow:auto;}
 .lg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-dim);font-weight:600;}
 .lg i{width:9px;height:9px;border-radius:3px;flex:none;}
 

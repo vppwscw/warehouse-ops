@@ -638,6 +638,15 @@ document.addEventListener('click', e=>{
 
   if (e.target.closest('#actionStripBtn')){ goView('queue'); return; }
   if (e.target.closest('#exportCsvBtn')){ exportJobsCsv(); return; }
+  if (e.target.closest('#trendTableToggle')){
+    const btn = e.target.closest('#trendTableToggle');
+    const wrap = document.getElementById('trendTableWrap');
+    wrap.hidden = !wrap.hidden;
+    btn.setAttribute('aria-expanded', String(!wrap.hidden));
+    btn.textContent = wrap.hidden ? 'ดูตาราง' : 'ซ่อนตาราง';
+    if (!wrap.hidden) renderTrendTable();
+    return;
+  }
   if (e.target.closest('#exportEmpCsvBtn')){ exportEmployeesXlsx(); return; }
 
   const batchBtn = e.target.closest('[data-approve-dept]');
@@ -1122,6 +1131,39 @@ function trendDays(){
   return [...Array(7)].map((_,i)=>daysAgoISO(6-i));   // 'today' or 'all'
 }
 
+// last-rendered trend data, kept so the "ดูตาราง" toggle can build its table
+// alternative without re-deriving from `jobs` — same numbers as the chart.
+let lastTrend = null;
+
+// plain-language insight for the chart's aria-label — screen readers get the
+// story (total + direction), not just "trend chart" with no numbers.
+function trendInsight(days, totals){
+  const sum = totals.reduce((a,b)=>a+b, 0);
+  if (!sum) return `แนวโน้มงานรายวัน ${days.length} วันล่าสุด — ไม่มีข้อมูล`;
+  const half = Math.max(1, Math.floor(days.length/2));
+  const firstSum = totals.slice(0, half).reduce((a,b)=>a+b, 0);
+  const secondSum = totals.slice(half).reduce((a,b)=>a+b, 0);
+  let trendTxt;
+  if (firstSum === 0) trendTxt = secondSum > 0 ? ' เพิ่มขึ้นจากไม่มีงานในครึ่งแรกของช่วง' : '';
+  else {
+    const pct = Math.round((secondSum-firstSum)/firstSum*100);
+    trendTxt = pct > 0 ? ` เพิ่มขึ้น ${pct}% เทียบครึ่งแรกของช่วง`
+      : pct < 0 ? ` ลดลง ${Math.abs(pct)}% เทียบครึ่งแรกของช่วง`
+      : ' คงที่เทียบครึ่งแรกของช่วง';
+  }
+  return `แนวโน้มงานรายวัน ${days.length} วันล่าสุด รวม ${sum} งาน${trendTxt}`;
+}
+function renderTrendTable(){
+  const wrap = document.getElementById('trendTableWrap');
+  if (!lastTrend || wrap.hidden) return;
+  const { days, series, totals } = lastTrend;
+  document.querySelector('#trendTable thead').innerHTML =
+    `<tr><th>วันที่</th>${series.map(s=>`<th>${esc(deptName(s.dept, whFilter))}</th>`).join('')}<th>รวม</th></tr>`;
+  document.querySelector('#trendTable tbody').innerHTML = days.map((d,i)=>
+    `<tr><td>${esc(fmtThaiDate(d))}</td>${series.map(s=>`<td class="mono">${s.vals[i]}</td>`).join('')}<td class="mono"><b>${totals[i]}</b></td></tr>`
+  ).join('');
+}
+
 // stacked-area job trend, one band per department
 function renderTrend(){
   const days = trendDays();
@@ -1185,12 +1227,14 @@ function renderTrend(){
 
   document.getElementById('trendSub').textContent = days.length + ' วันล่าสุด';
   document.getElementById('trendChart').innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" class="c-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="แนวโน้มงานรายวัน">
+    `<svg viewBox="0 0 ${W} ${H}" class="c-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(trendInsight(days, totals))}">
        <defs>${defs.join('')}</defs>
        ${grid}${bands}${endDot}${xlab}
      </svg>`;
   document.getElementById('trendLegend').innerHTML = series.map(s=>
     `<span class="lg"><i style="background:${esc(s.color)}"></i>${esc(deptName(s.dept, whFilter))}</span>`).join('');
+  lastTrend = { days, series, totals };
+  renderTrendTable();   // no-op if the table toggle is currently closed
 }
 
 // donut — job share by department
@@ -1211,8 +1255,10 @@ function renderDeptDonut(closed){
   }).join('');
   const legend = data.map(x=>`<li><span class="lg"><i style="background:${esc(x.c)}"></i>${esc(deptName(x.d, whFilter))}</span>`
     + `<b class="num">${x.n}</b><span class="c-pct">${Math.round(x.n/total*100)}%</span></li>`).join('');
+  const top = data.reduce((a,b)=>b.n>a.n?b:a, data[0]);
+  const donutLabel = `สัดส่วนงานตามฝั่ง รวม ${total} งาน — ${esc(deptName(top.d, whFilter))} มากที่สุด ${Math.round(top.n/total*100)}%`;
   box.innerHTML =
-    `<svg viewBox="0 0 160 160" class="donut-svg" role="img" aria-label="สัดส่วนงานตามฝั่ง">
+    `<svg viewBox="0 0 160 160" class="donut-svg" role="img" aria-label="${donutLabel}">
        ${segs}
        <text x="80" y="78" text-anchor="middle" class="donut-c-n">${total}</text>
        <text x="80" y="95" text-anchor="middle" class="donut-c-l">งาน</text>

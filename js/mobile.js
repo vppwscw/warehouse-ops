@@ -267,6 +267,10 @@ async function afterLogin(user){
     profile = null;
     return;
   }
+  if (user.user_metadata && user.user_metadata.must_change_password){
+    hideLogin();
+    await forcePasswordChange();
+  }
   await loadMyScope();
   await loadDepartments();
   hideLogin();
@@ -317,9 +321,15 @@ function toast(msg, kind){
 
 // In-page password modal — replaces window.prompt(). onSubmit(pw) returns an
 // error string to show in place, or null on success (modal then closes).
-function askNewPassword(onSubmit){
+// opts.force: blocking mode (first-login change) — no cancel/backdrop close,
+// the cancel button becomes "ออกจากระบบ"; opts.onDone() runs after success.
+function askNewPassword(onSubmit, opts){
+  const force = !!(opts && opts.force);
   const bd   = document.getElementById('pwBackdrop');
   const card = document.getElementById('pwModal');
+  const titleEl = card.querySelector('.modal-title');
+  const title0 = titleEl.textContent, cancel0 = document.getElementById('pwCancel').textContent;
+  if (force){ titleEl.textContent = 'ตั้งรหัสผ่านใหม่'; document.getElementById('pwCancel').textContent = 'ออกจากระบบ'; }
   const a    = document.getElementById('pwNew');
   const b    = document.getElementById('pwNew2');
   const hint = document.getElementById('pwHint');
@@ -330,8 +340,10 @@ function askNewPassword(onSubmit){
   setTimeout(()=>a.focus(), 40);
   function close(){
     bd.classList.remove('open'); card.classList.remove('open');
-    ok.removeEventListener('click', submit); no.removeEventListener('click', close); bd.removeEventListener('click', close);
+    ok.removeEventListener('click', submit); no.removeEventListener('click', onCancel); bd.removeEventListener('click', close);
+    titleEl.textContent = title0; no.textContent = cancel0;
   }
+  function onCancel(){ close(); if (force) logout(); }
   async function submit(){
     const p = a.value, p2 = b.value;
     if (p.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
@@ -340,11 +352,24 @@ function askNewPassword(onSubmit){
     const err = onSubmit ? await onSubmit(p) : null;
     if (err){ ok.disabled = false; hint.textContent = err; return; }
     hint.textContent = 'สำเร็จ';
+    if (force){ close(); if (opts.onDone) opts.onDone(); return; }
     setTimeout(close, 800);
   }
   ok.addEventListener('click', submit);
-  no.addEventListener('click', close);
-  bd.addEventListener('click', close);
+  no.addEventListener('click', onCancel);
+  if (!force) bd.addEventListener('click', close);
+}
+
+// First login after admin create/reset: must set own password before using the app.
+function forcePasswordChange(){
+  return new Promise((resolve)=>{
+    askNewPassword(async (np)=>{
+      const { error } = await sb.auth.updateUser({ password: np, data: { must_change_password: false } });
+      if (error) return 'ไม่สำเร็จ: ' + (error.message || error);
+      toast('ตั้งรหัสผ่านใหม่เรียบร้อย', 'ok');
+      return null;
+    }, { force:true, onDone: ()=>resolve(true) });
+  });
 }
 
 function changeOwnPassword(){

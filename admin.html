@@ -320,6 +320,7 @@
         </div>
         <div class="auf-actions">
           <button type="button" class="btn-sm primary uc-create-btn" id="createUserBtn">＋ สร้างบัญชี</button>
+          <button type="button" class="btn-sm" id="bulkUserBtn">สร้างหลายบัญชี</button>
           <span class="form-hint" id="addUserHint"></span>
         </div>
       </form>
@@ -345,6 +346,24 @@
     <div class="modal-actions">
       <button type="button" class="btn-sm" id="pwCancel">ยกเลิก</button>
       <button type="button" class="btn-sm primary" id="pwConfirm">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- bulk create accounts modal -->
+<div class="modal-overlay" id="bulkModal" hidden>
+  <div class="modal" style="max-height:90vh;overflow:auto;">
+    <h3>สร้างหลายบัญชี</h3>
+    <div class="field"><label for="buLines">รายชื่อ (บรรทัดละคน: รหัสพนักงาน ชื่อ-นามสกุล)</label><textarea id="buLines" rows="6" placeholder="VP0123 สมชาย ใจดี&#10;VP0124 สมหญิง รักงาน" style="width:100%;box-sizing:border-box;font:inherit;"></textarea></div>
+    <div class="field"><label for="buPass">รหัสผ่านเริ่มต้น (อย่างน้อย 8 ตัว · ผู้ใช้ต้องเปลี่ยนตอนเข้าครั้งแรก)</label><input type="text" id="buPass" autocomplete="off"></div>
+    <div class="field"><label for="buRole">สิทธิ์</label><select id="buRole"></select></div>
+    <div class="field"><label>คลัง × แผนก (SUPERVISOR / ASSISTANT)</label><div id="buScopeGrid"></div></div>
+    <div class="field"><label>ระบบที่ใช้ได้ (เว้นว่าง = ตาม role)</label><div id="buAppCbs" class="dept-cb-row"></div></div>
+    <p class="form-hint" id="buHint"></p>
+    <div id="buResults" style="font-size:13px;line-height:1.6;white-space:pre-wrap;"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn-sm" id="buClose">ปิด</button>
+      <button type="button" class="btn-sm primary" id="buSubmit">สร้างบัญชี</button>
     </div>
   </div>
 </div>
@@ -465,6 +484,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=4"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=80"></script>
+<script src="js/admin.js?v=81"></script>
 </body>
 </html>

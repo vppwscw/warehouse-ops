@@ -233,7 +233,10 @@ document.getElementById('deniedLogoutBtn').addEventListener('click', doLogout);
 // Inline password modal — replaces window.prompt()/alert(), which some browsers
 // and embedded webviews silently block. `onSubmit(pw)` returns an error string
 // to show in place, or null on success (then the modal closes itself).
-function askNewPassword(title, onSubmit){
+// opts.force: blocking mode (first-login change) — no Esc/cancel, the cancel
+// button becomes "ออกจากระบบ"; opts.onDone() runs after success.
+function askNewPassword(title, onSubmit, opts){
+  const force = !!(opts && opts.force);
   const ov   = document.getElementById('pwModal');
   const a    = document.getElementById('pwNew');
   const b    = document.getElementById('pwNew2');
@@ -242,11 +245,14 @@ function askNewPassword(title, onSubmit){
   const no   = document.getElementById('pwCancel');
   document.getElementById('pwModalTitle').textContent = title || 'เปลี่ยนรหัสผ่าน';
   a.value = ''; b.value = ''; hint.textContent = ''; ok.disabled = false;
+  const cancel0 = no.textContent;
+  if (force) no.textContent = 'ออกจากระบบ';
   ov.hidden = false;
   setTimeout(()=>a.focus(), 30);
 
-  function close(){ ov.hidden = true; ok.removeEventListener('click', submit); no.removeEventListener('click', close); ov.removeEventListener('keydown', onKey); }
-  function onKey(e){ if (e.key === 'Enter') submit(); else if (e.key === 'Escape') close(); }
+  function close(){ ov.hidden = true; no.textContent = cancel0; ok.removeEventListener('click', submit); no.removeEventListener('click', onCancel); ov.removeEventListener('keydown', onKey); }
+  function onCancel(){ close(); if (force) doLogout(); }
+  function onKey(e){ if (e.key === 'Enter') submit(); else if (e.key === 'Escape' && !force) close(); }
   async function submit(){
     const p = a.value, p2 = b.value;
     if (p.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
@@ -255,11 +261,22 @@ function askNewPassword(title, onSubmit){
     const err = onSubmit ? await onSubmit(p) : null;
     if (err){ ok.disabled = false; hint.textContent = err; return; }
     hint.textContent = 'สำเร็จ';
+    if (force){ close(); if (opts.onDone) opts.onDone(); return; }
     setTimeout(close, 700);
   }
   ok.addEventListener('click', submit);
-  no.addEventListener('click', close);
+  no.addEventListener('click', onCancel);
   ov.addEventListener('keydown', onKey);
+}
+
+// First login after admin create/reset: must set own password before using the app.
+function forcePasswordChange(){
+  return new Promise((resolve)=>{
+    askNewPassword('ตั้งรหัสผ่านใหม่', async (np)=>{
+      const { error } = await sb.auth.updateUser({ password: np, data: { must_change_password: false } });
+      return error ? ('ไม่สำเร็จ: ' + (error.message || error)) : null;
+    }, { force:true, onDone: ()=>resolve(true) });
+  });
 }
 
 function changeOwnPassword(){
@@ -360,6 +377,9 @@ async function afterLogin(user){
     document.getElementById('deniedText').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้ Skill Matrix';
     showScreen('denied');
     return;
+  }
+  if (user.user_metadata && user.user_metadata.must_change_password){
+    await forcePasswordChange();
   }
   showScreen('app');
   await loadDepartments();
@@ -719,6 +739,9 @@ document.addEventListener('click', e=>{
   if (e.target.closest('#cancelAddUserBtn')){ document.getElementById('addUserForm').hidden = true; return; }
   if (e.target.closest('#nuGenPassBtn')){ generatedPw = genTempPassword(); document.getElementById('nuPass').value = generatedPw; document.getElementById('addUserHint').textContent = 'สร้างรหัสชั่วคราวแล้ว — จดไว้ก่อนกด สร้างบัญชี'; return; }
   if (e.target.closest('#createUserBtn')){ createUserFromForm(); return; }
+  if (e.target.closest('#bulkUserBtn')){ openBulkModal(); return; }
+  if (e.target.closest('#buClose')){ document.getElementById('bulkModal').hidden = true; return; }
+  if (e.target.closest('#buSubmit')){ bulkCreateUsers(); return; }
 
   const empToggle = e.target.closest('[data-emp-toggle]');
   if (empToggle){ toggleEmpActive(empToggle.dataset.empToggle, empToggle.dataset.next === 'true'); return; }
@@ -2805,6 +2828,69 @@ async function createUserFromForm(){
     generatedPw = '';
     // keep the message (it may hold the one-time temp password) until the next form edit
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
+}
+
+// ---------- bulk create: one line per account, one shared initial password ----------
+function openBulkModal(){
+  if (!isUserAdminFull()) return;
+  const role = document.getElementById('buRole');
+  if (!role.options.length){
+    role.innerHTML = roleOptions('USER');
+    document.getElementById('buAppCbs').innerHTML = ['erp','mobile'].map(a=>
+      `<label class="dept-cb"><input type="checkbox" class="bu-app-cb" value="${a}"> ${APP_LABEL[a]}</label>`).join('');
+  }
+  document.getElementById('buScopeGrid').innerHTML = scopeGridHTML([], 'bu-scope-cb');
+  document.getElementById('buHint').textContent = '';
+  document.getElementById('buResults').textContent = '';
+  document.getElementById('buSubmit').disabled = false;
+  document.getElementById('bulkModal').hidden = false;
+}
+
+async function bulkCreateUsers(){
+  if (!isUserAdminFull()) return;
+  const hint = document.getElementById('buHint');
+  const out = document.getElementById('buResults');
+  const btn = document.getElementById('buSubmit');
+  const password = document.getElementById('buPass').value;
+  const role = document.getElementById('buRole').value;
+  const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
+  const scope = readScopeGrid(document.getElementById('buScopeGrid'), 'bu-scope-cb');
+  const apps = [...document.querySelectorAll('#buAppCbs .bu-app-cb:checked')].map(c=>c.value);
+  const lines = document.getElementById('buLines').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  if (!lines.length){ hint.textContent = 'ใส่รายชื่ออย่างน้อย 1 บรรทัด'; return; }
+  if (password.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
+  if (scoped && !scope.length){ hint.textContent = 'SUPERVISOR / ASSISTANT ต้องเลือกคลัง × แผนก อย่างน้อย 1 ช่อง'; return; }
+  btn.disabled = true; out.textContent = '';
+  let ok = 0, bad = 0;
+  const addLine = (good, text)=>{ out.textContent += (good ? '✓ ' : '✗ ') + text + '\n'; };
+  try{
+    const { data: { session } } = await sb.auth.getSession();
+    for (let i = 0; i < lines.length; i++){
+      hint.textContent = `กำลังสร้าง ${i+1}/${lines.length}...`;
+      const m = lines[i].match(/^(\S+)\s+(.+)$/);
+      const employee_code = m ? normalizeEmpCode(m[1]) : '';
+      const full_name = m ? m[2].trim() : '';
+      if (!m){ bad++; addLine(false, `${lines[i]} — ต้องมีรหัสและชื่อ`); continue; }
+      if (!employee_code){ bad++; addLine(false, `${m[1]} — รูปแบบรหัสพนักงานไม่ถูกต้อง`); continue; }
+      try{
+        const res = await fetch(ADMIN_USERS_FN, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + session.access_token,
+            'apikey': SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ action: 'create', employee_code, password, full_name, role, scope, apps }),
+        });
+        const r = await res.json().catch(()=>({}));
+        if (!res.ok || r.error) throw new Error(r.error || ('HTTP ' + res.status));
+        ok++; addLine(true, `${employee_code} ${full_name}`);
+      }catch(err){ bad++; addLine(false, `${employee_code} ${full_name} — ${err.message || err}`); }
+    }
+  }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + (err.message || err); btn.disabled = false; return; }
+  hint.textContent = `เสร็จ: สำเร็จ ${ok} · ไม่สำเร็จ ${bad}`;
+  btn.disabled = false;
+  await Promise.all([refreshUsers(), refreshScopes()]); renderUsersTable();
 }
 
 // ---------- view state: loading skeleton / load-error card ----------

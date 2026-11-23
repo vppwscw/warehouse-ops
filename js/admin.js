@@ -2631,7 +2631,8 @@ function renderUsersTable(){
       </article>`;
     }
 
-    const scopeCell = scoped ? scopeGridHTML(pairs, 'u-scope-cb')
+    const scopeCell = scoped
+      ? `<span class="td-sub" data-scope-admin ${u.role==='ADMIN'?'':'hidden'}>ทุกคลัง · ทุกแผนก</span><div data-scope-grid ${u.role==='ADMIN'?'hidden':''}>${scopeGridHTML(pairs, 'u-scope-cb')}</div>`
       : u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
       : deptCheckboxes(userDepts(u), 'u-dept-cb');
     const menu = `<span class="uc-menu-wrap"><button type="button" class="ic-btn uc-kebab" data-kebab aria-haspopup="true" aria-expanded="false" aria-label="เมนูเพิ่มเติม" title="เมนูเพิ่มเติม">${IC_DOTS}</button>
@@ -3046,3 +3047,12 @@ showScreen('login');
     }
   });
 })();
+
+// role change in user card: ADMIN hides scope grid, others show it
+document.addEventListener('change', e => {
+  const sel = e.target.closest && e.target.closest('[data-u-role]'); if (!sel) return;
+  const card = sel.closest('[data-user-row]'); if (!card) return;
+  const isAdmin = sel.value === 'ADMIN';
+  card.querySelectorAll('[data-scope-admin]').forEach(el => el.hidden = !isAdmin);
+  card.querySelectorAll('[data-scope-grid]').forEach(el => el.hidden = isAdmin);
+});

@@ -1762,6 +1762,7 @@ function renderTasksAdmin(){
   const cols = ro ? 5 : 6;
   const tb = document.querySelector('#tasksTable tbody');
   if (!tb) return;
+  const addBtn = document.getElementById('addTaskOpenBtn'); if (addBtn) addBtn.hidden = ro;
   renderSortHead(document.getElementById('tasksHead'), ro ? TASK_COLS.slice(0,-1) : TASK_COLS, taskSort, 'task-sort');
   const sorted = applySort(taskList.filter(t => whFilter==='ALL' || t.warehouse===whFilter), TASK_COLS, taskSort);
   if (!sorted.length){ tb.innerHTML = `<tr><td colspan="${cols}" class="empty-note">ยังไม่มีชนิดงาน${whFilter!=='ALL'?'ในคลังนี้':''} — หัวหน้างานเพิ่มได้จากแอปมือถือ</td></tr>`; return; }
@@ -1806,6 +1807,94 @@ function taskRowHtml(t, ro){
       </td>`}
     </tr>`;
 }
+// ---- add task template (mirrors mobile insert) ----
+const AT_NEW = '\u0000new';
+let atGroupPick = null;
+function atScopeRows(){
+  const wh = document.getElementById('atWh').value, dept = document.getElementById('atDept').value;
+  return taskList.filter(t=>t.warehouse===wh && t.department===dept);
+}
+function atRefresh(){
+  const groups = [...new Set(atScopeRows().map(taskGroupOf).concat(TASK_DEFAULT_GROUP))].sort((a,b)=>a.localeCompare(b,'th'));
+  if (atGroupPick && atGroupPick !== AT_NEW && !groups.includes(atGroupPick)) atGroupPick = null;
+  if (!atGroupPick) atGroupPick = TASK_DEFAULT_GROUP;
+  document.getElementById('atGroupChips').innerHTML =
+    groups.map(g=>`<button type="button" class="chip" data-at-group="${esc(g)}" aria-pressed="${atGroupPick===g}">${esc(g)}</button>`).join('') +
+    `<button type="button" class="chip" data-at-group-new aria-pressed="${atGroupPick===AT_NEW}">+ กลุ่มใหม่</button>`;
+  document.getElementById('atGroupNew').hidden = atGroupPick !== AT_NEW;
+}
+function atFillDepts(keepDept){
+  const wh = document.getElementById('atWh').value;
+  const keys = deptKeysFor(wh);
+  const sel = document.getElementById('atDept');
+  sel.innerHTML = keys.map(k=>`<option value="${esc(k)}">${esc(deptName(k, wh))}</option>`).join('');
+  if (keepDept && keys.includes(keepDept)) sel.value = keepDept;
+}
+function openAddTaskModal(){
+  const wh = whFilter !== 'ALL' ? whFilter : WH_KEYS[0];
+  document.getElementById('atWh').innerHTML = WH_KEYS.map(w=>`<option value="${w}">${esc(WH_PLAIN[w])}</option>`).join('');
+  document.getElementById('atWh').value = wh;
+  atFillDepts(deptFilter !== 'ALL' ? deptFilter : null);
+  document.getElementById('atName').value = '';
+  document.getElementById('atUnit').value = '';
+  document.getElementById('atGroupNew').value = '';
+  document.getElementById('atHint').textContent = '';
+  atGroupPick = TASK_DEFAULT_GROUP;
+  atRefresh();
+  document.getElementById('addTaskModal').hidden = false;
+  setTimeout(()=>document.getElementById('atName').focus(), 30);
+}
+function closeAddTaskModal(){ document.getElementById('addTaskModal').hidden = true; }
+async function saveAddTask(){
+  const hint = document.getElementById('atHint');
+  const wh = document.getElementById('atWh').value, dept = document.getElementById('atDept').value;
+  const name = document.getElementById('atName').value.trim();
+  if (!dept){ hint.textContent = 'เลือกแผนกก่อน'; return; }
+  if (!name){ hint.textContent = 'พิมพ์ชื่องานก่อน'; return; }
+  const norm = s => String(s||'').trim().replace(/\s+/g,' ').toLowerCase();
+  if (atScopeRows().some(t=>norm(t.name) === norm(name))){ hint.textContent = 'มีงานชื่อนี้แล้ว'; return; }
+  let grp = atGroupPick;
+  if (grp === AT_NEW){
+    grp = document.getElementById('atGroupNew').value.trim();
+    if (!grp){ hint.textContent = 'พิมพ์ชื่อกลุ่มใหม่ก่อน'; return; }
+  }
+  const taskGroup = (!grp || grp === TASK_DEFAULT_GROUP) ? null : grp;
+  const unitLabel = document.getElementById('atUnit').value.trim() || null;
+  const btn = document.getElementById('atSave');
+  btn.disabled = true; hint.textContent = 'กำลังเพิ่ม...';
+  try{
+    const id = wh.toLowerCase() + '_' + dept.toLowerCase() + '_' + Date.now();
+    const { error } = await sb.from('tasks').insert({ id, warehouse: wh, department: dept, name, active: true, unit_label: unitLabel, task_group: taskGroup });
+    if (error) throw error;
+    closeAddTaskModal();
+    await refreshTasksAdmin(); await loadTasksFromDb(); render();
+    toast(`เพิ่ม "${name}" แล้ว`, 'ok');
+  }catch(err){
+    const denied = err && (err.code === '42501' || /row-level security|permission/i.test(err.message||''));
+    hint.textContent = denied ? 'คุณไม่มีสิทธิ์เพิ่มงานในแผนกนี้' : 'เพิ่มไม่สำเร็จ: ' + mapDbError(err);
+  }finally{ btn.disabled = false; }
+}
+document.addEventListener('click', e=>{
+  if (e.target.closest('#addTaskOpenBtn')){ openAddTaskModal(); return; }
+  if (e.target.closest('#atCancel') || e.target.id === 'addTaskModal'){ closeAddTaskModal(); return; }
+  if (e.target.closest('#atSave')){ saveAddTask(); return; }
+  const c = e.target.closest('[data-at-group], [data-at-group-new]');
+  if (c){
+    atGroupPick = c.hasAttribute('data-at-group-new') ? AT_NEW : c.dataset.atGroup;
+    atRefresh();
+    if (atGroupPick === AT_NEW) document.getElementById('atGroupNew').focus();
+  }
+});
+document.addEventListener('change', e=>{
+  if (e.target.id === 'atWh'){ atFillDepts(); atRefresh(); }
+  else if (e.target.id === 'atDept') atRefresh();
+});
+document.addEventListener('keydown', e=>{
+  const m = document.getElementById('addTaskModal');
+  if (!m || m.hidden) return;
+  if (e.key === 'Escape') closeAddTaskModal();
+  else if (e.key === 'Enter' && e.target.tagName === 'INPUT') saveAddTask();
+});
 // in-page text prompt (window.prompt is blocked in some webviews)
 function askGroupName(title, initial, existing){
   return new Promise(resolve=>{

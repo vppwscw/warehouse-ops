@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=78">
+<link rel="stylesheet" href="css/admin.css?v=79">
 </head>
 <body>
 
@@ -259,6 +259,7 @@
         </div>
       </div>
       <p class="sub" id="tasksViewNote" style="margin:0 0 14px;">หัวหน้างานเพิ่มชนิดงานได้จากแอปมือถือ · ที่นี่ปิดใช้งานหรือลบถาวรได้ (ADMIN)</p>
+      <div style="margin:0 0 12px;"><button type="button" class="btn-sm primary" id="addTaskOpenBtn" hidden>+ เพิ่มแม่แบบงาน</button></div>
       <div class="table-wrap">
         <table id="tasksTable">
           <thead id="tasksHead"><tr></tr></thead>
@@ -378,6 +379,24 @@
     </div>
   </div>
 </div>
+<div class="modal-overlay" id="addTaskModal" hidden>
+  <div class="modal">
+    <h3>เพิ่มแม่แบบงาน</h3>
+    <div class="field"><label for="atWh">คลัง</label><select id="atWh" class="task-group-sel"></select></div>
+    <div class="field"><label for="atDept">แผนก</label><select id="atDept" class="task-group-sel"></select></div>
+    <div class="field"><label>กลุ่ม</label>
+      <div id="atGroupChips" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+      <input type="text" id="atGroupNew" class="group-input" maxlength="60" placeholder="ชื่อกลุ่มใหม่" autocomplete="off" hidden style="margin-top:6px;">
+    </div>
+    <div class="field"><label for="atName">ชื่องาน</label><input type="text" id="atName" class="group-input" maxlength="120" autocomplete="off"></div>
+    <div class="field"><label for="atUnit">หน่วยที่นับ (ไม่บังคับ)</label><input type="text" id="atUnit" class="group-input" maxlength="30" placeholder="เว้นว่าง = จำนวน" autocomplete="off"></div>
+    <p class="form-hint" id="atHint"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn-sm" id="atCancel">ยกเลิก</button>
+      <button type="button" class="btn-sm primary" id="atSave">เพิ่ม</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="confirmModal" hidden>
   <div class="modal">
     <div class="modal-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 16h.01"/><path d="M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg></div>
@@ -436,6 +455,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=4"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=77"></script>
+<script src="js/admin.js?v=78"></script>
 </body>
 </html>

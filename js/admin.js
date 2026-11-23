@@ -187,8 +187,6 @@ const isReadOnly = () => !profile || profile.role !== 'ADMIN';
 // Who can open the "ผู้ใช้งานระบบ" view at all, and who gets the full toolset.
 const canManageUsers = () => !!profile && (profile.role === 'ADMIN' || profile.role === 'ASSISTANT');
 const isUserAdminFull = () => !!profile && profile.role === 'ADMIN';
-// Flip to true once Supabase custom SMTP + Redirect URLs are configured (plan §7).
-const EMAIL_RESET_ENABLED = false;
 
 // ---------- date helpers (Asia/Bangkok) ----------
 function nowBkk(){ return new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Bangkok'})); }
@@ -198,8 +196,8 @@ function daysAgoISO(n){ return new Date(nowBkk().getTime() - n*86400000).toLocal
 // ---------- auth ----------
 function mapAuthError(err){
   const msg = (err && err.message) || '';
-  if (/invalid login credentials/i.test(msg)) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-  if (/email not confirmed/i.test(msg)) return 'บัญชียังไม่ได้ยืนยันอีเมล';
+  if (/invalid login credentials/i.test(msg)) return 'รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง';
+  if (/email not confirmed/i.test(msg)) return 'บัญชียังไม่ได้เปิดใช้งาน — ติดต่อแอดมิน';
   return 'เข้าสู่ระบบไม่สำเร็จ: ' + (msg || 'unknown error');
 }
 function mapDbError(err){
@@ -217,9 +215,11 @@ function showScreen(id){
 
 document.getElementById('loginSubmitBtn').addEventListener('click', async ()=>{
   const hint = document.getElementById('loginHint');
-  const email = document.getElementById('loginEmail').value.trim();
+  const rawCode = document.getElementById('loginCode').value;
   const pass = document.getElementById('loginPass').value;
-  if (!email || !pass){ hint.textContent = 'กรอกอีเมลและรหัสผ่านให้ครบ'; return; }
+  if (!rawCode.trim() || !pass){ hint.textContent = 'กรอกรหัสพนักงานและรหัสผ่านให้ครบ'; return; }
+  const email = empCodeToEmail(rawCode);
+  if (!email){ hint.textContent = 'รูปแบบรหัสพนักงานไม่ถูกต้อง (ตัวอักษร/ตัวเลข/ขีด 3-20 ตัว)'; return; }
   hint.textContent = 'กำลังเข้าสู่ระบบ...';
   const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
   if (error){ hint.textContent = mapAuthError(error); return; }
@@ -273,29 +273,11 @@ function changeOwnPassword(){
 function openProfileModal(){
   if (!profile) return;
   document.getElementById('pmName').textContent  = profile.full_name || '–';
-  document.getElementById('pmEmail').textContent = profile.email || '–';
+  document.getElementById('pmCode').textContent  = profile.employee_code || '–';
   document.getElementById('pmRole').textContent  = ROLE_LABEL[profile.role] || profile.role || '–';
-  const rb = document.getElementById('pmResetEmailBtn');
-  if (rb){
-    const ok = EMAIL_RESET_ENABLED && !!profile.email;
-    rb.disabled = !ok;
-    rb.title = EMAIL_RESET_ENABLED ? '' : 'ยังไม่เปิดใช้ระบบอีเมล — ติดต่อผู้ดูแลระบบ';
-  }
   document.getElementById('pmHint').textContent = '';
   document.getElementById('profileModal').hidden = false;
 }
-async function sendOwnResetEmail(){
-  const btn = document.getElementById('pmResetEmailBtn');
-  const hint = document.getElementById('pmHint');
-  if (!profile || !profile.email || btn.disabled) return;
-  btn.disabled = true; hint.textContent = 'กำลังส่ง...';
-  const { error } = await sb.auth.resetPasswordForEmail(profile.email, { redirectTo: location.origin + location.pathname });
-  btn.disabled = false;
-  hint.textContent = error
-    ? ('ส่งไม่สำเร็จ: ' + (error.message || error))
-    : ('ส่งลิงก์ไปที่ ' + profile.email + ' แล้ว — เช็คกล่องเมล (รวมโฟลเดอร์ junk)');
-}
-
 document.getElementById('changePwBtn').addEventListener('click', ()=>{
   if (!currentUser) return;
   openProfileModal();
@@ -325,6 +307,7 @@ function confirmModal(text, opts){
     const yes = document.getElementById('confirmYes');
     const no  = document.getElementById('confirmNo');
     document.getElementById('confirmText').textContent = text;
+    document.getElementById('confirmTitle').textContent = opts.title || 'ยืนยัน';
     yes.textContent = opts.yes || 'ตกลง';
     yes.className = 'btn-sm ' + (opts.danger ? 'danger' : 'primary');
     ov.hidden = false;
@@ -343,7 +326,7 @@ async function doLogout(){
   await sb.auth.signOut();
   profile = null; currentUser = null; jobs = []; roster = [];
   if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
-  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginCode').value = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('loginHint').textContent = '';
   showScreen('login');
@@ -623,7 +606,6 @@ document.addEventListener('click', e=>{
     changeOwnPassword();
     return;
   }
-  if (e.target.closest('#pmResetEmailBtn')){ sendOwnResetEmail(); return; }
 
   const empRow = e.target.closest('#employeesTable tbody tr[data-emp]');
   if (empRow){ openEmpPanel(empRow.dataset.emp); return; }
@@ -720,6 +702,11 @@ document.addEventListener('click', e=>{
   const deptDelBtn = e.target.closest('[data-dept-del]');
   if (deptDelBtn){ deleteDept(deptDelBtn.dataset.deptDel); return; }
 
+  const kebab = e.target.closest('[data-kebab]');
+  document.querySelectorAll('.uc-menu:not([hidden])').forEach(m=>{
+    if (!kebab || m !== kebab.nextElementSibling){ m.hidden = true; const b = m.previousElementSibling; if (b) b.setAttribute('aria-expanded','false'); }
+  });
+  if (kebab){ const m = kebab.nextElementSibling; m.hidden = !m.hidden; kebab.setAttribute('aria-expanded', String(!m.hidden)); return; }
   const saveUserBtn = e.target.closest('[data-save-user]');
   if (saveUserBtn){ saveUserRow(saveUserBtn.dataset.saveUser); return; }
   const toggleUserBtn = e.target.closest('[data-toggle-user]');
@@ -730,6 +717,7 @@ document.addEventListener('click', e=>{
   if (delUserBtn){ deleteUserAccount(delUserBtn.dataset.delUser); return; }
   if (e.target.closest('#toggleAddUserBtn')){ const f = document.getElementById('addUserForm'); f.hidden = !f.hidden; return; }
   if (e.target.closest('#cancelAddUserBtn')){ document.getElementById('addUserForm').hidden = true; return; }
+  if (e.target.closest('#nuGenPassBtn')){ generatedPw = genTempPassword(); document.getElementById('nuPass').value = generatedPw; document.getElementById('addUserHint').textContent = 'สร้างรหัสชั่วคราวแล้ว — จดไว้ก่อนกด สร้างบัญชี'; return; }
   if (e.target.closest('#createUserBtn')){ createUserFromForm(); return; }
 
   const empToggle = e.target.closest('[data-emp-toggle]');
@@ -1151,11 +1139,31 @@ function renderKpis(closed){
     { k:'avg',     lab:'เฉลี่ย นาที/งาน',  val:avg, foot:deltaChip(avg, prev ? avgMins(prev) : null, true) },
     { k:'people',  lab:'คนทำงาน',          val:people, foot:deltaChip(people, prev ? peopleCount(prev) : null) },
   ];
+  // decorative per-day sparkline (same filters as the trend chart) — presentation only
+  const sDays = trendDays(), sIdx = Object.fromEntries(sDays.map((d,i)=>[d,i]));
+  const sJobs = jobs.filter(j=> j.details && (j.details.date in sIdx) && matchScope(j) && matchSearch(j));
+  const sTot = sDays.map(()=>0), sPen = sDays.map(()=>0), sMin = sDays.map(()=>[]), sPpl = sDays.map(()=>new Set());
+  sJobs.forEach(j=>{
+    const i = sIdx[j.details.date]; sTot[i]++;
+    if ((j.status||'approved')==='pending') sPen[i]++;
+    if (j.details.mins!=null) sMin[i].push(num(j.details.mins));
+    (j.crew||[]).forEach(n=>sPpl[i].add(n));
+  });
+  const sAvg = sMin.map(a=> a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0);
+  const sparkSeries = { total:sTot, pending:sPen, avg:sAvg, people:sPpl.map(x=>x.size) };
+  const spark = vals => {
+    if (!vals || vals.length < 2) return '';
+    const mx = Math.max(...vals), mn = Math.min(...vals), rg = (mx-mn) || 1;
+    const pts = vals.map((v,i)=> (i/(vals.length-1)*96).toFixed(1)+','+(34-((v-mn)/rg)*30).toFixed(1)).join(' ');
+    return `<svg class="kpi-spark" viewBox="0 0 96 38" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+  };
   document.getElementById('kpiRow').innerHTML = cards.map(c=>`
-    <div class="kpi ${c.tone ? 'kpi-'+c.tone : ''}">
-      <div class="kpi-lab">${esc(c.lab)}</div>
-      <div class="kpi-val num" data-kpi="${c.k}">${c.val}</div>
-      <div class="kpi-foot">${c.foot || ''}</div>
+    <div class="kpi kpi-${esc(c.k)} ${c.tone ? 'kpi-'+c.tone : ''}">
+      <div class="kpi-top"><div class="kpi-lab">${esc(c.lab)}</div><span class="kpi-ic" aria-hidden="true">${ICONS[{total:'list',pending:'queue',avg:'dash',people:'users'}[c.k]] || ''}</span></div>
+      <div class="kpi-mid">
+        <div class="kpi-vf"><div class="kpi-val num" data-kpi="${c.k}">${c.val}</div><div class="kpi-foot">${c.foot || ''}</div></div>
+        ${spark(sparkSeries[c.k])}
+      </div>
     </div>`).join('');
   if (window.Anim) cards.forEach(c=>{
     Anim.count(document.querySelector(`[data-kpi="${c.k}"]`), c.val, prevKpi[c.k] || 0);
@@ -1251,9 +1259,10 @@ function renderTrend(){
     lower = upper;
     const gid = 'tg'+si;
     defs.push(`<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">`
-      + `<stop offset="0" stop-color="${esc(s.color)}" stop-opacity=".92"/>`
-      + `<stop offset="1" stop-color="${esc(s.color)}" stop-opacity=".55"/></linearGradient>`);
-    return `<path d="${smooth(top,true)} ${smooth(bot,false)} Z" fill="url(#${gid})" stroke="var(--surface)" stroke-width="1"/>`;
+      + `<stop offset="0" stop-color="${esc(s.color)}" stop-opacity=".42"/>`
+      + `<stop offset="1" stop-color="${esc(s.color)}" stop-opacity=".1"/></linearGradient>`);
+    return `<path d="${smooth(top,true)} ${smooth(bot,false)} Z" fill="url(#${gid})"/>`
+      + `<path d="${smooth(top,true)}" fill="none" stroke="${esc(s.color)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
   }).join('');
   // emphasised endpoint — where the stack stands today
   const lastTotal = totals[totals.length-1] || 0;
@@ -1345,11 +1354,19 @@ function renderTopTasks(closed){
   const rows = [...agg.entries()]
     .map(([label,v])=>({ label, n:v.n, color:v.color }))
     .sort((a,b)=>b.n-a.n).slice(0,6);
-  hbars(document.getElementById('topTasks'), rows);
+  // ranked list (mockup "งานยอดนิยม"): index pill · task · count
+  document.getElementById('topTasks').innerHTML = rows.length
+    ? rows.map((r,i)=>`<div class="rank-row"><span class="rank-n">${String(i+1).padStart(2,'0')}</span><span class="rank-lab" title="${esc(r.label)}">${esc(r.label)}</span><b class="rank-c num">${r.n} ครั้ง</b></div>`).join('')
+    : '<p class="c-empty">ยังไม่มีข้อมูล</p>';
 }
 
 // One row renderer, shared by the dashboard table and the "งานทั้งหมด" view —
 // they were two divergent tables (6 cols vs 9) before.
+const _ICS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const IC_OK    = `<svg ${_ICS}><path d="M5 12l5 5L20 7"/></svg>`;
+const IC_NO    = `<svg ${_ICS}><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+const IC_TRASH = `<svg ${_ICS}><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M9 7V4h6v3"/></svg>`;
+const IC_DOTS  = `<svg ${_ICS}><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`;
 function jobRowHTML(j){
   const task = taskById(j.task_id); const d = j.details||{};
   const status = j.status || 'approved';
@@ -1365,10 +1382,10 @@ function jobRowHTML(j){
     <td class="mono">${esc(formatResult(d,task))}</td>
     <td><span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span></td>
     <td>${[
-      canAct ? `<button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>` : '',
-      canAct ? `<button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>` : '',
-      isReadOnly() ? '' : `<button type="button" class="mini-btn reject" data-del-job="${esc(j.id)}">ลบ</button>`,
-    ].filter(Boolean).join(' ') || '–'}</td>
+      canAct ? `<button type="button" class="ic-btn approve" data-approve-job="${esc(j.id)}" aria-label="อนุมัติ" title="อนุมัติ">${IC_OK}</button>` : '',
+      canAct ? `<button type="button" class="ic-btn reject" data-reject-job="${esc(j.id)}" aria-label="ไม่อนุมัติ" title="ไม่อนุมัติ">${IC_NO}</button>` : '',
+      isReadOnly() ? '' : `<button type="button" class="ic-btn trash" data-del-job="${esc(j.id)}" aria-label="ลบงาน" title="ลบงาน">${IC_TRASH}</button>`,
+    ].filter(Boolean).join('') || '–'}</td>
   </tr>`;
 }
 function emptyRow(cols, msg){
@@ -1527,7 +1544,7 @@ async function deleteJob(jobId){
   const when = (j && j.details && j.details.date) ? ` (${j.details.date})` : '';
   const go = await confirmModal(
     `ลบงาน "${name}"${when} ถาวร?\nลบ ${ids.length} แถว · กู้คืนไม่ได้`,
-    { danger:true, yes:'ลบถาวร' });
+    { danger:true, yes:'ลบถาวร', title:'ลบงานนี้?' });
   if (!go) return;
   const { error } = await sb.from('jobs').delete().in('id', ids);
   if (error){ toast('ลบไม่สำเร็จ: ' + mapDbError(error)); return; }
@@ -1595,7 +1612,7 @@ function renderQueue(){
   const html = scored.map(({j})=>{
     const task = taskById(j.task_id); const d = j.details || {};
     const r = urgencyReason(j, list);
-    return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}" style="border-left-color:${esc(deptColor(j.department, j.warehouse))}">
+    return `<div class="q-card" data-dept="${esc(j.department)}" data-flip-id="${esc(j.id)}">
       <div class="q-main">
         <div class="q-top">
           <span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span>
@@ -1648,9 +1665,10 @@ function renderEmpRoster(){
   const ro = isReadOnly();
   const bar = document.getElementById('empAdminBar');
   const wrap = document.getElementById('empRosterWrap');
-  if (bar) bar.hidden = ro;
+  if (bar) bar.hidden = true;
   if (wrap) wrap.hidden = ro;
-  if (ro){ const f = document.getElementById('addEmpForm'); if (f) f.hidden = true; return; }
+  const addF = document.getElementById('addEmpForm'); if (addF) addF.hidden = ro;
+  if (ro) return;
   const neWh = document.getElementById('neWh');
   const neDept = document.getElementById('neDept');
   if (neWh && !neWh.options.length){
@@ -1713,6 +1731,7 @@ function refocusSort(headSel, attr, key){
 
 const TASK_COLS = [
   { key:'name',   label:'ชื่องาน',       sort:t => t.name || '' },
+  { key:'group',  label:'กลุ่ม',         sort:t => (t.task_group && String(t.task_group).trim()) || 'ทั่วไป' },
   { key:'wh',     label:'คลัง',          sort:t => t.warehouse || '' },
   { key:'dept',   label:'ฝั่ง',          sort:t => deptName(t.department, t.warehouse) },
   { key:'linked', label:'งานที่ผูกอยู่',  sort:null },   // computed count, not on raw row — skip sort
@@ -1740,17 +1759,44 @@ async function refreshTasksAdmin(){
 }
 function renderTasksAdmin(){
   const ro = isReadOnly();
-  const cols = ro ? 4 : 5;
+  const cols = ro ? 5 : 6;
   const tb = document.querySelector('#tasksTable tbody');
   if (!tb) return;
   renderSortHead(document.getElementById('tasksHead'), ro ? TASK_COLS.slice(0,-1) : TASK_COLS, taskSort, 'task-sort');
-  const list = applySort(taskList.filter(t => whFilter==='ALL' || t.warehouse===whFilter), TASK_COLS, taskSort);
-  if (!list.length){ tb.innerHTML = `<tr><td colspan="${cols}" class="empty-note">ยังไม่มีชนิดงาน${whFilter!=='ALL'?'ในคลังนี้':''} — หัวหน้างานเพิ่มได้จากแอปมือถือ</td></tr>`; return; }
-  tb.innerHTML = list.map(t=>{
+  const sorted = applySort(taskList.filter(t => whFilter==='ALL' || t.warehouse===whFilter), TASK_COLS, taskSort);
+  if (!sorted.length){ tb.innerHTML = `<tr><td colspan="${cols}" class="empty-note">ยังไม่มีชนิดงาน${whFilter!=='ALL'?'ในคลังนี้':''} — หัวหน้างานเพิ่มได้จากแอปมือถือ</td></tr>`; return; }
+  // bucket by warehouse | department | group (rows keep the chosen sort inside a bucket)
+  const buckets = new Map();
+  sorted.forEach(t=>{
+    const k = [t.warehouse||'', t.department||'', taskGroupOf(t)].join('\u0001');
+    if (!buckets.has(k)) buckets.set(k, { wh:t.warehouse||'', dept:t.department||'', grp:taskGroupOf(t), items:[] });
+    buckets.get(k).items.push(t);
+  });
+  const th = (a,b)=>String(a).localeCompare(String(b),'th');
+  const bl = [...buckets.values()].sort((a,b)=> th(a.wh,b.wh) || th(a.dept,b.dept) || th(a.grp,b.grp));
+  tb.innerHTML = bl.map(b=>{
+    const head = `<tr class="tg-row-head"><td colspan="${cols}"><span class="tg-title">${esc(b.grp)}</span>
+      <span class="tg-meta">${esc(WH_PLAIN[b.wh]||b.wh||'–')} · ${esc(deptName(b.dept, b.wh))} · ${b.items.length} งาน</span>
+      ${ro ? '' : `<button type="button" class="mini-btn" data-grp-rename data-wh="${esc(b.wh)}" data-dept="${esc(b.dept)}" data-grp="${esc(b.grp)}">เปลี่ยนชื่อกลุ่ม</button>`}</td></tr>`;
+    return head + b.items.map(t=>taskRowHtml(t, ro)).join('');
+  }).join('');
+}
+const TASK_DEFAULT_GROUP = 'ทั่วไป';
+const taskGroupOf = t => (t.task_group && String(t.task_group).trim()) || TASK_DEFAULT_GROUP;
+function taskGroupOptions(t){
+  const cur = taskGroupOf(t);
+  const set = new Set(taskList.filter(x=>x.warehouse===t.warehouse && x.department===t.department).map(taskGroupOf));
+  set.add(cur);
+  return [...set].sort((a,b)=>a.localeCompare(b,'th'))
+    .map(g=>`<option value="${esc(g)}"${g===cur?' selected':''}>${esc(g)}</option>`).join('') +
+    `<option value="\u0000new">+ กลุ่มใหม่…</option>`;
+}
+function taskRowHtml(t, ro){
     const on = t.active !== false;
     const linked = jobs.reduce((n,j)=> n + (j.task_id===t.id ? ((j.rowIds&&j.rowIds.length)||1) : 0), 0);
     return `<tr class="${on?'':'row-inactive'}">
       <td>${esc(t.name)}${t.unit_label ? ` <span style="color:var(--ink-dim);font-size:12px;">· ${esc(t.unit_label)}</span>` : ''}</td>
+      <td>${ro ? esc(taskGroupOf(t)) : `<select class="task-group-sel" data-task-group-sel="${esc(t.id)}" aria-label="กลุ่มงาน ${esc(t.name)}">${taskGroupOptions(t)}</select>`}</td>
       <td><span class="wh-tag">${esc(WH_PLAIN[t.warehouse]||t.warehouse||'–')}</span></td>
       <td>${deptBadge(t.department, t.warehouse)}</td>
       <td class="mono">${linked || ''}</td>
@@ -1759,8 +1805,66 @@ function renderTasksAdmin(){
         <button type="button" class="mini-btn reject" data-task-del="${esc(t.id)}">ลบถาวร</button>
       </td>`}
     </tr>`;
-  }).join('');
 }
+// in-page text prompt (window.prompt is blocked in some webviews)
+function askGroupName(title, initial, existing){
+  return new Promise(resolve=>{
+    const ov = document.getElementById('groupModal');
+    const inp = document.getElementById('groupInput');
+    const hint = document.getElementById('groupHint');
+    const ok = document.getElementById('groupOk'), no = document.getElementById('groupNo');
+    document.getElementById('groupTitle').textContent = title;
+    document.getElementById('groupList').innerHTML = (existing||[]).map(g=>`<option value="${esc(g)}"></option>`).join('');
+    inp.value = initial || ''; hint.textContent = '';
+    ov.hidden = false; setTimeout(()=>{ inp.focus(); inp.select(); }, 30);
+    function done(v){ ov.hidden = true; ok.removeEventListener('click', onOk); no.removeEventListener('click', onNo); ov.removeEventListener('keydown', onKey); resolve(v); }
+    function onOk(){ const v = inp.value.trim(); if (!v){ hint.textContent = 'พิมพ์ชื่อกลุ่มก่อน'; return; } done(v); }
+    function onNo(){ done(null); }
+    function onKey(e){ if (e.key==='Escape') done(null); else if (e.key==='Enter') onOk(); }
+    ok.addEventListener('click', onOk); no.addEventListener('click', onNo); ov.addEventListener('keydown', onKey);
+  });
+}
+async function setTaskGroup(id, grp){
+  try{
+    const { error } = await sb.from('tasks').update({ task_group: grp === TASK_DEFAULT_GROUP ? null : grp }).eq('id', id);
+    if (error) throw error;
+    await refreshTasksAdmin(); await loadTasksFromDb(); render();
+  }catch(err){ toast('ย้ายกลุ่มไม่สำเร็จ: ' + mapDbError(err)); render(); }
+}
+async function renameTaskGroup(wh, dept, oldName, newName){
+  try{
+    let q = sb.from('tasks').update({ task_group: newName === TASK_DEFAULT_GROUP ? null : newName }).eq('warehouse', wh).eq('department', dept);
+    q = oldName === TASK_DEFAULT_GROUP ? q.is('task_group', null) : q.eq('task_group', oldName);
+    const { error } = await q;
+    if (error) throw error;
+    await refreshTasksAdmin(); await loadTasksFromDb(); render();
+    toast('เปลี่ยนชื่อกลุ่มแล้ว', 'ok');
+  }catch(err){ toast('เปลี่ยนชื่อกลุ่มไม่สำเร็จ: ' + mapDbError(err)); }
+}
+document.addEventListener('change', async e=>{
+  const sel = e.target.closest('[data-task-group-sel]');
+  if (!sel) return;
+  const t = taskList.find(x=>String(x.id)===String(sel.dataset.taskGroupSel));
+  if (!t) return;
+  let v = sel.value;
+  if (v === '\u0000new'){
+    const existing = [...new Set(taskList.filter(x=>x.warehouse===t.warehouse && x.department===t.department).map(taskGroupOf))];
+    v = await askGroupName('ย้ายไปกลุ่มใหม่ — ' + t.name, '', existing);
+    if (!v){ render(); return; }
+  }
+  if (v === taskGroupOf(t)) return;
+  setTaskGroup(t.id, v);
+});
+document.addEventListener('click', async e=>{
+  const b = e.target.closest('[data-grp-rename]');
+  if (!b) return;
+  const { wh, dept, grp } = b.dataset;
+  const existing = [...new Set(taskList.filter(x=>x.warehouse===wh && x.department===dept).map(taskGroupOf))];
+  const nv = await askGroupName(`เปลี่ยนชื่อกลุ่ม "${grp}"`, grp, existing);
+  if (!nv || nv === grp) return;
+  if (existing.includes(nv) && !(await confirmModal(`มีกลุ่ม "${nv}" อยู่แล้ว — รวมงานเข้ากลุ่มนั้น?`, { yes:'รวมกลุ่ม' }))) return;
+  renameTaskGroup(wh, dept, grp, nv);
+});
 async function toggleTaskActive(id, next){
   try{
     const { error } = await sb.from('tasks').update({ active: next }).eq('id', id);
@@ -1911,7 +2015,7 @@ async function createEmpFromForm(){
     hint.textContent = `เพิ่ม "${name}" แล้ว`;
     document.getElementById('neName').value = '';
     await Promise.all([refreshEmployeesAll(), refreshRoster()]); render();
-    setTimeout(()=>{ document.getElementById('addEmpForm').hidden = true; hint.textContent = ''; }, 1200);
+    setTimeout(()=>{ hint.textContent = ''; }, 1200);
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + mapDbError(err); }
 }
 
@@ -2007,7 +2111,33 @@ function renderSkillMatrix(){
 
   const meta = `<div class="skm-meta">${people.length} คน × ${tasksInScope.length} ชนิดงาน · เรียงตามแต้มรวมมากไปน้อย</div>`;
 
-  wrap.innerHTML = `${meta}<div class="skm-card-grid">` + cards.map(({p, rows, total, gapCount})=>{
+  // ---- heatmap: person × task, shade by count, coverage %, single-person risk row ----
+  const cnt = {};   // cnt[name][task_id] = times done (one pass over jobs)
+  jobs.forEach(j => (j.crew||[]).forEach(n => { (cnt[n] = cnt[n] || {})[j.task_id] = ((cnt[n]||{})[j.task_id]||0) + 1; }));
+  const heatLv = n => n<=0 ? 0 : n<=2 ? 1 : n<=5 ? 2 : n<=10 ? 3 : 4;
+  const everyone = peopleInScope();   // risk is judged on everyone in scope, not the search result
+  const ablePeople = t => everyone.filter(p => ((cnt[p.name]||{})[t.id]||0) > 0).length;
+  const ableN = tasksInScope.map(ablePeople);
+  const hmRows = cards.map(({p}) => {
+    const cells = tasksInScope.map(t => {
+      const n = (cnt[p.name]||{})[t.id] || 0;
+      return `<td class="skm-hm-c skm-heat-${heatLv(n)}" title="${esc(p.name)} · ${esc(t.name)}: ${n}">${n>0?n:''}</td>`;
+    }).join('');
+    const done = tasksInScope.filter(t => ((cnt[p.name]||{})[t.id]||0) > 0).length;
+    const pct = Math.round(done / tasksInScope.length * 100);
+    return `<tr><th scope="row" class="skm-hm-name"><span class="skm-hm-who"><span class="emp-avatar" aria-hidden="true">${esc(p.name.trim().slice(0,1))}</span><span class="skm-hm-nm">${esc(p.name)}</span>${deptBadge(p.department, p.warehouse)}</span></th>${cells}<td class="skm-hm-cov num"><span class="skm-cov"><span class="skm-cov-bar"><i style="width:${pct}%"></i></span><b>${pct}%</b></span></td></tr>`;
+  }).join('');
+  const hmHead = tasksInScope.map((t,i) => `<th scope="col" class="skm-hm-v${ableN[i]===1?' skm-risk-col':''}"><div>${esc(t.name)}</div></th>`).join('');
+  const hmRisk = tasksInScope.map((t,i) => ableN[i]===1 ? `<td class="skm-risk" title="ทำได้เพียง 1 คน">เสี่ยง</td>` : `<td class="skm-hm-able num">${ableN[i]}</td>`).join('');
+  const riskN = ableN.filter(n=>n===1).length;
+  const legendHTML = `<div class="skm-legend"><span class="skm-lg"><i class="skm-heat-0"></i>ยังไม่เคย</span><span class="skm-lg"><i class="skm-heat-1"></i>1–2</span><span class="skm-lg"><i class="skm-heat-2"></i>3–5</span><span class="skm-lg"><i class="skm-heat-3"></i>6–10</span><span class="skm-lg"><i class="skm-heat-4"></i>10+</span><span class="skm-legend-risk">${riskN ? riskN+' งานเสี่ยง: ' : 'เสี่ยง = '}ทำได้เพียง 1 คน</span></div>`;
+  const heatmap = `<div class="skm-hm-wrap">${legendHTML}<div class="skm-hm-scroll"><table class="skm-hm">
+    <thead><tr><th class="skm-hm-corner">พนักงาน</th>${hmHead}<th class="skm-hm-covh">ครอบคลุม</th></tr></thead>
+    <tbody>${hmRows}</tbody>
+    <tfoot><tr><th scope="row" class="skm-hm-name">ทำได้ (คน)</th>${hmRisk}<td></td></tr></tfoot>
+  </table></div></div>`;
+
+  wrap.innerHTML = `${meta}${heatmap}<div class="skm-card-grid">` + cards.map(({p, rows, total, gapCount})=>{
     const initials = esc(p.name.trim().slice(0,1));
     return `<div class="skm-card">
       <div class="skm-card-head">
@@ -2268,8 +2398,8 @@ function renderUsersTable(){
   if (!canManageUsers()){ wrap.innerHTML = ''; return; }
   const full = isUserAdminFull();          // ADMIN = full toolset; ASSISTANT = scope + active only
   const bar = document.getElementById('userAdminBar');
-  if (bar) bar.hidden = !full;
-  if (!full){ const f = document.getElementById('addUserForm'); if (f) f.hidden = true; }
+  if (bar) bar.hidden = true;
+  { const f = document.getElementById('addUserForm'); if (f) f.hidden = !full; }
   const note = document.getElementById('usersViewNote');
   if (note) note.textContent = full
     ? 'เพิ่มบัญชี / แก้สิทธิ์-แผนก-รหัสพนักงาน / ปิดใช้งาน หรือ ลบถาวรได้จากที่นี่ · บัญชีที่มีประวัติงานลบถาวรไม่ได้ ให้ปิดใช้งานแทน'
@@ -2291,30 +2421,32 @@ function renderUsersTable(){
   if (!full) list = list.filter(u=>u.role !== 'ADMIN');   // ASSISTANT never sees ADMIN (RLS also enforces)
   if (q) list = list.filter(u=>
     (u.full_name||'').toLowerCase().includes(q)
-    || (u.email||'').toLowerCase().includes(q)
     || (u.employee_code||'').toLowerCase().includes(q)
     || (ROLE_LABEL[u.role]||'').toLowerCase().includes(q));
   if (list.length===0){ wrap.innerHTML = `<p class="empty-note">ไม่พบผู้ใช้ที่ตรงกับ "${esc(q)}"</p>`; return; }
 
+  const cnt = document.getElementById('usersCount'); if (cnt) cnt.textContent = `ผู้ใช้ทั้งหมด · ${list.length} บัญชี`;
   wrap.innerHTML = list.map(u=>{
     const active = u.active !== false;
     const isSelf = currentUser && u.id === currentUser.id;
     const pairs = userScopePairs(u.id);
     const scoped = u.role === 'SUPERVISOR' || u.role === 'ASSISTANT';
-    const email = u.email || '';
     const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
     const effApps = allowedApps(u);
-    const head = `
+    const nm = u.full_name || '–';
+    const roleCls = ({ADMIN:'r-admin',ASSISTANT:'r-asst',SUPERVISOR:'r-sup'})[u.role] || 'r-user';
+    const head = (menu) => `
       <div class="uc-top">
+        <span class="emp-avatar uc-av" aria-hidden="true">${esc(nm.trim().slice(0,1))}</span>
         <div class="uc-title">
-          <span class="uc-name">${esc(u.full_name||'–')}</span>
-          <span class="badge role">${ROLE_LABEL[u.role]||esc(u.role)}</span>
-          ${statusBadge}
+          <span class="uc-name">${esc(nm)}</span>
+          <div class="uc-sub">
+            ${u.employee_code ? `<span class="uc-email">รหัส ${esc(u.employee_code)}</span>` : '<span class="td-sub">ยังไม่มีรหัสพนักงาน (เข้าสู่ระบบไม่ได้)</span>'}
+          </div>
         </div>
-        <div class="uc-sub">
-          <span class="uc-email">${email ? esc(email) : '<span class="td-sub">ไม่พบอีเมล</span>'}</span>
-          ${u.employee_code ? `<span class="uc-code-tag">รหัส ${esc(u.employee_code)}</span>` : ''}
-        </div>
+        ${active ? '' : statusBadge}
+        <span class="role-pill ${roleCls}">${esc(u.role)}</span>
+        ${menu || ''}
       </div>`;
 
     // ---- ASSISTANT: read-only card, no controls, no footer ----
@@ -2327,7 +2459,7 @@ function renderUsersTable(){
       const appsRO = effApps.map(a=>`<span class="badge role">${APP_LABEL[a]||esc(a)}</span>`).join(' ')
         + (Array.isArray(u.apps) && u.apps.length ? '' : ' <span class="td-sub">(ตาม role)</span>');
       return `<article class="user-card ${active?'':'row-inactive'}">
-        ${head}
+        ${head('')}
         <div class="uc-fields">
           <div class="uc-field"><span class="uc-lbl">คลัง × แผนก</span><div>${scopeRO}</div></div>
           <div class="uc-field"><span class="uc-lbl">ระบบที่ใช้ได้</span><div>${appsRO}</div></div>
@@ -2338,34 +2470,40 @@ function renderUsersTable(){
     const scopeCell = scoped ? scopeGridHTML(pairs, 'u-scope-cb')
       : u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
       : deptCheckboxes(userDepts(u), 'u-dept-cb');
+    const menu = `<span class="uc-menu-wrap"><button type="button" class="ic-btn uc-kebab" data-kebab aria-haspopup="true" aria-expanded="false" aria-label="เมนูเพิ่มเติม" title="เมนูเพิ่มเติม">${IC_DOTS}</button>
+        <div class="uc-menu" hidden role="menu">
+          <button type="button" role="menuitem" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
+          ${isSelf ? ''
+            : `<button type="button" role="menuitem" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}
+          ${!isSelf && u.role !== 'ADMIN'
+            ? `<button type="button" role="menuitem" class="danger" data-del-user="${esc(u.id)}">ลบถาวร</button>` : ''}
+        </div></span>`;
     return `<article class="user-card ${active?'':'row-inactive'}" data-user-row="${esc(u.id)}">
-      ${head}
-      <div class="uc-fields">
-        <div class="uc-field">
-          <span class="uc-lbl">สิทธิ์</span>
-          <select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select>
+      ${head(menu)}
+      <details class="uc-edit">
+        <summary>แก้ไขสิทธิ์ · แผนก · ระบบ</summary>
+        <div class="uc-fields">
+          <div class="uc-field">
+            <span class="uc-lbl">สิทธิ์</span>
+            <select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select>
+          </div>
+          <div class="uc-field">
+            <span class="uc-lbl">คลัง × แผนก</span>
+            <div class="scope-cell">${scopeCell}</div>
+          </div>
+          <div class="uc-field">
+            <span class="uc-lbl">ระบบที่ใช้ได้</span>
+            ${appCheckboxes(effApps, 'u-app-cb')}
+          </div>
+          <div class="uc-field">
+            <span class="uc-lbl">รหัสพนักงาน</span>
+            <input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส" readonly title="รหัสพนักงานแก้ไม่ได้ (ใช้เป็นชื่อเข้าสู่ระบบ)">
+          </div>
         </div>
-        <div class="uc-field">
-          <span class="uc-lbl">คลัง × แผนก</span>
-          <div class="scope-cell">${scopeCell}</div>
+        <div class="uc-btns">
+          <button type="button" class="mini-btn approve" data-save-user="${esc(u.id)}">บันทึก</button>
         </div>
-        <div class="uc-field">
-          <span class="uc-lbl">ระบบที่ใช้ได้</span>
-          ${appCheckboxes(effApps, 'u-app-cb')}
-        </div>
-        <div class="uc-field">
-          <span class="uc-lbl">รหัสพนักงาน</span>
-          <input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส">
-        </div>
-      </div>
-      <div class="uc-btns">
-        <button type="button" class="mini-btn approve" data-save-user="${esc(u.id)}">บันทึก</button>
-        <button type="button" class="mini-btn" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
-        ${isSelf ? ''
-          : `<button type="button" class="mini-btn ${active?'reject':'approve'}" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}
-        ${!isSelf && u.role !== 'ADMIN'
-          ? `<button type="button" class="mini-btn reject" data-del-user="${esc(u.id)}">ลบถาวร</button>` : ''}
-      </div>
+      </details>
     </article>`;
   }).join('');
 }
@@ -2376,7 +2514,6 @@ async function saveUserRow(userId){
   if (!row) return;
   const role = row.querySelector('[data-u-role]').value;
   const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
-  const employee_code = row.querySelector('[data-u-code]').value.trim() || null;
 
   let desiredScope = [];
   let departments = null;
@@ -2397,7 +2534,7 @@ async function saveUserRow(userId){
   const btn = row.querySelector('[data-save-user]');
   const label = btn.textContent; btn.textContent = '...'; btn.disabled = true;
   try{
-    const { error } = await sb.from('profiles').update({ role, department, departments, employee_code, apps }).eq('id', userId);
+    const { error } = await sb.from('profiles').update({ role, department, departments, apps }).eq('id', userId);
     if (error) throw error;
     // staff_scope diff — ADMIN / USER end up with desiredScope = [] -> all rows removed
     const { add, del } = diffScope(userId, desiredScope);
@@ -2482,10 +2619,19 @@ async function deleteUserAccount(userId){
   }catch(err){ toast('ลบไม่สำเร็จ: ' + (err.message || err)); }
 }
 
+// random temp password (no look-alike chars), shown once in the create-form hint
+let generatedPw = '';
+function genTempPassword(){
+  const abc = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const buf = new Uint32Array(10); crypto.getRandomValues(buf);
+  return Array.from(buf, n => abc[n % abc.length]).join('');
+}
+
 async function createUserFromForm(){
   if (!isUserAdminFull()) return;
   const hint = document.getElementById('addUserHint');
-  const email = document.getElementById('nuEmail').value.trim();
+  const employee_code = normalizeEmpCode(document.getElementById('nuCode').value);
+  const rawCode = document.getElementById('nuCode').value.trim();
   const full_name = document.getElementById('nuName').value.trim();
   const password = document.getElementById('nuPass').value;
   const role = document.getElementById('nuRole').value;
@@ -2493,7 +2639,8 @@ async function createUserFromForm(){
   const grid = document.getElementById('nuScopeGrid');
   const scope = readScopeGrid(grid, 'nu-scope-cb');
   const apps = [...document.querySelectorAll('#nuAppCbs .nu-app-cb:checked')].map(c=>c.value);
-  if (!email || !full_name || !password){ hint.textContent = 'กรอก อีเมล / ชื่อ / รหัสผ่าน ให้ครบ'; return; }
+  if (!rawCode || !full_name || !password){ hint.textContent = 'กรอก รหัสพนักงาน / ชื่อ / รหัสผ่าน ให้ครบ'; return; }
+  if (!employee_code){ hint.textContent = 'รูปแบบรหัสพนักงานไม่ถูกต้อง (ตัวอักษร/ตัวเลข/ขีด 3-20 ตัว)'; return; }
   if (password.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
   if (scoped && !scope.length){ hint.textContent = 'SUPERVISOR / ASSISTANT ต้องเลือกคลัง × แผนก อย่างน้อย 1 ช่อง'; return; }
   hint.textContent = 'กำลังสร้างบัญชี...';
@@ -2506,15 +2653,16 @@ async function createUserFromForm(){
         'Authorization': 'Bearer ' + session.access_token,
         'apikey': SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ action: 'create', email, password, full_name, role, scope, apps }),
+      body: JSON.stringify({ action: 'create', employee_code, password, full_name, role, scope, apps }),
     });
     const out = await res.json().catch(()=>({}));
     if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
-    hint.textContent = `สร้างบัญชี ${email} แล้ว`;
-    ['nuEmail','nuName','nuPass'].forEach(id=>{ document.getElementById(id).value = ''; });
+    hint.textContent = `สร้างบัญชีรหัส ${employee_code} แล้ว` + (generatedPw && generatedPw === password ? ` — รหัสผ่านชั่วคราว: ${password} (แจ้งผู้ใช้ตอนนี้ จะไม่แสดงอีก)` : '');
+    ['nuCode','nuName','nuPass'].forEach(id=>{ document.getElementById(id).value = ''; });
     document.querySelectorAll('#nuScopeGrid .nu-scope-cb:checked, #nuAppCbs .nu-app-cb:checked').forEach(c=>{ c.checked = false; });
     await Promise.all([refreshUsers(), refreshScopes()]); renderUsersTable();
-    setTimeout(()=>{ document.getElementById('addUserForm').hidden = true; hint.textContent = ''; }, 1400);
+    generatedPw = '';
+    // keep the message (it may hold the one-time temp password) until the next form edit
   }catch(err){ hint.textContent = 'ไม่สำเร็จ: ' + err.message; }
 }
 

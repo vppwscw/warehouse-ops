@@ -2,22 +2,27 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Skill Matrix</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/mobile.css?v=16">
+<link rel="stylesheet" href="css/mobile.css?v=24">
 </head>
 <body>
 
 <div class="login-overlay" id="loginOverlay">
-  <div class="login-card">
+  <div class="login-hero">
     <img class="login-logo-img" src="assets/vppw-logo.png?v=2" alt="VPPW Warehouse-KM.23">
-    <div class="login-sub">ระบบบริหารทักษะและกำลังคนคลังสินค้า</div>
-    <div class="field" style="margin-bottom:14px;"><label for="loginEmail">อีเมล</label><input id="loginEmail" type="email" placeholder="you@company.com" autocomplete="username"></div>
+    <h1 class="login-headline">บันทึกงานคลัง<br>ง่ายในมือเดียว</h1>
+    <p class="login-tag">ระบบบริหารทักษะและกำลังคนคลังสินค้า</p>
+  </div>
+  <div class="login-card">
+    <h3>เข้าสู่ระบบ</h3>
+    <div class="field" style="margin-bottom:14px;"><label for="loginCode">รหัสพนักงาน</label><input id="loginCode" type="text" placeholder="เช่น VP0123" autocomplete="username" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text" maxlength="20"></div>
     <div class="field" style="margin-bottom:18px;"><label for="loginPass">รหัสผ่าน</label><input id="loginPass" type="password" placeholder="กรอกรหัสผ่าน" autocomplete="current-password"></div>
     <button type="button" class="btn" id="loginSubmitBtn">เข้าสู่ระบบ</button>
     <p class="hint" id="loginHint"></p>
+    <div class="login-foot">ลืมรหัสผ่าน ติดต่อแอดมิน</div>
   </div>
 </div>
 
@@ -26,11 +31,13 @@
 
   <div class="topbar">
     <button type="button" class="back-btn" id="backBtn" hidden></button>
+    <div class="tb-brand"><span class="tb-logo">VPPW</span><span>Km.23</span></div>
     <div class="topbar-title" id="topbarTitle">เริ่มงาน</div>
     <span class="role-badge" id="roleBadge"></span>
     <button type="button" class="icon-btn" id="changePwBtn" title="เปลี่ยนรหัสผ่าน"></button>
     <button type="button" class="icon-btn" id="logoutBtn" title="ออกจากระบบ"></button>
     <div class="live-pill" id="liveStatus"><span class="live-dot"></span>เชื่อมต่อ...</div>
+    <div class="step-info" id="stepInfo"><div class="step-label" id="stepLabel"></div><div class="step-bar" id="stepBar"><i></i><i></i><i></i></div></div>
   </div>
 
   <div class="content" id="contentArea">
@@ -44,6 +51,7 @@
 
     <div class="screen" id="screen-step2">
       <p class="step-q" id="step2Title">เลือกงาน</p>
+      <div class="search-box"><span class="sb-ico" id="taskSearchIcon"></span><input id="taskSearch" type="search" placeholder="ค้นหาชื่องาน..." autocomplete="off"></div>
       <div class="job-choice-list" id="jobChoiceList"></div>
     </div>
 
@@ -51,12 +59,15 @@
       <p class="step-q" id="step3Title">ใครทำงานนี้บ้าง?</p>
       <div class="emp-check-list" id="empCheckList"></div>
 
-      <div class="field-row" style="margin-bottom:12px;">
-        <div class="field"><label for="d-date">วันที่</label><input id="d-date" type="date"></div>
-      </div>
-      <div class="field-row" style="margin-bottom:14px;">
-        <div class="field"><label for="d-start">เวลาเริ่ม</label><input id="d-start" type="time"></div>
-        <div class="field"><label for="d-end">เวลาจบ</label><input id="d-end" type="time"></div>
+      <div class="card-box">
+        <span class="ttl">วันและเวลา</span>
+        <div class="field-row">
+          <div class="field"><label for="d-date">วันที่</label><input id="d-date" type="date"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="d-start">เวลาเริ่ม</label><input id="d-start" type="time"></div>
+          <div class="field"><label for="d-end">เวลาจบ</label><input id="d-end" type="time"></div>
+        </div>
       </div>
       <div id="doneResultFields"></div>
 
@@ -71,13 +82,18 @@
         <div class="ok-circle"></div>
         <div class="ok-text" id="successText">บันทึกงานแล้ว</div>
         <div class="ok-sub" id="successSub"></div>
+        <div class="success-card" id="successCard" hidden></div>
+        <div class="success-actions" id="successActions" hidden>
+          <button type="button" class="btn sig" id="successGoOpenBtn">ไปที่งานเปิดอยู่</button>
+          <button type="button" class="btn glass" id="successNewBtn">เปิดงานใหม่อีกงาน</button>
+        </div>
       </div>
     </div>
 
     <div class="screen" id="screen-history">
       <button type="button" class="job-choice" id="openMatrixBtn" style="margin-bottom:16px;">
         <span class="jc-icon badge INV" id="matrixTrophyIcon" style="width:40px;height:40px;border-radius:11px;"></span>
-        <span><span class="jc-name">ใครทำอะไรได้บ้าง</span><br><span class="jc-sub">ดูสรุปทักษะพนักงานแต่ละคน</span></span>
+        <span class="jc-body"><span class="jc-name">ใครทำอะไรได้บ้าง</span><span class="jc-sub">ดูสรุปทักษะพนักงานแต่ละคน</span></span>
         <span class="t-chev" id="openMatrixChev"></span>
       </button>
 
@@ -102,8 +118,10 @@
     </div>
 
     <div class="screen" id="screen-manage">
-      <button type="button" class="btn ghost" id="toggleAddEmpLink" style="margin-bottom:14px;">+ เพิ่มพนักงานใหม่</button>
-      <div id="rosterCols" style="margin-top:0;"></div>
+      <div class="search-box"><span class="sb-ico" id="rosterSearchIcon"></span><input id="rosterSearch" type="search" placeholder="ค้นหาชื่อพนักงาน" autocomplete="off"></div>
+      <div class="chip-scroll" id="rosterChips"></div>
+      <div id="rosterCols"></div>
+      <div class="sticky-cta"><button type="button" class="btn" id="toggleAddEmpLink">+ เพิ่มพนักงานใหม่</button></div>
     </div>
 
     <!-- ===== USER role: today's task list (tap to open) ===== -->
@@ -145,11 +163,11 @@
 
     <!-- ===== SUPERVISOR role: close-out form for one open job group ===== -->
     <div class="screen" id="screen-closejob">
-      <div class="active-job-card" id="closeJobCard"></div>
-      <div class="field-row" style="margin:14px 0 12px;">
+      <div class="card-box" id="closeJobCard"></div>
+      <div id="closeDoneFields"></div>
+      <div class="card-box">
         <div class="field"><label for="c-end">เวลาจบ</label><input id="c-end" type="time"></div>
       </div>
-      <div id="closeDoneFields"></div>
       <div class="sticky-cta">
         <button type="button" class="btn" id="closeJobBtn">ปิดงาน · บันทึกผล</button>
         <p class="hint" id="closeJobHint"></p>
@@ -158,8 +176,8 @@
 
     <!-- ===== SUPERVISOR role: task types for their department ===== -->
     <div class="screen" id="screen-tasks">
-      <button type="button" class="btn ghost" id="toggleAddTaskLink" style="margin-bottom:14px;">+ เพิ่มชนิดงานใหม่</button>
       <div id="taskMgmtList"></div>
+      <div class="sticky-cta"><button type="button" class="btn" id="toggleAddTaskLink">+ เพิ่มชนิดงานใหม่</button></div>
     </div>
 
   </div>
@@ -174,7 +192,8 @@
   <div class="field" id="r-wh-field" hidden style="margin-bottom:12px;"><label for="r-wh">คลัง</label><select id="r-wh"></select></div>
   <div class="field" id="r-dept-field" hidden style="margin-bottom:12px;"><label for="r-dept">ฝั่ง</label><select id="r-dept"></select></div>
   <div class="field" style="margin-bottom:12px;"><label for="r-name">ชื่อพนักงานคนใหม่</label><input id="r-name" placeholder="พิมพ์ชื่อ-นามสกุล"></div>
-  <button type="button" class="btn ghost" id="rosterSubmitBtn" style="margin-bottom:6px;">+ เพิ่มเข้ารายชื่อ</button>
+  <button type="button" class="btn" id="rosterSubmitBtn">+ เพิ่มเข้ารายชื่อ</button>
+  <button type="button" class="btn ghost" data-modal-close>ยกเลิก</button>
   <p class="hint" id="rosterHint"></p>
 </div>
 
@@ -183,7 +202,12 @@
   <div class="modal-title">เพิ่มชนิดงานใหม่</div>
   <div class="field" id="t-wh-field" hidden style="margin-bottom:12px;"><label for="t-wh">คลัง</label><select id="t-wh"></select></div>
   <div class="field" id="t-dept-field" hidden style="margin-bottom:12px;"><label for="t-dept">ฝั่ง</label><select id="t-dept"></select></div>
-  <div class="field" style="margin-bottom:12px;"><label for="t-name">ชื่องาน</label><input id="t-name" placeholder="เช่น ตรวจนับสต๊อกปลายวัน"></div>
+  <div class="field" style="margin-bottom:12px;"><label for="t-name">ชื่องาน</label><input id="t-name" placeholder="เช่น ตรวจนับสต๊อกปลายวัน"><div class="field-warn" id="t-name-warn" hidden></div></div>
+  <div class="field" style="margin-bottom:12px;">
+    <label>กลุ่มงาน (บังคับเลือก)</label>
+    <div class="group-chips" id="t-group-chips"></div>
+    <input id="t-group-new" placeholder="ชื่อกลุ่มใหม่" maxlength="60" hidden style="margin-top:8px;">
+  </div>
   <div class="field" style="margin-bottom:12px;">
     <label for="t-unit">หน่วยที่นับ (ว่างไว้ = "จำนวน")</label>
     <input id="t-unit" list="t-unit-presets" placeholder="จำนวน">
@@ -198,7 +222,8 @@
       <option value="ครั้ง"></option>
     </datalist>
   </div>
-  <button type="button" class="btn ghost" id="taskSubmitBtn" style="margin-bottom:6px;">+ เพิ่มชนิดงาน</button>
+  <button type="button" class="btn" id="taskSubmitBtn">+ เพิ่มชนิดงาน</button>
+  <button type="button" class="btn ghost" data-task-close>ยกเลิก</button>
   <p class="hint" id="taskHint"></p>
 </div>
 
@@ -208,12 +233,12 @@
   <div class="modal-title">โปรไฟล์ของฉัน</div>
   <dl class="pm-info">
     <div><dt>ชื่อ</dt><dd id="pmName">–</dd></div>
-    <div><dt>อีเมล</dt><dd id="pmEmail">–</dd></div>
+    <div><dt>รหัสพนักงาน</dt><dd id="pmCode">–</dd></div>
     <div><dt>สิทธิ์</dt><dd id="pmRole">–</dd></div>
   </dl>
   <p class="hint" id="pmHint" style="text-align:left;margin:8px 0 12px;"></p>
-  <button type="button" class="btn" id="pmChangePwBtn" style="margin-bottom:6px;">เปลี่ยนรหัสผ่าน</button>
-  <button type="button" class="btn ghost" id="pmResetEmailBtn" style="margin-bottom:6px;">ส่งลิงก์รีเซ็ตรหัสเข้าอีเมล</button>
+  <button type="button" class="btn ghost" id="pmChangePwBtn">เปลี่ยนรหัสผ่าน</button>
+  <button type="button" class="btn dan" id="pmLogoutBtn">ออกจากระบบ</button>
   <button type="button" class="btn ghost" id="pmClose">ปิด</button>
 </div>
 
@@ -230,7 +255,7 @@
 
 <footer class="build-footer">Skill Matrix &middot; production build</footer>
 
-<script src="js/supabase-config.js?v=2"></script>
-<script src="js/mobile.js?v=26"></script>
+<script src="js/supabase-config.js?v=4"></script>
+<script src="js/mobile.js?v=33"></script>
 </body>
 </html>

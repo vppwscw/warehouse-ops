@@ -1,3 +1,6 @@
+// Block pinch / double-tap zoom (iOS Safari ignores user-scalable=no)
+["gesturestart","gesturechange"].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+
 // ===================== SUPABASE INIT =====================
 
 // Departments are per-warehouse data (public.departments, PK (warehouse,code)
@@ -112,11 +115,34 @@ const ICONS = {
   toolbox:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8" width="19" height="12" rx="2"/><path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M2.5 13h19"/><path d="M10.5 13v2h3v-2"/></svg>',
   package:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
 };
+const AV_PALETTE = [['#F4F6F8','#545B65'],['#FAEAE8','#AE3A32'],['#E9F0F5','#1B5E8C'],['#EFEBF8','#5B4A97'],['#FFF4D6','#9A6410'],['#E6F3EC','#1E7A4B']];
+function avatarHTML(name, size){
+  const ch = Array.from(String(name||'').trim())[0] || '';
+  let h = 0; for (const c of String(name||'')) h = (h + c.codePointAt(0)) % 997;
+  const pal = AV_PALETTE[h % AV_PALETTE.length];
+  return `<span class="av" style="width:${size}px;height:${size}px;background:${pal[0]};color:${pal[1]};font-size:${Math.round(size*0.4)}px">${esc(ch)}</span>`;
+}
+function avatarStack(names, size){ return `<span class="avs">${(names||[]).slice(0,4).map(n=>avatarHTML(n,size)).join('')}</span>`; }
+function fmtElapsed(ms){ const m = Math.max(0, Math.floor(ms/60000)); return Math.floor(m/60) + ':' + String(m%60).padStart(2,'0'); }
+// live clocks on the open-jobs list + close-job summary (runs only while those screens show)
+let liveTimer = null;
+function tickLive(){
+  const now = Date.now();
+  document.querySelectorAll('[data-started]').forEach(el=>{
+    const t = new Date(el.dataset.started).getTime();
+    if (!isNaN(t)) el.textContent = fmtElapsed(now - t);
+  });
+  const cn = document.getElementById('cjNow'); if (cn) cn.textContent = timeNowHHMM();
+}
+let supOpenDone = false;     // SUPERVISOR just opened a job -> show success screen
+let rosterQuery = '', rosterDeptFilter = 'all';
 document.getElementById('backBtn').innerHTML = ICONS.back;
 document.querySelector('.ok-circle').innerHTML = ICONS.check;
 document.getElementById('logoutBtn').innerHTML = ICONS.logout;
 document.getElementById('openMatrixChev').innerHTML = ICONS.chev;
 document.getElementById('matrixTrophyIcon').innerHTML = ICONS.trophy;
+document.getElementById('taskSearchIcon').innerHTML = ICONS.search;
+document.getElementById('rosterSearchIcon').innerHTML = ICONS.search;
 
 const nowBkk = () => new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Bangkok'}));
 const todayISO = () => nowBkk().toLocaleDateString('sv-SE');
@@ -181,16 +207,14 @@ let activeStep = 1;
 // ================= AUTH =================
 function mapAuthError(err){
   const msg = (err && err.message) || '';
-  if (/invalid login credentials/i.test(msg)) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-  if (/email not confirmed/i.test(msg)) return 'บัญชียังไม่ได้ยืนยันอีเมล';
+  if (/invalid login credentials/i.test(msg)) return 'รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง';
+  if (/email not confirmed/i.test(msg)) return 'บัญชียังไม่ได้เปิดใช้งาน — ติดต่อแอดมิน';
   return 'เข้าสู่ระบบไม่สำเร็จ: ' + (msg || 'unknown error');
 }
 function showLogin(){ document.getElementById('loginOverlay').style.display='flex'; }
 function hideLogin(){ document.getElementById('loginOverlay').style.display='none'; }
 const ROLE_SHORT = { SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
-// Flip to true once Supabase custom SMTP + Redirect URLs are configured.
-const EMAIL_RESET_ENABLED = false;
 function refreshRoleBadge(){
   const whs = myWarehouses().join('/');
   const depts = myDepts().map(d=>deptName(d)).join(', ');
@@ -270,7 +294,7 @@ function logout(){
   profile = null; currentUser = null;
   jobs = []; roster = []; myOpenJob = null; workerStep = 'list';
   if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
-  document.getElementById('loginEmail').value='';
+  document.getElementById('loginCode').value='';
   document.getElementById('loginPass').value='';
   document.getElementById('loginHint').textContent='';
   showLogin();
@@ -340,46 +364,32 @@ function closeProfileModal(){
 function openProfileModal(){
   if (!profile) return;
   document.getElementById('pmName').textContent  = profile.full_name || '–';
-  document.getElementById('pmEmail').textContent = profile.email || '–';
+  document.getElementById('pmCode').textContent  = profile.employee_code || '–';
   document.getElementById('pmRole').textContent  = ROLE_LABEL[profile.role] || profile.role || '–';
-  const rb = document.getElementById('pmResetEmailBtn');
-  const ok = EMAIL_RESET_ENABLED && !!profile.email;
-  rb.disabled = !ok;
-  document.getElementById('pmHint').textContent = ok ? '' : 'ปุ่มส่งอีเมลยังไม่เปิดใช้ — ติดต่อผู้ดูแลระบบ';
+  document.getElementById('pmHint').textContent = '';
   const bd = document.getElementById('pwBackdrop');
   bd.classList.add('open');
   document.getElementById('profileModal').classList.add('open');
   bd.addEventListener('click', closeProfileModal, { once:true });
 }
-async function sendOwnResetEmail(){
-  const btn = document.getElementById('pmResetEmailBtn');
-  const hint = document.getElementById('pmHint');
-  if (!profile || !profile.email || btn.disabled) return;
-  btn.disabled = true; hint.textContent = 'กำลังส่ง...';
-  const { error } = await sb.auth.resetPasswordForEmail(profile.email, { redirectTo: location.origin + location.pathname });
-  btn.disabled = false;
-  hint.textContent = error
-    ? ('ส่งไม่สำเร็จ: ' + (error.message || error))
-    : ('ส่งลิงก์ไปที่ ' + profile.email + ' แล้ว — เช็คกล่องเมล (รวม junk)');
-}
-
 document.getElementById('changePwBtn').addEventListener('click', openProfileModal);
 document.getElementById('pmClose').addEventListener('click', closeProfileModal);
 document.getElementById('pmChangePwBtn').addEventListener('click', ()=>{ closeProfileModal(); changeOwnPassword(); });
-document.getElementById('pmResetEmailBtn').addEventListener('click', sendOwnResetEmail);
 
 document.getElementById('loginSubmitBtn').addEventListener('click', async ()=>{
   const hint = document.getElementById('loginHint');
-  const email = document.getElementById('loginEmail').value.trim();
+  const rawCode = document.getElementById('loginCode').value;
   const pass = document.getElementById('loginPass').value;
-  if (!email || !pass){ hint.textContent = 'กรอกอีเมลและรหัสผ่านให้ครบ'; return; }
+  if (!rawCode.trim() || !pass){ hint.textContent = 'กรอกรหัสพนักงานและรหัสผ่านให้ครบ'; return; }
+  const email = empCodeToEmail(rawCode);
+  if (!email){ hint.textContent = 'รูปแบบรหัสพนักงานไม่ถูกต้อง (ตัวอักษร/ตัวเลข/ขีด 3-20 ตัว)'; return; }
   hint.textContent = 'กำลังเข้าสู่ระบบ...';
   const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
   if (error){ hint.textContent = mapAuthError(error); return; }
   hint.textContent = '';
   await afterLogin(data.user);
 });
-document.getElementById('loginEmail').addEventListener('keydown', e=>{ if (e.key==='Enter') document.getElementById('loginPass').focus(); });
+document.getElementById('loginCode').addEventListener('keydown', e=>{ if (e.key==='Enter') document.getElementById('loginPass').focus(); });
 document.getElementById('loginPass').addEventListener('keydown', e=>{ if (e.key==='Enter') document.getElementById('loginSubmitBtn').click(); });
 
 // ================= TASKS from DB (with fallback) =================
@@ -396,6 +406,7 @@ async function loadTasksFromDb(){
           id: t.id, dept: t.department, warehouse: t.warehouse, label: t.name, sub: t.unit_label || '',
           unit: t.unit_label ? 'custom' : 'vehicles', unitLabel: t.unit_label || 'จำนวน',
           icon: ICON_BY_TASK_ID[t.id] || 'box',
+          group: (t.task_group && String(t.task_group).trim()) || null,
         });
       });
       Object.keys(byDept).forEach(d=>{ if (byDept[d].length) TASKS[d] = byDept[d]; });
@@ -437,7 +448,7 @@ const TAB_TITLE = { new:'เริ่มงาน', history:'ประวัต�
 
 let historySub = 'list';
 function goTab(tab){
-  activeTab = tab;
+  activeTab = tab; supOpenDone = false;
   if (tab==='new'){
     if (isAdmin() || isSupervisorRole()){
       flowMode = isAdmin() ? 'admin' : 'sup-open';
@@ -470,7 +481,8 @@ function renderScreens(){
       else if (activeStep===4){ screenId='screen-success'; title='เริ่มงาน'; }
     } else if (isSupervisorRole()){
       // SUPERVISOR opens a job: [pick warehouse + dept] -> pick task (step2) -> crew + start (step3)
-      if (activeStep===1){ screenId='screen-step1'; title='เริ่มงาน'; }
+      if (supOpenDone){ screenId='screen-success'; title='เปิดงานแล้ว'; }
+      else if (activeStep===1){ screenId='screen-step1'; title='เริ่มงาน'; }
       else if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
       else { screenId='screen-step2'; title=whPfx+(oDeptVal?deptName(oDeptVal,oWhVal):'เลือกงาน'); showBack=step1HasChoice(); }
     } else if (isWorker()){
@@ -491,7 +503,17 @@ function renderScreens(){
   }
   document.getElementById(screenId).classList.add('active');
   document.getElementById('topbarTitle').textContent = title;
+  if (screenId==='screen-openjobs' || screenId==='screen-closejob'){ if (!liveTimer) liveTimer = setInterval(tickLive, 30000); tickLive(); }
+  else if (liveTimer){ clearInterval(liveTimer); liveTimer = null; }
   document.getElementById('backBtn').hidden = !showBack;
+  const stepNo = {'screen-step1':1,'screen-step2':2,'screen-step3':3}[screenId];
+  const stepInfo = document.getElementById('stepInfo');
+  const showSteps = activeTab==='new' && !isWorker() && !!stepNo;
+  stepInfo.classList.toggle('on', showSteps);
+  if (showSteps){
+    document.getElementById('stepLabel').textContent = 'ขั้นที่ ' + stepNo + ' จาก 3';
+    stepInfo.querySelectorAll('.step-bar i').forEach((b,i)=>b.classList.toggle('on', i < stepNo));
+  }
   document.getElementById('contentArea').scrollTop = 0;
 }
 document.getElementById('backBtn').addEventListener('click', ()=>{
@@ -533,7 +555,7 @@ function renderStep1(){
   const depts = oWhVal ? deptsForWh(oWhVal) : [];
   document.getElementById('deptTiles').innerHTML = depts.map(d=>`
     <button type="button" class="tile" data-pick-dept="${esc(d)}" style="background:${esc(deptColor(d,oWhVal))}17;color:${esc(deptColor(d,oWhVal))}">
-      <span class="t-icon" style="color:${esc(deptColor(d,oWhVal))};background:${esc(deptColor(d,oWhVal))}2b">${ICONS[DEPT_ICON[d]]||ICONS.box}</span>
+      <span class="t-icon" style="color:${esc(deptColor(d,oWhVal))};background:${esc(deptColor(d,oWhVal))}1f">${ICONS[DEPT_ICON[d]]||ICONS.box}</span>
       <span><span class="t-name">${esc(deptName(d,oWhVal))}</span>${DEPT_SUB[d] ? `<span class="t-sub">${esc(DEPT_SUB[d])}</span>` : ''}</span>
       <span class="t-chev">${ICONS.chev}</span>
     </button>`).join('') || (oWhVal ? '<div class="empty-roster-inline">คลังนี้ยังไม่มีแผนกที่คุณดูแล</div>' : '');
@@ -546,18 +568,36 @@ function step1HasChoice(){
 }
 
 // ================= STEP 2 =================
+const DEFAULT_GROUP = 'ทั่วไป';
 function renderStep2(){
+  const ts = document.getElementById('taskSearch'); if (ts) ts.value = '';
   const whTxt = oWhVal ? `${WH_PLAIN[oWhVal]} · ` : '';
   document.getElementById('step2Title').textContent = `${whTxt}งานฝั่ง ${deptName(oDeptVal, oWhVal)} — เลือกงาน`;
   const whTasks = (TASKS[oDeptVal]||[]).filter(t=>taskInWh(t, oWhVal));
+  const canAdd = isAdmin() || isSupervisorRole();
+  const addBtn = `<button type="button" class="job-add" data-add-template>+ เพิ่มแม่แบบงาน</button>`;
+  const byGroup = {};
+  whTasks.forEach(t=>{ const g = t.group || DEFAULT_GROUP; (byGroup[g] = byGroup[g] || []).push(t); });
+  const cmp = (a,b)=>String(a).localeCompare(String(b), 'th');
+  const groupNames = Object.keys(byGroup).sort(cmp);
+  const allOpen = whTasks.length <= 6;
+  let n = 0;
   document.getElementById('jobChoiceList').innerHTML = whTasks.length
-    ? whTasks.map(t=>`
+    ? groupNames.map(g=>{
+      const items = byGroup[g].slice().sort((a,b)=>cmp(a.label, b.label));
+      return `<div class="jg${allOpen?' open':''}">
+        <button type="button" class="jg-head" data-toggle-group aria-expanded="${allOpen}"><span class="jg-name">${esc(g)}</span><span class="jg-count">${items.length}</span><span class="jg-chev">${ICONS.chev}</span></button>
+        <div class="jg-body">${items.map(t=>`
       <button type="button" class="job-choice" data-pick-task="${esc(t.id)}">
-        <span class="jc-icon badge" style="width:40px;height:40px;border-radius:11px;color:${esc(deptColor(oDeptVal,oWhVal))};background:${esc(deptColor(oDeptVal,oWhVal))}1f;">${ICONS[t.icon]||ICONS.box}</span>
-        <span><span class="jc-name">${esc(t.label)}</span><br><span class="jc-sub">${esc(t.sub||'')}</span></span>
+        <span class="pill-n">${String(++n).padStart(2,'0')}</span>
+        <span class="jc-body"><span class="jc-name">${esc(t.label)}</span><span class="jc-sub">${esc(t.sub||'')}</span></span>
         <span class="t-chev">${ICONS.chev}</span>
-      </button>`).join('')
-    : `<div class="empty-roster-inline">${esc(WH_PLAIN[oWhVal]||oWhVal)} · ฝั่ง ${esc(deptName(oDeptVal, oWhVal))} ยังไม่มีชนิดงาน<br>เพิ่มที่แท็บ "ชนิดงาน" ก่อนเปิดงาน</div>`;
+      </button>`).join('')}</div>
+      </div>`;
+    }).join('') + (canAdd ? addBtn : '')
+    : (canAdd
+      ? `<div class="empty-roster-inline job-empty"><b>ยังไม่มีแม่แบบงาน</b>${addBtn}</div>`
+      : `<div class="empty-roster-inline">ยังไม่มีงานในแผนกนี้ ติดต่อหัวหน้า</div>`);
 }
 
 // ================= STEP 3 =================
@@ -571,8 +611,9 @@ function renderStep3(){
   } else {
     box.innerHTML = list.map(r=>`
       <button type="button" class="emp-check" data-pick-emp="${esc(r.id)}" aria-pressed="${crew.includes(String(r.id))}">
+        <span class="ec-av">${esc(Array.from(String(r.name).trim())[0]||'')}</span>
+        <span class="ec-text"><span class="ec-name">${esc(r.name)}</span><span class="ec-sub">${(()=>{ const n = jobs.filter(j=>j.task_id===oTaskVal && (j.crew||[]).includes(r.name)).length; return n ? 'ทำงานนี้ '+n+' ครั้ง' : 'ยังไม่เคยทำงานนี้'; })()}</span></span>
         <span class="ec-box">${crew.includes(String(r.id)) ? ICONS.checksm : ''}</span>
-        <span class="ec-name">${esc(r.name)}</span>
       </button>`).join('');
   }
   document.getElementById('d-date').value = document.getElementById('d-date').value || todayISO();
@@ -599,6 +640,7 @@ function buildResultFieldsHTML(task, prefix){
         <input id="${prefix}-unit" type="number" min="0" value="0" inputmode="numeric">
         <button type="button" data-step="1" data-target="${prefix}-unit">+</button>
       </div>
+      <div class="qa-chips">${[5,10,20].map(n=>`<button type="button" class="chip" data-add="${n}" data-target="${prefix}-unit">+${n}</button>`).join('')}</div>
     </div>`;
   if (task.unit==='containers'){
     fields += `<div class="field" style="margin-bottom:6px;">
@@ -660,10 +702,10 @@ function renderWorkerTaskList(){
   const list = TASKS[profile.department] || [];
   const box = document.getElementById('workerTaskList');
   if (list.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของฝั่ง ${esc(deptName(profile.department))}<br>ติดต่อหัวหน้างานให้เพิ่มชนิดงานก่อน</div>`; return; }
-  box.innerHTML = list.map(t=>`
+  box.innerHTML = list.map((t,i)=>`
     <button type="button" class="job-choice" data-open-task="${esc(t.id)}">
-      <span class="jc-icon badge" style="width:40px;height:40px;border-radius:11px;color:${esc(deptColor(profile.department))};background:${esc(deptColor(profile.department))}1f;">${ICONS[t.icon]||ICONS.box}</span>
-      <span><span class="jc-name">${esc(t.label)}</span><br><span class="jc-sub">${esc(t.sub||'')}</span></span>
+      <span class="pill-n">${String(i+1).padStart(2,'0')}</span>
+      <span class="jc-body"><span class="jc-name">${esc(t.label)}</span><span class="jc-sub">${esc(t.sub||'')}</span></span>
       <span class="t-chev">${ICONS.chev}</span>
     </button>`).join('');
 }
@@ -838,23 +880,109 @@ function renderTaskManager(){
   const box = document.getElementById('taskMgmtList');
   if (!box) return;
   if (deptTasks.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของแผนกนี้</div>`; return; }
-  const multi = visibleDepts().length > 1;
   const multiWh = myWarehouses().length > 1;
-  box.innerHTML = deptTasks.map(t=>`
-    <div class="task-row">
-      <span class="t-name ${t.active?'':'t-inactive'}">${multiWh ? `<span class="wh-tag">${esc(t.warehouse||'–')}</span> ` : ''}${multi ? `${deptBadge(t.department, t.warehouse)} ` : ''}${esc(t.name)}${t.unit_label ? ` <span class="jc-sub">· ${esc(t.unit_label)}</span>` : ''}</span>
-      <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${esc(t.id)}" data-next-active="${t.active?'false':'true'}">
-        ${t.active?'ปิดใช้งาน':'เปิดใช้งาน'}
-      </button>
-    </div>`).join('');
+  const groups = [], idx = {};
+  deptTasks.forEach(t=>{
+    const k = t.department + '|' + (multiWh ? (t.warehouse||'') : '');
+    if (!(k in idx)){ idx[k] = groups.length; groups.push({ d:t.department, wh:t.warehouse, items:[] }); }
+    groups[idx[k]].items.push(t);
+  });
+  box.innerHTML = groups.map(g=>{
+    const c = deptColor(g.d, g.wh);
+    return `<div class="tg">
+      <div class="tg-head" style="background:${esc(c)}1f;color:${esc(c)}"><span class="tg-ico">${ICONS[DEPT_ICON[g.d]]||ICONS.box}</span>${esc(deptName(g.d, g.wh))}${multiWh ? ` · ${esc(g.wh||'–')}` : ''}<span class="tg-count">${g.items.length} ชนิดงาน</span></div>
+      <div class="tg-body">${g.items.map(t=>`
+        <div class="tg-row">
+          <div class="tg-main"><div class="tg-name ${t.active?'':'t-inactive'}">${esc(t.name)}</div><div class="sub">หน่วย: ${esc(t.unit_label || 'จำนวน')}</div></div>
+          <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${esc(t.id)}" data-next-active="${t.active?'false':'true'}">${t.active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
+        </div>`).join('')}</div>
+    </div>`;
+  }).join('');
 }
-function openAddTaskModal(){
+let addTaskLock = null; // {wh, dept} when opened from step 2 (locked)
+let taskGroupPick = null; // chosen group name, NEW_GROUP, or null
+const NEW_GROUP = '\u0000new';
+const normTaskName = s => String(s||'').toLowerCase().replace(/\s+/g, '');
+function taskModalScope(){
+  const lock = addTaskLock;
+  return {
+    wh: lock ? lock.wh : pickedWh('t-wh'),
+    dept: lock ? lock.dept : pickedDept('t-dept', 't-wh'),
+  };
+}
+function taskModalScopeRows(){
+  const { wh, dept } = taskModalScope();
+  const seen = new Set(), rows = [];
+  (TASKS[dept]||[]).filter(t=>taskInWh(t, wh)).forEach(t=>{ seen.add(t.id); rows.push({ name:t.label, group:t.group||null }); });
+  deptTasks.filter(t=>t.active && t.department===dept && t.warehouse===wh && !seen.has(t.id))
+    .forEach(t=>rows.push({ name:t.name, group:(t.task_group && String(t.task_group).trim()) || null }));
+  return rows;
+}
+function chosenTaskGroup(){
+  if (taskGroupPick === NEW_GROUP) return document.getElementById('t-group-new').value.trim();
+  return taskGroupPick || '';
+}
+// returns 'dup' | 'similar' | ''
+function taskNameState(){
+  const nm = normTaskName(document.getElementById('t-name').value);
+  if (!nm) return '';
+  let state = '';
+  for (const r of taskModalScopeRows()){
+    const o = normTaskName(r.name);
+    if (o === nm) return 'dup';
+    if (o.includes(nm) || nm.includes(o)) state = 'similar';
+  }
+  return state;
+}
+function refreshTaskGroupUi(){
+  const rows = taskModalScopeRows();
+  const groups = [...new Set(rows.map(r=>r.group || DEFAULT_GROUP))].sort((a,b)=>a.localeCompare(b,'th'));
+  if (taskGroupPick && taskGroupPick !== NEW_GROUP && !groups.includes(taskGroupPick)) taskGroupPick = null;
+  document.getElementById('t-group-chips').innerHTML =
+    groups.map(g=>`<button type="button" class="chip" data-task-group="${esc(g)}" aria-pressed="${taskGroupPick===g}">${esc(g)}</button>`).join('') +
+    `<button type="button" class="chip" data-task-group-new aria-pressed="${taskGroupPick===NEW_GROUP}">+ กลุ่มใหม่</button>`;
+  const gi = document.getElementById('t-group-new');
+  gi.hidden = taskGroupPick !== NEW_GROUP;
+  const st = taskNameState();
+  const warn = document.getElementById('t-name-warn');
+  warn.hidden = !st;
+  warn.className = 'field-warn ' + (st === 'dup' ? 'is-dup' : 'is-soft');
+  warn.textContent = st === 'dup' ? 'มีงานชื่อนี้แล้ว' : (st === 'similar' ? 'มีงานชื่อใกล้เคียงอยู่แล้ว ตรวจสอบก่อนเพิ่ม' : '');
+  document.getElementById('taskSubmitBtn').disabled = st === 'dup';
+}
+let taskModalWired = false;
+function wireTaskModalInputs(){
+  if (taskModalWired) return;
+  taskModalWired = true;
+  document.getElementById('t-name').addEventListener('input', refreshTaskGroupUi);
+  document.getElementById('t-wh').addEventListener('change', ()=>setTimeout(refreshTaskGroupUi, 0));
+  document.getElementById('t-dept').addEventListener('change', refreshTaskGroupUi);
+  document.getElementById('t-group-chips').addEventListener('click', e=>{
+    const c = e.target.closest('[data-task-group], [data-task-group-new]');
+    if (!c) return;
+    taskGroupPick = c.hasAttribute('data-task-group-new') ? NEW_GROUP : c.dataset.taskGroup;
+    refreshTaskGroupUi();
+    if (taskGroupPick === NEW_GROUP) document.getElementById('t-group-new').focus();
+  });
+}
+function openAddTaskModal(lock){
+  addTaskLock = (lock && lock.wh && lock.dept) ? lock : null;
   document.getElementById('t-name').value='';
   const tu = document.getElementById('t-unit'); if (tu) tu.value='';
   document.getElementById('taskHint').textContent='';
   fillWhSelect('t-wh', 't-wh-field');
   wireWhDeptLink('t-wh', 't-dept', 't-dept-field');
   fillDeptSelect('t-dept', 't-dept-field', 't-wh');
+  taskGroupPick = null;
+  document.getElementById('t-group-new').value = '';
+  wireTaskModalInputs();
+  refreshTaskGroupUi();
+  const ttl = document.querySelector('#addTaskModal .modal-title');
+  if (addTaskLock){
+    document.getElementById('t-wh-field').hidden = true;
+    document.getElementById('t-dept-field').hidden = true;
+    if (ttl) ttl.textContent = `เพิ่มแม่แบบงาน · ${WH_PLAIN[addTaskLock.wh]||addTaskLock.wh} · ${deptName(addTaskLock.dept, addTaskLock.wh)}`;
+  } else if (ttl) ttl.textContent = 'เพิ่มชนิดงานใหม่';
   document.getElementById('addTaskBackdrop').classList.add('open');
   document.getElementById('addTaskModal').classList.add('open');
   setTimeout(()=>document.getElementById('t-name').focus(), 50);
@@ -867,26 +995,49 @@ document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('t-name').value.trim();
   const hint = document.getElementById('taskHint');
   if (!name){ hint.textContent = 'พิมพ์ชื่องานก่อน'; return; }
-  const wh = pickedWh('t-wh');
-  const dept = pickedDept('t-dept', 't-wh');
-  if (deptTasks.some(t=>t.name===name && t.department===dept && t.warehouse===wh)){ hint.textContent = `"${name}" มีอยู่แล้ว`; return; }
+  const lock = addTaskLock;
+  const wh = lock ? lock.wh : pickedWh('t-wh');
+  const dept = lock ? lock.dept : pickedDept('t-dept', 't-wh');
+  if (taskNameState() === 'dup'){ hint.textContent = 'มีงานชื่อนี้แล้ว'; return; }
+  const grp = chosenTaskGroup();
+  if (!grp){ hint.textContent = taskGroupPick === NEW_GROUP ? 'พิมพ์ชื่อกลุ่มใหม่ก่อน' : 'เลือกกลุ่มงานก่อน'; return; }
+  const taskGroup = grp === DEFAULT_GROUP ? null : grp;
   hint.textContent = 'กำลังเพิ่ม...';
   try{
     const id = wh.toLowerCase() + '_' + dept.toLowerCase() + '_' + Date.now();
     const unitLabel = (document.getElementById('t-unit')?.value || '').trim() || null;
-    const { error } = await sb.from('tasks').insert({ id, warehouse: wh, department: dept, name, active: true, unit_label: unitLabel });
+    const { error } = await sb.from('tasks').insert({ id, warehouse: wh, department: dept, name, active: true, unit_label: unitLabel, task_group: taskGroup });
     if (error) throw error;
     hint.textContent = `เพิ่ม "${name}" แล้ว`;
     await refreshDeptTasks(); renderTaskManager();
     await loadTasksFromDb();
-    setTimeout(closeAddTaskModal, 500);
-  }catch(err){ hint.textContent = 'เพิ่มไม่สำเร็จ: ' + mapDbError(err); }
+    if (lock){
+      closeAddTaskModal();
+      if (activeStep===2) renderStep2();
+      toast(`เพิ่ม "${name}" แล้ว`, 'ok');
+    } else setTimeout(closeAddTaskModal, 500);
+  }catch(err){
+    const denied = err && (err.code === '42501' || /row-level security|permission/i.test(err.message||''));
+    hint.textContent = denied ? 'คุณไม่มีสิทธิ์เพิ่มงานในแผนกนี้' : 'เพิ่มไม่สำเร็จ: ' + mapDbError(err);
+  }
 });
 
 // ================= SUPERVISOR role: open / close jobs directly =================
 // One model: the SUPERVISOR picks a task + crew and opens the job (logs the
 // start), then later closes it (logs the end + quantity). No approval step —
 // closing writes status 'approved' straight away.
+function showSupOpenSuccess(task, members, start){
+  document.getElementById('successText').textContent = 'บันทึกงานแล้ว';
+  document.getElementById('successSub').textContent = 'เริ่มจับเวลา ' + start + ' · งานอยู่ในแท็บ “งานเปิดอยู่”';
+  const names = members.map(m=>m.name);
+  const card = document.getElementById('successCard');
+  card.innerHTML = `<div class="sc-title">${esc(task ? task.label : '')}</div>
+    <div class="sc-sub">${esc(deptName(oDeptVal, oWhVal))} · ${esc(WH_PLAIN[oWhVal]||oWhVal||'')}</div>
+    <div class="sc-foot">${avatarStack(names, 32)}<span>${names.length} คน · เริ่ม ${esc(start)}</span></div>`;
+  card.hidden = false;
+  document.getElementById('successActions').hidden = false;
+  supOpenDone = true; renderScreens();
+}
 async function openSupervisorJobs(){
   const hint = document.getElementById('openHint');
   if (!oWhVal || !oDeptVal){ hint.textContent='เลือกคลังและฝั่งก่อน'; return; }
@@ -917,8 +1068,7 @@ async function openSupervisorJobs(){
     document.getElementById('d-date').value = '';
     document.getElementById('d-start').value = '';
     await Promise.all([refreshOpenJobs(), refreshJobs()]);
-    toast('เปิดงานแล้ว · ' + (task ? task.label : ''), 'ok');
-    goTab('openjobs');
+    showSupOpenSuccess(task, crewMembers, start);
   }catch(err){
     hint.textContent = '';
     toast('เปิดงานไม่สำเร็จ: ' + mapDbError(err));
@@ -955,21 +1105,24 @@ function renderOpenJobs(){
     const started = g.started_at
       ? new Date(g.started_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})
       : (d.start || '–');
+    const elapsed = g.started_at ? `<div class="job-timer"><b data-started="${esc(g.started_at)}">${fmtElapsed(Date.now() - new Date(g.started_at).getTime())}</b><span>ชม.:นาที</span></div>` : '';
     return `<div class="hist-card">
-      <div class="hist-top"><div>
-        <span class="wh-tag">${esc(WH_PLAIN[g.warehouse]||g.warehouse||'–')}</span>
-        ${deptBadge(g.department, g.warehouse)}
-        <span class="status-badge open">${STATUS_LABEL.open}</span>
-        <div class="hist-task">${esc(task?task.label:g.task_id)}</div>
-        <div class="hist-crew">${esc(g.crewNames.join(', '))}</div>
-      </div></div>
-      <div class="hist-meta">
-        <span>${esc(d.date||'')}</span>
-        <span>เริ่ม ${esc(started)} น.</span>
+      <div class="hist-top">
+        <div>
+          <div class="hist-task">${esc(task?task.label:g.task_id)}</div>
+          <div class="hist-tags" style="margin-top:4px;">
+            <span class="wh-tag">${esc(WH_PLAIN[g.warehouse]||g.warehouse||'–')}</span>
+            ${deptBadge(g.department, g.warehouse)}
+            <span class="status-badge open">${STATUS_LABEL.open}</span>
+          </div>
+        </div>
+        ${elapsed}
       </div>
-      <div class="approve-actions">
-        <button type="button" class="mini-btn approve" data-close-group="${i}">ปิดงาน · บันทึกผล</button>
+      <div class="hist-foot">
+        <span class="crew-av">${avatarStack(g.crewNames, 26)}<span class="hist-crew">${esc(g.crewNames.length)} คน</span></span>
+        <span class="hist-crew" style="flex:none;">เริ่ม ${esc(started)} น.</span>
       </div>
+      <button type="button" class="btn sm gh w" data-close-group="${i}">ปิดงาน · บันทึกผล</button>
     </div>`;
   }).join('');
 }
@@ -982,10 +1135,15 @@ function openCloseForm(idx){
   const started = closingGroup.started_at
     ? new Date(closingGroup.started_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})
     : (d.start || '–');
+  const cjStartMs = closingGroup.started_at ? new Date(closingGroup.started_at).getTime() : NaN;
   document.getElementById('closeJobCard').innerHTML = `
-    <div class="active-job-name">${esc(task?task.label:closingGroup.task_id)}</div>
-    <div class="active-job-meta">${esc(closingGroup.crewNames.join(', '))}</div>
-    <div class="active-job-meta">เริ่มงานเวลา ${esc(started)} น.</div>`;
+    <span class="ttl">${esc(task?task.label:closingGroup.task_id)}</span>
+    <div class="sum-row">
+      <div><div class="sub">เริ่ม</div><b>${esc(started)}</b></div>
+      <div><div class="sub">ตอนนี้</div><b id="cjNow">${esc(timeNowHHMM())}</b></div>
+      <div><div class="sub">ใช้เวลา</div><b class="acc"${isNaN(cjStartMs) ? '' : ` data-started="${esc(closingGroup.started_at)}"`}>${isNaN(cjStartMs) ? '–' : fmtElapsed(Date.now() - cjStartMs)}</b></div>
+    </div>
+    <div class="sum-crew">${avatarStack(closingGroup.crewNames, 28)}<span class="sub">${esc(closingGroup.crewNames.join(', '))}</span></div>`;
   document.getElementById('closeDoneFields').innerHTML = task ? buildResultFieldsHTML(task, 'c') : '';
   if (task) wireContainerAutofill(task, 'c');
   document.getElementById('c-end').value = timeNowHHMM();
@@ -1094,6 +1252,16 @@ document.addEventListener('click', async (e)=>{
     return;
   }
 
+  const addBtn = e.target.closest('[data-add]');
+  if (addBtn){
+    const input = document.getElementById(addBtn.dataset.target);
+    if (input){
+      input.value = (Number(input.value)||0) + Number(addBtn.dataset.add);
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    }
+    return;
+  }
+
   const stepBtn = e.target.closest('[data-step]');
   if (stepBtn){
     const input = document.getElementById(stepBtn.dataset.target);
@@ -1146,7 +1314,14 @@ document.addEventListener('click', async (e)=>{
   if (rejectBtn){ setJobStatusSupervisor(rejectBtn.dataset.rejectJob, 'rejected'); return; }
 
   if (e.target.closest('#toggleAddTaskLink')){ openAddTaskModal(); return; }
-  if (e.target.closest('#addTaskBackdrop')){ closeAddTaskModal(); return; }
+  if (e.target.closest('[data-add-template]')){
+    if (isAdmin() || isSupervisorRole()) openAddTaskModal({ wh: oWhVal, dept: oDeptVal });
+    return;
+  }
+  if (e.target.closest('#addTaskBackdrop') || e.target.closest('[data-task-close]')){ closeAddTaskModal(); return; }
+
+  const rosterFilter = e.target.closest('[data-roster-filter]');
+  if (rosterFilter){ rosterDeptFilter = rosterFilter.dataset.rosterFilter; renderRosterManager(); return; }
 
   const toggleTask = e.target.closest('[data-toggle-task]');
   if (toggleTask){
@@ -1216,6 +1391,8 @@ function mapDbError(err){
 }
 
 function showSuccess(taskLabel, crewCount){
+  document.getElementById('successCard').hidden = true;
+  document.getElementById('successActions').hidden = true;
   document.getElementById('successText').textContent = 'บันทึกงานเรียบร้อย';
   document.getElementById('successSub').textContent = `${taskLabel} · ทีม ${crewCount} คน`;
   activeStep = 4; renderScreens();
@@ -1230,24 +1407,37 @@ function showSuccess(taskLabel, crewCount){
 }
 
 // ================= EMPLOYEE ROSTER =================
+function weekCount(name){
+  const since = new Date(nowBkk().getTime() - 6*864e5).toLocaleDateString('sv-SE');
+  return jobs.filter(j=>(j.crew||[]).includes(name) && j.details && j.details.date >= since).length;
+}
 function renderRosterManager(){
+  const depts = visibleDepts();
+  if (rosterDeptFilter !== 'all' && !depts.includes(rosterDeptFilter)) rosterDeptFilter = 'all';
+  document.getElementById('rosterChips').innerHTML = [['all','ทั้งหมด'], ...depts.map(d=>[d, deptName(d)])]
+    .map(([v,l])=>`<button type="button" class="chip" data-roster-filter="${esc(v)}" aria-pressed="${rosterDeptFilter===v}">${esc(l)}</button>`).join('');
+  renderRosterList();
+}
+function renderRosterList(){
   const cols = document.getElementById('rosterCols');
   const multiWh = myWarehouses().length > 1;
-  cols.innerHTML = visibleDepts().map(d=>{
-    const list = roster.filter(r=>r.department===d && inWh(r.warehouse)).sort((a,b)=>a.name.localeCompare(b.name,'th'));
-    const isOpen = openRosterDept===d;
-    const rows = list.length===0
-      ? `<p class="empty-roster">ยังไม่มีคนงานฝั่งนี้</p>`
-      : list.map(r=>`<div class="roster-row"><span class="rr-name">${multiWh ? `<span class="wh-tag">${esc(r.warehouse||'–')}</span>` : ''}${deptBadge(d, r.warehouse)}${esc(r.name)}</span><button type="button" class="icon-btn" data-roster-del="${esc(r.id)}">${ICONS.x}</button></div>`).join('');
-    return `<div class="matrix-emp ${isOpen?'open':''}">
-      <div class="matrix-emp-head" data-roster-dept="${d}">
-        <span class="name">${esc(deptName(d, list[0] && list[0].warehouse))}</span>
-        <span class="total">${list.length} คน</span>
-        <span class="t-chev chev">${ICONS.chev}</span>
-      </div>
-      <div class="matrix-emp-body">${rows}</div>
-    </div>`;
-  }).join('');
+  const q = rosterQuery.trim().toLowerCase();
+  const list = roster
+    .filter(r=>visibleDepts().includes(r.department) && inWh(r.warehouse)
+      && (rosterDeptFilter==='all' || r.department===rosterDeptFilter)
+      && (!q || String(r.name).toLowerCase().includes(q)))
+    .sort((a,b)=>a.name.localeCompare(b.name,'th'));
+  cols.innerHTML = list.length===0
+    ? `<p class="empty-roster">ไม่พบพนักงาน</p>`
+    : list.map(r=>{
+        const c = deptColor(r.department, r.warehouse);
+        return `<div class="roster-row">
+          ${avatarHTML(r.name, 40)}
+          <div class="rr-main"><div class="rr-name">${multiWh ? `<span class="wh-tag">${esc(r.warehouse||'–')}</span>` : ''}${esc(r.name)}</div><div class="sub">งานสัปดาห์นี้ ${weekCount(r.name)}</div></div>
+          <span class="dtag" style="color:${esc(c)};background:${esc(c)}1f">${esc(deptName(r.department, r.warehouse))}</span>
+          <button type="button" class="icon-btn" data-roster-del="${esc(r.id)}" aria-label="ลบ ${esc(r.name)}">${ICONS.x}</button>
+        </div>`;
+      }).join('');
 }
 
 function openAddEmpModal(){
@@ -1319,23 +1509,35 @@ function renderMatrix(){
   const wrap = document.getElementById('matrixWrap');
   if (emps.length===0){ wrap.innerHTML = `<p class="empty-roster">ยังไม่มีข้อมูล</p>`; return; }
 
-  wrap.innerHTML = emps.map(emp=>{
-    const rows = tasksScoped.map(t=>{
-      const n = scopedJobs.filter(j=>j.task_id===t.id && (j.crew||[]).includes(emp)).length;
-      return {t, n};
-    });
+  const lvl = n => n<=0 ? 'h0' : n<=5 ? 'h1' : n<=20 ? 'h2' : n<=50 ? 'h3' : 'h4';
+  const data = emps.map(emp=>({
+    emp,
+    rows: tasksScoped.map(t=>({ t, n: scopedJobs.filter(j=>j.task_id===t.id && (j.crew||[]).includes(emp)).length })),
+  }));
+  const heat = tasksScoped.length===0 ? '' : `
+    <div class="card-box">
+      <div class="leg"><span><i class="h0"></i>ยังไม่เคย</span><span><i class="h1"></i>1–5</span><span><i class="h2"></i>6–20</span><span><i class="h3"></i>21–50</span><span><i class="h4"></i>50+</span></div>
+      <div class="hm-scroll"><div class="hm" style="grid-template-columns:84px repeat(${tasksScoped.length},44px)">
+        <span></span>${tasksScoped.map(t=>`<span class="hm-col" title="${esc(t.label)}"><span>${esc(t.label)}</span></span>`).join('')}
+        ${data.map(d=>`<span class="hm-name">${esc(d.emp)}</span>${d.rows.map(r=>`<div class="${lvl(r.n)}">${r.n||'–'}</div>`).join('')}`).join('')}
+      </div></div>
+    </div>`;
+
+  wrap.innerHTML = heat + data.map(({emp, rows})=>{
     const total = rows.reduce((s,r)=>s+r.n,0);
+    const able = rows.filter(r=>r.n>0).length;
     const isOpen = openMatrixEmp===emp;
     const rowsHtml = rows.map(({t,n})=>`
-      <div class="skill-row">
-        <span style="display:inline-flex;align-items:center;gap:6px;"><span style="display:inline-flex;width:15px;height:15px;">${ICONS[t.icon]||ICONS.box}</span>${esc(t.label)}</span>
-        <span class="skill-count" style="color:${n>0?'var(--'+t.dept.toLowerCase()+')':'var(--ink-faint)'}">${n||'–'}</span>
+      <div class="skill-bar">
+        <span>${esc(t.label)}</span>
+        <div class="tbar"><i style="width:${n>0 ? Math.max(4, Math.min(100, Math.round(n/50*100))) : 0}%"></i></div>
+        <b>${n||'–'}</b>
       </div>`).join('');
     return `
     <div class="matrix-emp ${isOpen?'open':''}">
       <div class="matrix-emp-head" data-matrix-emp="${esc(emp)}">
-        <span class="name">${esc(emp)}</span>
-        <span class="total">${num(total)} ครั้ง</span>
+        ${avatarHTML(emp, 36)}
+        <div class="mh-main"><div class="name">${esc(emp)}</div><div class="total">ทำได้ ${able} จาก ${rows.length} งาน · ${num(total)} ครั้ง</div></div>
         <span class="chev">${ICONS.chev}</span>
       </div>
       <div class="matrix-emp-body">${rowsHtml}</div>
@@ -1384,17 +1586,19 @@ function renderHistory(){
     <div class="hist-card">
       <div class="hist-top">
         <div>
-          <span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span>
-          ${deptBadge(j.department, j.warehouse)}
-          <span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span>
-          <div class="hist-task">${task?('<span style=\"display:inline-flex;vertical-align:-3px;width:15px;height:15px;margin-right:4px;\">'+(ICONS[task.icon]||ICONS.box)+'</span>'+esc(task.label)):esc(j.task_id)}</div>
-          <div class="hist-crew">${esc((j.crew||[]).join(', '))}</div>
+          <div class="hist-task">${task ? esc(task.label) : esc(j.task_id)}</div>
+          <div class="hist-time">${ICONS.clock}${esc(d.start||'')}–${esc(d.end||'–')} · ${d.mins == null ? '–' : num(d.mins)} นาที</div>
         </div>
+        <span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span>
       </div>
-      <div class="hist-meta">
-        <span>${esc(d.date)}</span>
-        <span>${esc(d.start||'')}–${esc(d.end||'–')} (${d.mins == null ? '–' : num(d.mins)} นาที)</span>
+      <div class="hist-foot">
+        <span class="crew-av">${avatarStack(j.crew||[], 26)}<span class="hist-crew">${esc((j.crew||[]).join(', '))}</span></span>
         <span class="hist-result">${esc(formatResult(d, task))}</span>
+      </div>
+      <div class="hist-tags">
+        <span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span>
+        ${deptBadge(j.department, j.warehouse)}
+        <span class="hist-crew">${esc(d.date)}</span>
         ${issueBadge}
       </div>
     </div>`;
@@ -1486,3 +1690,28 @@ document.getElementById('liveStatus').innerHTML = '<span class="live-dot"></span
     }
   });
 })();
+
+// ===== UI-only wiring: search boxes, success buttons, profile logout =====
+document.getElementById('taskSearch').addEventListener('input', e=>{
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll('#jobChoiceList .jg').forEach(g=>{
+    let any = false;
+    g.querySelectorAll('.job-choice').forEach(b=>{
+      const hit = !q || b.textContent.toLowerCase().includes(q);
+      b.hidden = !hit; if (hit) any = true;
+    });
+    g.hidden = !any;
+    g.classList.toggle('jg-searching', !!q);
+  });
+});
+document.getElementById('jobChoiceList').addEventListener('click', e=>{
+  const h = e.target.closest('[data-toggle-group]');
+  if (!h) return;
+  const g = h.closest('.jg');
+  const open = g.classList.toggle('open');
+  h.setAttribute('aria-expanded', String(open));
+});
+document.getElementById('rosterSearch').addEventListener('input', e=>{ rosterQuery = e.target.value; renderRosterList(); });
+document.getElementById('successGoOpenBtn').addEventListener('click', ()=> goTab('openjobs'));
+document.getElementById('successNewBtn').addEventListener('click', ()=> goTab('new'));
+document.getElementById('pmLogoutBtn').addEventListener('click', ()=>{ closeProfileModal(); logout(); });

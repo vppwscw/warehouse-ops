@@ -2631,7 +2631,7 @@ function renderUsersTable(){
       </article>`;
     }
 
-    const scopeCell = scoped
+    const scopeCell = (scoped || u.role === 'ADMIN')
       ? `<span class="td-sub" data-scope-admin ${u.role==='ADMIN'?'':'hidden'}>ทุกคลัง · ทุกแผนก</span><div data-scope-grid ${u.role==='ADMIN'?'hidden':''}>${scopeGridHTML(pairs, 'u-scope-cb')}</div>`
       : u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
       : deptCheckboxes(userDepts(u), 'u-dept-cb');

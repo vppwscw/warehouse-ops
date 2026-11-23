@@ -1830,11 +1830,11 @@ function atFillDepts(keepDept){
   sel.innerHTML = keys.map(k=>`<option value="${esc(k)}">${esc(deptName(k, wh))}</option>`).join('');
   if (keepDept && keys.includes(keepDept)) sel.value = keepDept;
 }
-function openAddTaskModal(){
-  const wh = whFilter !== 'ALL' ? whFilter : WH_KEYS[0];
+function openAddTaskModal(preset){
+  const wh = preset && preset.wh ? preset.wh : (whFilter !== 'ALL' ? whFilter : WH_KEYS[0]);
   document.getElementById('atWh').innerHTML = WH_KEYS.map(w=>`<option value="${w}">${esc(WH_PLAIN[w])}</option>`).join('');
   document.getElementById('atWh').value = wh;
-  atFillDepts(deptFilter !== 'ALL' ? deptFilter : null);
+  atFillDepts(preset && preset.dept ? preset.dept : (deptFilter !== 'ALL' ? deptFilter : null));
   document.getElementById('atName').value = '';
   document.getElementById('atUnit').value = '';
   document.getElementById('atGroupNew').value = '';
@@ -1868,12 +1868,62 @@ async function saveAddTask(){
     if (error) throw error;
     closeAddTaskModal();
     await refreshTasksAdmin(); await loadTasksFromDb(); render();
+    refreshDeptModal();
     toast(`เพิ่ม "${name}" แล้ว`, 'ok');
   }catch(err){
     const denied = err && (err.code === '42501' || /row-level security|permission/i.test(err.message||''));
     hint.textContent = denied ? 'คุณไม่มีสิทธิ์เพิ่มงานในแผนกนี้' : 'เพิ่มไม่สำเร็จ: ' + mapDbError(err);
   }finally{ btn.disabled = false; }
 }
+// ---- department card modal (templates grouped by task_group) ----
+let deptModalKey = null;
+function renderDeptModal(){
+  const [wh, code] = deptModalKey.split(':');
+  const d = DEPT_ROWS.find(x=>x.warehouse===wh && x.code===code) || { warehouse:wh, code, name:code, color:'#6B7280' };
+  const tasks = taskList.filter(t=>t.warehouse===wh && t.department===code);
+  const workers = allEmployees.filter(e=>e.warehouse===wh && e.department===code).length;
+  const groups = new Map();
+  tasks.forEach(t=>{ const g = taskGroupOf(t); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(t); });
+  const gl = [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0],'th'));
+  const body = !tasks.length ? '<p class="empty-note">ยังไม่มีแม่แบบงาน</p>' : gl.map(([g, items])=>{
+    items = items.slice().sort((a,b)=> ((a.active===false)-(b.active===false)) || String(a.name).localeCompare(String(b.name),'th'));
+    return `<div class="dm-group"><div class="dm-group-head"><span>${esc(g)}</span><span class="dm-count">${items.length}</span></div>` +
+      items.map(t=>{ const on = t.active !== false;
+        return `<div class="dm-task${on?'':' row-inactive'}"><span class="dm-task-name">${esc(t.name)}</span>
+          <span class="dm-task-unit">${esc(t.unit_label || 'จำนวน')}</span>
+          <span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></div>`; }).join('') + '</div>';
+  }).join('');
+  document.getElementById('deptModalHead').innerHTML =
+    `<span class="dm-dot" style="background:${esc(d.color||'#6B7280')}"></span>
+     <div><h3>${esc(d.code)}${d.name && d.name!==d.code ? " · "+esc(d.name) : ""}</h3>
+     <div class="dm-sub">${esc(WH_PLAIN[wh]||wh)} · ${tasks.length} แม่แบบ · ${workers} คนงาน</div></div>`;
+  document.getElementById('deptModalBody').innerHTML = body;
+  document.getElementById('deptModalAdd').hidden = isReadOnly();
+}
+function openDeptModal(key){
+  deptModalKey = key;
+  renderDeptModal();
+  document.getElementById('deptModal').hidden = false;
+  setTimeout(()=>document.getElementById('deptModalClose').focus(), 30);
+}
+function closeDeptModal(){ deptModalKey = null; document.getElementById('deptModal').hidden = true; }
+function refreshDeptModal(){ if (deptModalKey && !document.getElementById('deptModal').hidden) renderDeptModal(); }
+document.addEventListener('click', e=>{
+  const v = e.target.closest('[data-dept-view]');
+  if (v){ openDeptModal(v.dataset.deptView); return; }
+  const row = e.target.closest('tr[data-dept-open]');
+  if (row && !e.target.closest('input,button,select,a,label')){ openDeptModal(row.dataset.deptOpen); return; }
+  if (e.target.closest('#deptModalClose') || e.target.id === 'deptModal'){ closeDeptModal(); return; }
+  if (e.target.closest('#deptModalAdd') && deptModalKey){
+    const [wh, dept] = deptModalKey.split(':');
+    openAddTaskModal({ wh, dept });
+  }
+});
+document.addEventListener('keydown', e=>{
+  const m = document.getElementById('deptModal');
+  const at = document.getElementById('addTaskModal');
+  if (e.key === 'Escape' && m && !m.hidden && at && at.hidden) closeDeptModal();
+});
 document.addEventListener('click', e=>{
   if (e.target.closest('#addTaskOpenBtn')){ openAddTaskModal(); return; }
   if (e.target.closest('#atCancel') || e.target.id === 'addTaskModal'){ closeAddTaskModal(); return; }
@@ -1892,7 +1942,7 @@ document.addEventListener('change', e=>{
 document.addEventListener('keydown', e=>{
   const m = document.getElementById('addTaskModal');
   if (!m || m.hidden) return;
-  if (e.key === 'Escape') closeAddTaskModal();
+  if (e.key === 'Escape'){ closeAddTaskModal(); e.stopImmediatePropagation(); }
   else if (e.key === 'Enter' && e.target.tagName === 'INPUT') saveAddTask();
 });
 // in-page text prompt (window.prompt is blocked in some webviews)
@@ -2009,14 +2059,16 @@ function renderDeptAdmin(){
       const u = usage(d.warehouse, d.code);
       const on = d.active !== false;
       const key = d.warehouse + ':' + d.code;
-      return `<tr class="${on?'':'row-inactive'}">
+      const nTpl = taskList.filter(t=>t.warehouse===d.warehouse && t.department===d.code).length;
+      return `<tr class="dept-row-click ${on?'':'row-inactive'}" data-dept-open="${esc(key)}">
         <td><span class="wh-tag">${esc(WH_PLAIN[d.warehouse]||d.warehouse)}</span></td>
-        <td class="mono"><b>${esc(d.code)}</b></td>
+        <td class="mono"><button type="button" class="dept-open-btn" data-dept-view="${esc(key)}" aria-label="ดูแม่แบบงานแผนก ${esc(d.name)} (${nTpl})"><b>${esc(d.code)}</b></button></td>
         <td><input type="text" class="code-input" data-dept-name="${esc(key)}" value="${esc(d.name)}" style="width:150px"></td>
         <td><input type="color" data-dept-color="${esc(key)}" value="${esc(d.color||'#6B7280')}"><span class="color-contrast-hint" data-dept-color-hint="${esc(key)}"></span></td>
         <td class="mono">${u.total ? `${u.total} (scope ${u.inScope} · งาน ${u.inTasks} · คน ${u.inEmp})` : '–'}</td>
         <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
         <td>
+          <button type="button" class="mini-btn" data-dept-view="${esc(key)}" aria-label="ดูแม่แบบงานแผนก ${esc(d.name)} (${nTpl})">ดูแม่แบบ (${nTpl})</button>
           <button type="button" class="mini-btn approve" data-dept-save="${esc(key)}">บันทึก</button>
           <button type="button" class="mini-btn ${on?'reject':'approve'}" data-dept-toggle="${esc(key)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
           ${u.total ? '' : `<button type="button" class="mini-btn reject" data-dept-del="${esc(key)}">ลบถาวร</button>`}

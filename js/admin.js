@@ -184,8 +184,8 @@ let loadError = null;    // set when the initial jobs load fails (drives the err
 
 // Only ADMIN edits/approves in this app; LV3+ see ERP read-only
 const isReadOnly = () => !profile || profile.role !== 'ADMIN';
-// Who can open the "ผู้ใช้งานระบบ" view at all (ADMIN full, LV4+ read-only), and who gets the full toolset.
-const canManageUsers = () => !!profile && (isAdminP(profile) || lvOf(profile) >= 4);
+// Only ADMIN opens the "ผู้ใช้งานระบบ" view (user 2026-11-24); others get their own profile.
+const canManageUsers = () => !!profile && isAdminP(profile);
 const isUserAdminFull = () => !!profile && profile.role === 'ADMIN';
 // ADMIN and LV5 see both warehouses; LV4 sees own warehouse + extra scope
 const seesAllWh = () => !!profile && (isAdminP(profile) || lvOf(profile) >= 5);
@@ -437,6 +437,9 @@ const ALL_NAV = [...NAV, ...SECONDARY];
 // adminOnly items (ตำแหน่ง & LV) only show for ADMIN — rebuilt on login/logout
 function renderNav(){
   const items = NAV.filter(n => !n.adminOnly || isUserAdminFull());
+  const gl = canManageUsers() ? 'ผู้ใช้งานระบบ' : 'โปรไฟล์';
+  const gb = document.getElementById('gearBtn');
+  gb.innerHTML = ICONS.gear + '<span class="act-tx">' + gl + '</span>'; gb.title = gl; gb.setAttribute('aria-label', gl);
   document.getElementById('navList').innerHTML = items.map(n=>`
   <button type="button" class="navbtn" data-view="${n.id}" aria-current="${n.id===activeView}">
     <span class="nav-ic">${ICONS[n.icon]}</span><span class="nav-tx">${n.label}</span>

@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>Skill Matrix</title>
+<script src="js/gateway.js?v=2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<link rel="stylesheet" href="css/mobile.css?v=26">
+</head>
+<body>
+
+<div class="shell-outer">
+<div class="phone">
+
+  <div class="topbar">
+    <button type="button" class="back-btn" id="backBtn" hidden></button>
+    <div class="tb-brand"><span class="tb-logo">VPPW</span><span>Km.23</span></div>
+    <div class="topbar-title" id="topbarTitle">เริ่มงาน</div>
+    <span class="role-badge" id="roleBadge"></span>
+    <button type="button" class="icon-btn" id="changePwBtn" title="เปลี่ยนรหัสผ่าน"></button>
+    <button type="button" class="icon-btn" id="logoutBtn" title="ออกจากระบบ"></button>
+    <div class="live-pill" id="liveStatus"><span class="live-dot"></span>เชื่อมต่อ...</div>
+    <div class="step-info" id="stepInfo"><div class="step-label" id="stepLabel"></div><div class="step-bar" id="stepBar"><i></i><i></i><i></i></div></div>
+  </div>
+
+  <div class="content" id="contentArea">
+
+    <div class="screen active" id="screen-step1">
+      <div class="stat-row" id="statRow"></div>
+      <div class="wh-pick" id="whPick" hidden></div>
+      <p class="step-q" id="step1Q">วันนี้จะทำงานฝั่งไหน?</p>
+      <div class="tile-list" id="deptTiles"></div>
+    </div>
+
+    <div class="screen" id="screen-step2">
+      <p class="step-q" id="step2Title">เลือกงาน</p>
+      <div class="search-box"><span class="sb-ico" id="taskSearchIcon"></span><input id="taskSearch" type="search" placeholder="ค้นหาชื่องาน..." autocomplete="off"></div>
+      <div class="job-choice-list" id="jobChoiceList"></div>
+    </div>
+
+    <div class="screen" id="screen-step3">
+      <p class="step-q" id="step3Title">ใครทำงานนี้บ้าง?</p>
+      <div class="emp-check-list" id="empCheckList"></div>
+
+      <div class="card-box">
+        <span class="ttl">วันและเวลา</span>
+        <div class="field-row">
+          <div class="field"><label for="d-date">วันที่</label><input id="d-date" type="date"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="d-start">เวลาเริ่ม</label><input id="d-start" type="time"></div>
+          <div class="field"><label for="d-end">เวลาจบ</label><input id="d-end" type="time"></div>
+        </div>
+      </div>
+      <div id="doneResultFields"></div>
+
+      <div class="sticky-cta">
+        <button type="button" class="btn" id="openSubmitBtn">บันทึกงาน</button>
+        <p class="hint" id="openHint"></p>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-success">
+      <div class="success-flash">
+        <div class="ok-circle"></div>
+        <div class="ok-text" id="successText">บันทึกงานแล้ว</div>
+        <div class="ok-sub" id="successSub"></div>
+        <div class="success-card" id="successCard" hidden></div>
+        <div class="success-actions" id="successActions" hidden>
+          <button type="button" class="btn sig" id="successGoOpenBtn">ไปที่งานเปิดอยู่</button>
+          <button type="button" class="btn glass" id="successNewBtn">เปิดงานใหม่อีกงาน</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-history">
+      <button type="button" class="job-choice" id="openMatrixBtn" style="margin-bottom:16px;">
+        <span class="jc-icon badge INV" id="matrixTrophyIcon" style="width:40px;height:40px;border-radius:11px;"></span>
+        <span class="jc-body"><span class="jc-name">ใครทำอะไรได้บ้าง</span><span class="jc-sub">ดูสรุปทักษะพนักงานแต่ละคน</span></span>
+        <span class="t-chev" id="openMatrixChev"></span>
+      </button>
+
+      <div class="chip-scroll" id="dateFilterChips">
+        <button class="chip" data-range="today" aria-pressed="true">วันนี้</button>
+        <button class="chip" data-range="week" aria-pressed="false">7 วันล่าสุด</button>
+        <button class="chip" data-range="all" aria-pressed="false">ทั้งหมด</button>
+      </div>
+      <button type="button" class="link-btn" id="toggleMoreFiltersLink" style="margin-bottom:8px;">ค้นหา / กรองตามคน</button>
+      <div class="optional-panel" id="moreFiltersPanel" hidden>
+        <div class="field" style="margin-bottom:10px;"><select id="empFilter"><option value="">พนักงานทั้งหมด</option></select></div>
+        <input type="search" id="searchBox" placeholder="ค้นหาชื่องาน...">
+      </div>
+
+      <div id="historyList"></div>
+      <div class="empty-state" id="historyEmpty" hidden><div class="big">○</div>ยังไม่มีงานที่เสร็จช่วงนี้</div>
+    </div>
+
+    <div class="screen" id="screen-matrix">
+      <p class="hint" style="text-align:left;margin:0 0 16px;">แตะชื่อพนักงานเพื่อดูว่าเคยทำงานอะไรมาบ้าง</p>
+      <div id="matrixWrap"></div>
+    </div>
+
+    <div class="screen" id="screen-manage">
+      <div class="search-box"><span class="sb-ico" id="rosterSearchIcon"></span><input id="rosterSearch" type="search" placeholder="ค้นหาชื่อพนักงาน" autocomplete="off"></div>
+      <div class="chip-scroll" id="rosterChips"></div>
+      <div id="rosterCols"></div>
+      <div class="sticky-cta"><button type="button" class="btn" id="toggleAddEmpLink">+ เพิ่มพนักงานใหม่</button></div>
+    </div>
+
+    <!-- ===== USER role: today's task list (tap to open) ===== -->
+    <div class="screen" id="screen-worker-tasks">
+      <p class="step-q">งานของฉันวันนี้ — แตะเพื่อเริ่มงาน</p>
+      <div class="job-choice-list" id="workerTaskList"></div>
+    </div>
+
+    <!-- ===== USER role: the one job currently open (tap to close) ===== -->
+    <div class="screen" id="screen-worker-active">
+      <div class="active-job-card" id="activeJobCard"></div>
+      <div id="workerDoneFields"></div>
+      <div class="sticky-cta">
+        <button type="button" class="btn" id="workerCloseBtn">ปิดงาน · ส่งอนุมัติ</button>
+        <p class="hint" id="workerCloseHint"></p>
+      </div>
+    </div>
+
+    <!-- ===== USER role: post-close confirmation ===== -->
+    <div class="screen" id="screen-worker-success">
+      <div class="success-flash">
+        <div class="ok-circle"></div>
+        <div class="ok-text">ปิดงานแล้ว ส่งอนุมัติเรียบร้อย</div>
+        <div class="ok-sub" id="workerSuccessSub"></div>
+      </div>
+    </div>
+
+    <!-- ===== SUPERVISOR role: pending-approval queue for their department ===== -->
+    <div class="screen" id="screen-approve">
+      <div id="approveList"></div>
+      <div class="empty-state" id="approveEmpty" hidden><div class="big">○</div>ไม่มีงานรออนุมัติตอนนี้</div>
+    </div>
+
+    <!-- ===== SUPERVISOR role: jobs currently open — tap one to close it ===== -->
+    <div class="screen" id="screen-openjobs">
+      <div id="openJobsList"></div>
+      <div class="empty-state" id="openJobsEmpty" hidden><div class="big">○</div>ยังไม่มีงานที่เปิดค้างอยู่<br>ไปที่แถบ "เปิดงาน" เพื่อเริ่มงานใหม่</div>
+    </div>
+
+    <!-- ===== SUPERVISOR role: close-out form for one open job group ===== -->
+    <div class="screen" id="screen-closejob">
+      <div class="card-box" id="closeJobCard"></div>
+      <div id="closeDoneFields"></div>
+      <div class="card-box">
+        <div class="field"><label for="c-end">เวลาจบ</label><input id="c-end" type="time"></div>
+      </div>
+      <div class="sticky-cta">
+        <button type="button" class="btn" id="closeJobBtn">ปิดงาน · บันทึกผล</button>
+        <p class="hint" id="closeJobHint"></p>
+      </div>
+    </div>
+
+    <!-- ===== SUPERVISOR role: task types for their department ===== -->
+    <div class="screen" id="screen-tasks">
+      <div id="taskMgmtList"></div>
+      <div class="sticky-cta"><button type="button" class="btn" id="toggleAddTaskLink">+ เพิ่มชนิดงานใหม่</button></div>
+    </div>
+
+  </div>
+
+  <div class="bottomnav" id="bottomNav"></div>
+</div>
+</div>
+
+<div class="modal-backdrop" id="addEmpBackdrop"></div>
+<div class="modal-card" id="addEmpModal">
+  <div class="modal-title">เพิ่มพนักงานใหม่</div>
+  <div class="field" id="r-wh-field" hidden style="margin-bottom:12px;"><label for="r-wh">คลัง</label><select id="r-wh"></select></div>
+  <div class="field" id="r-dept-field" hidden style="margin-bottom:12px;"><label for="r-dept">ฝั่ง</label><select id="r-dept"></select></div>
+  <div class="field" style="margin-bottom:12px;"><label for="r-name">ชื่อพนักงานคนใหม่</label><input id="r-name" placeholder="พิมพ์ชื่อ-นามสกุล"></div>
+  <button type="button" class="btn" id="rosterSubmitBtn">+ เพิ่มเข้ารายชื่อ</button>
+  <button type="button" class="btn ghost" data-modal-close>ยกเลิก</button>
+  <p class="hint" id="rosterHint"></p>
+</div>
+
+<div class="modal-backdrop" id="addTaskBackdrop"></div>
+<div class="modal-card" id="addTaskModal">
+  <div class="modal-title">เพิ่มชนิดงานใหม่</div>
+  <div class="field" id="t-wh-field" hidden style="margin-bottom:12px;"><label for="t-wh">คลัง</label><select id="t-wh"></select></div>
+  <div class="field" id="t-dept-field" hidden style="margin-bottom:12px;"><label for="t-dept">ฝั่ง</label><select id="t-dept"></select></div>
+  <div class="field" style="margin-bottom:12px;"><label for="t-name">ชื่องาน</label><input id="t-name" placeholder="เช่น ตรวจนับสต๊อกปลายวัน"><div class="field-warn" id="t-name-warn" hidden></div></div>
+  <div class="field" style="margin-bottom:12px;">
+    <label>กลุ่มงาน (บังคับเลือก)</label>
+    <div class="group-chips" id="t-group-chips"></div>
+    <input id="t-group-new" placeholder="ชื่อกลุ่มใหม่" maxlength="60" hidden style="margin-top:8px;">
+  </div>
+  <div class="field" style="margin-bottom:12px;">
+    <label for="t-unit">หน่วยที่นับ (ว่างไว้ = "จำนวน")</label>
+    <input id="t-unit" list="t-unit-presets" placeholder="จำนวน">
+    <datalist id="t-unit-presets">
+      <option value="ยอดตู้เข้า"></option>
+      <option value="จำนวนตู้"></option>
+      <option value="จำนวนคัน"></option>
+      <option value="จำนวนพาเลท"></option>
+      <option value="จำนวนกล่อง"></option>
+      <option value="จำนวนชิ้น"></option>
+      <option value="เที่ยว"></option>
+      <option value="ครั้ง"></option>
+    </datalist>
+  </div>
+  <button type="button" class="btn" id="taskSubmitBtn">+ เพิ่มชนิดงาน</button>
+  <button type="button" class="btn ghost" data-task-close>ยกเลิก</button>
+  <p class="hint" id="taskHint"></p>
+</div>
+
+<div class="modal-backdrop" id="pwBackdrop"></div>
+
+<div class="modal-card" id="profileModal">
+  <div class="modal-title">โปรไฟล์ของฉัน</div>
+  <dl class="pm-info">
+    <div><dt>ชื่อ</dt><dd id="pmName">–</dd></div>
+    <div><dt>รหัสพนักงาน</dt><dd id="pmCode">–</dd></div>
+    <div><dt>สิทธิ์</dt><dd id="pmRole">–</dd></div>
+  </dl>
+  <p class="hint" id="pmHint" style="text-align:left;margin:8px 0 12px;"></p>
+  <button type="button" class="btn ghost" id="pmChangePwBtn">เปลี่ยนรหัสผ่าน</button>
+  <button type="button" class="btn dan" id="pmLogoutBtn">ออกจากระบบ</button>
+  <button type="button" class="btn ghost" id="pmClose">ปิด</button>
+</div>
+
+<div class="modal-card" id="pwModal">
+  <div class="modal-title">เปลี่ยนรหัสผ่าน</div>
+  <div class="field" style="margin-bottom:12px;"><label for="pwNew">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label><input id="pwNew" type="password" autocomplete="new-password"></div>
+  <div class="field" style="margin-bottom:12px;"><label for="pwNew2">พิมพ์อีกครั้ง</label><input id="pwNew2" type="password" autocomplete="new-password"></div>
+  <p class="hint" id="pwHint" style="text-align:left;margin:0 0 12px;"></p>
+  <button type="button" class="btn" id="pwConfirm" style="margin-bottom:6px;">บันทึก</button>
+  <button type="button" class="btn ghost" id="pwCancel">ยกเลิก</button>
+</div>
+
+<div id="toastHost"></div>
+
+<footer class="build-footer">Skill Matrix &middot; production build</footer>
+
+<script src="js/supabase-config.js?v=4"></script>
+<script src="js/mobile.js?v=37"></script>
+</body>
+</html>

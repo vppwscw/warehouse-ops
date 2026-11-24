@@ -232,8 +232,10 @@ function mapAuthError(err){
   if (/email not confirmed/i.test(msg)) return 'บัญชียังไม่ได้เปิดใช้งาน — ติดต่อแอดมิน';
   return 'เข้าสู่ระบบไม่สำเร็จ: ' + (msg || 'unknown error');
 }
-function showLogin(){ document.getElementById('loginOverlay').style.display='flex'; }
-function hideLogin(){ document.getElementById('loginOverlay').style.display='none'; }
+// Login lives on its own page (auth/login). Bounce there, optionally with a reason code.
+function goLogin(code){ location.replace('auth/login' + (code ? '?e=' + code : '')); }
+function showLogin(){ goLogin(); }
+function hideLogin(){}
 function refreshRoleBadge(){
   const whs = myWarehouses().join('/');
   const depts = myDepts().map(d=>deptName(d)).join(', ');
@@ -264,7 +266,7 @@ async function loadMyScope(){
 }
 
 // Which app(s) this account may open. An explicit profiles.apps wins; otherwise
-// the role default. 'erp' = admin.html, 'mobile' = index.html.
+// the role default. 'erp' = /erp, 'mobile' = /app.
 function allowedApps(p){
   if (p && Array.isArray(p.apps) && p.apps.length) return p.apps;
   if (!p) return [];
@@ -278,21 +280,21 @@ async function afterLogin(user){
   try{
     profile = await loadProfile(user);
   }catch(e){
-    document.getElementById('loginHint').textContent = 'ไม่พบข้อมูลผู้ใช้งานนี้ในระบบ กรุณาติดต่อผู้ดูแลระบบ';
-    await sb.auth.signOut();
+    try { await sb.auth.signOut(); } catch (e) {}
+    goLogin('notfound');
     return;
   }
   if (profile.active === false){
-    document.getElementById('loginHint').textContent = 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
-    await sb.auth.signOut();
+    try { await sb.auth.signOut(); } catch (e) {}
     profile = null;
+    goLogin('inactive');
     return;
   }
   await loadPositions();
   if (!isAdmin() && myLv() === 0){
-    document.getElementById('loginHint').textContent = 'บัญชีนี้ยังไม่มีตำแหน่ง กรุณาติดต่อผู้ดูแลระบบ';
-    await sb.auth.signOut();
+    try { await sb.auth.signOut(); } catch (e) {}
     profile = null;
+    goLogin('noposition');
     return;
   }
   if (!allowedApps(profile).includes('mobile')){
@@ -300,9 +302,9 @@ async function afterLogin(user){
       window.gwSwitchTo('erp');
       return;
     }
-    document.getElementById('loginHint').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้แอปมือถือ (ใช้ได้เฉพาะระบบ ERP)';
-    await sb.auth.signOut();
+    try { await sb.auth.signOut(); } catch (e) {}
     profile = null;
+    goLogin('noaccess');
     return;
   }
   if (user.user_metadata && user.user_metadata.must_change_password){
@@ -331,16 +333,13 @@ async function refreshMyOpenJob(){
   }catch(e){ myOpenJob = null; }
 }
 
-function logout(){
+async function logout(){
   try { sessionStorage.removeItem('gw-app'); } catch (e) {}  // next person gets device routing again
-  sb.auth.signOut();
+  try { await sb.auth.signOut(); } catch (e) {}
   profile = null; currentUser = null;
   jobs = []; roster = []; myOpenJob = null; workerStep = 'list';
   if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
-  document.getElementById('loginCode').value='';
-  document.getElementById('loginPass').value='';
-  document.getElementById('loginHint').textContent='';
-  showLogin();
+  goLogin();
 }
 document.getElementById('logoutBtn').addEventListener('click', ()=> logout());
 
@@ -439,22 +438,6 @@ function openProfileModal(){
 document.getElementById('changePwBtn').addEventListener('click', openProfileModal);
 document.getElementById('pmClose').addEventListener('click', closeProfileModal);
 document.getElementById('pmChangePwBtn').addEventListener('click', ()=>{ closeProfileModal(); changeOwnPassword(); });
-
-document.getElementById('loginSubmitBtn').addEventListener('click', async ()=>{
-  const hint = document.getElementById('loginHint');
-  const rawCode = document.getElementById('loginCode').value;
-  const pass = document.getElementById('loginPass').value;
-  if (!rawCode.trim() || !pass){ hint.textContent = 'กรอกรหัสพนักงานและรหัสผ่านให้ครบ'; return; }
-  const email = empCodeToEmail(rawCode);
-  if (!email){ hint.textContent = 'รูปแบบรหัสพนักงานไม่ถูกต้อง (ตัวอักษร/ตัวเลข/ขีด 3-20 ตัว)'; return; }
-  hint.textContent = 'กำลังเข้าสู่ระบบ...';
-  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-  if (error){ hint.textContent = mapAuthError(error); return; }
-  hint.textContent = '';
-  await afterLogin(data.user);
-});
-document.getElementById('loginCode').addEventListener('keydown', e=>{ if (e.key==='Enter') document.getElementById('loginPass').focus(); });
-document.getElementById('loginPass').addEventListener('keydown', e=>{ if (e.key==='Enter') document.getElementById('loginSubmitBtn').click(); });
 
 // ================= TASKS from DB (with fallback) =================
 async function loadTasksFromDb(){

@@ -1,6 +1,8 @@
 (function(){
-  var page = /admin\.html$/i.test(location.pathname) ? 'erp' : 'mobile';
-  var file = { erp: 'admin.html', mobile: 'index.html' };
+  var path = location.pathname;
+  var page = /(?:\/|^)erp(?:\.html)?$/i.test(path) ? 'erp'
+           : /(?:\/|^)app(?:\.html)?$/i.test(path) ? 'mobile' : null;
+  var file = { erp: 'erp', mobile: 'app' };
   function store(k, v){ try { sessionStorage.setItem(k, v); } catch (e) {} }
   function load(k){ try { return sessionStorage.getItem(k); } catch (e) { return null; } }
 
@@ -10,6 +12,7 @@
     location.replace(file[app] + '?app=' + app);
   };
 
+  if (!page) return;  // login / stub pages: no routing here
   var m = /[?&]app=(erp|mobile)(?:&|#|$)/.exec(location.search + '&');
   if (m){ store('gw-app', m[1]); return; }
   var chosen = load('gw-app');

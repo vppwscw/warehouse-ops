@@ -212,25 +212,16 @@ function mapDbError(err){
   return err.message || err.code || 'unknown error';
 }
 function showScreen(id){
-  document.getElementById('loginScreen').hidden = id!=='login';
+  const ls = document.getElementById('loginScreen');   // login lives at auth/login now
+  if (ls) ls.hidden = id!=='login';
   document.getElementById('deniedScreen').hidden = id!=='denied';
   document.getElementById('appShell').hidden = id!=='app';
 }
 
-document.getElementById('loginSubmitBtn').addEventListener('click', async ()=>{
-  const hint = document.getElementById('loginHint');
-  const rawCode = document.getElementById('loginCode').value;
-  const pass = document.getElementById('loginPass').value;
-  if (!rawCode.trim() || !pass){ hint.textContent = 'กรอกรหัสพนักงานและรหัสผ่านให้ครบ'; return; }
-  const email = empCodeToEmail(rawCode);
-  if (!email){ hint.textContent = 'รูปแบบรหัสพนักงานไม่ถูกต้อง (ตัวอักษร/ตัวเลข/ขีด 3-20 ตัว)'; return; }
-  hint.textContent = 'กำลังเข้าสู่ระบบ...';
-  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-  if (error){ hint.textContent = mapAuthError(error); return; }
-  hint.textContent = '';
-  await afterLogin(data.user);
-});
-document.getElementById('loginPass').addEventListener('keydown', e=>{ if (e.key==='Enter') document.getElementById('loginSubmitBtn').click(); });
+// Login lives on its own page (auth/login). Bounce there, optionally with a reason code.
+function goLogin(code){
+  location.replace('auth/login' + (code ? '?e=' + code : ''));
+}
 document.getElementById('logoutBtn').addEventListener('click', doLogout);
 document.getElementById('deniedLogoutBtn').addEventListener('click', doLogout);
 
@@ -345,18 +336,14 @@ function confirmModal(text, opts){
 
 async function doLogout(){
   try { sessionStorage.removeItem('gw-app'); } catch (e) {}  // next person gets device routing again
-  await sb.auth.signOut();
+  try { await sb.auth.signOut(); } catch (e) {}
   profile = null; currentUser = null; jobs = []; roster = [];
-  renderNav();
   if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
-  document.getElementById('loginCode').value = '';
-  document.getElementById('loginPass').value = '';
-  document.getElementById('loginHint').textContent = '';
-  showScreen('login');
+  goLogin();
 }
 
 // Which app(s) this account may open. An explicit profiles.apps wins; otherwise
-// the LV default. 'erp' = admin.html, 'mobile' = index.html.
+// the LV default. 'erp' = /erp, 'mobile' = /app.
 function allowedApps(p){
   if (p && Array.isArray(p.apps) && p.apps.length) return p.apps;
   if (!p) return [];
@@ -379,16 +366,16 @@ async function afterLogin(user){
   // '*' already carries position_id + warehouse
   const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
   if (error || !data){
-    document.getElementById('loginHint').textContent = 'ไม่พบข้อมูลผู้ใช้งานนี้ในระบบ';
-    await sb.auth.signOut();
+    try { await sb.auth.signOut(); } catch (e) {}
+    goLogin('notfound');
     return;
   }
   profile = data;
   await loadPositions();
   renderNav();
   if (profile.active === false){
-    document.getElementById('deniedText').textContent = 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
-    showScreen('denied');
+    try { await sb.auth.signOut(); } catch (e) {}
+    goLogin('inactive');
     return;
   }
   if (!allowedApps(profile).includes('erp')){
@@ -396,8 +383,8 @@ async function afterLogin(user){
       window.gwSwitchTo('mobile');
       return;
     }
-    document.getElementById('deniedText').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้ Skill Matrix';
-    showScreen('denied');
+    try { await sb.auth.signOut(); } catch (e) {}
+    goLogin('noaccess');
     return;
   }
   if (user.user_metadata && user.user_metadata.must_change_password){
@@ -3123,14 +3110,16 @@ function wireRealtime(){
 
 // ---------- boot ----------
 render();
-showScreen('login');
 (async () => {
   const { data: { session } } = await sb.auth.getSession();
   if (session && session.user){
     await afterLogin(session.user);
+  } else {
+    goLogin();
+    return;
   }
   sb.auth.onAuthStateChange((event) => {
-    if (event === 'SIGNED_OUT'){ showScreen('login'); }
+    if (event === 'SIGNED_OUT'){ goLogin(); }
     if (event === 'PASSWORD_RECOVERY'){
       askNewPassword('ตั้งรหัสผ่านใหม่', async (pw)=>{
         const { error } = await sb.auth.updateUser({ password: pw });

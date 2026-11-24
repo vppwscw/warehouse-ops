@@ -14,7 +14,6 @@ function seedDeptBucket(){ return { keys:['INB','OUT','INV'],
 let DEPT_BY_WH = { A: seedDeptBucket(), B: seedDeptBucket() };
 const WH_KEYS = ['A','B'];
 const WH_PLAIN = { A:'คลัง A', B:'คลัง B' };
-const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const DEPT_SUB   = { INB:'รับรถเข้าคลัง', OUT:'ส่งรถออกคลัง', INV:'จัดการของ/แพ็คของ' };  // known 3 only
 const DEPT_ICON  = { INB:'inbound', OUT:'outbound', INV:'inventory' };                      // else -> box
 async function loadDepartments(){
@@ -123,18 +122,8 @@ function avatarHTML(name, size){
   return `<span class="av" style="width:${size}px;height:${size}px;background:${pal[0]};color:${pal[1]};font-size:${Math.round(size*0.4)}px">${esc(ch)}</span>`;
 }
 function avatarStack(names, size){ return `<span class="avs">${(names||[]).slice(0,4).map(n=>avatarHTML(n,size)).join('')}</span>`; }
-function fmtElapsed(ms){ const m = Math.max(0, Math.floor(ms/60000)); return Math.floor(m/60) + ':' + String(m%60).padStart(2,'0'); }
-// live clocks on the open-jobs list + close-job summary (runs only while those screens show)
-let liveTimer = null;
-function tickLive(){
-  const now = Date.now();
-  document.querySelectorAll('[data-started]').forEach(el=>{
-    const t = new Date(el.dataset.started).getTime();
-    if (!isNaN(t)) el.textContent = fmtElapsed(now - t);
-  });
-  const cn = document.getElementById('cjNow'); if (cn) cn.textContent = timeNowHHMM();
-}
-let supOpenDone = false;     // SUPERVISOR just opened a job -> show success screen
+let supOpenDone = false;     // writer just recorded a job -> show success screen
+let crewQuery = '';          // crew picker search text
 let rosterQuery = '', rosterDeptFilter = 'all';
 document.getElementById('backBtn').innerHTML = ICONS.back;
 document.querySelector('.ok-circle').innerHTML = ICONS.check;
@@ -146,6 +135,7 @@ document.getElementById('rosterSearchIcon').innerHTML = ICONS.search;
 
 const nowBkk = () => new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Bangkok'}));
 const todayISO = () => nowBkk().toLocaleDateString('sv-SE');
+const minDateISO = () => new Date(nowBkk().getTime() - 3*864e5).toLocaleDateString('sv-SE'); // DB: date >= today-3
 const timeNowHHMM = () => { const d=nowBkk(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
 function minutesBetween(start,end){
   const [sh,sm]=start.split(':').map(Number), [eh,em]=end.split(':').map(Number);
@@ -171,11 +161,14 @@ const posLabel = p => {
   const pos = positions[p.position_id];
   return pos ? `${pos.name} (LV${pos.lv})` : '';
 };
-const isWorker = () => !!profile && !isAdmin() && myLv() === 1;
-// LV2+ : opens/closes jobs for the team (the old SUPERVISOR flow)
-const isSupervisorRole = () => !!profile && !isAdmin() && myLv() >= 2;
-// LV3+ : also approves
-const canApproveRole = () => !!profile && !isAdmin() && myLv() >= 3;
+// LV1-2 : read-only — only see jobs where they are crew
+const isWorker = () => !!profile && !isAdmin() && myLv() < 3;
+// LV3+ (non-admin): records finished jobs for the team
+const isSupervisorRole = () => !!profile && !isAdmin() && myLv() >= 3;
+// writers = ADMIN + LV3+
+const isWriter = () => isAdmin() || isSupervisorRole();
+// jobs the current user may look at: LV1-2 see their own rows as-is (a crew job can be in another dept)
+const scopedJobList = () => isWorker() ? jobs : jobs.filter(j=>inScope(j.department) && inWh(j.warehouse));
 // Mirror of DB can_see: LV scope (LV5 all, LV4 home warehouse, LV1-3 home wh+dept)
 // plus staff_scope extras. UI only; DB is the truth.
 const myScopePairs = () => {
@@ -208,17 +201,9 @@ const visibleDepts = () => isAdmin() ? deptKeysFor(null) : deptKeysFor(null).fil
 // picked — otherwise คลัง B shows คลัง A's generic list.
 const taskInWh = (t, wh) => wh ? t.warehouse === wh : t.warehouse == null;
 
-let myOpenJob = null; // USER role: the job row they currently have open, if any
-let workerStep = 'list'; // USER role: 'list' (task list or active job) | 'success' (just closed)
-let supervisorPending = []; // SUPERVISOR role: pending jobs in their department
-let deptTasks = []; // SUPERVISOR role: raw tasks rows (active + inactive) for their department
-
+let deptTasks = []; // raw tasks rows (active + inactive) for the task manager
 let oWhVal = null, oDeptVal = null, oTaskVal = null, crew = [];
 let doneFieldsBuiltForTask = null;
-let flowMode = 'admin';      // 'admin' one-shot entry | 'sup-open' SUPERVISOR opening a job
-let openJobGroups = [];      // SUPERVISOR: open jobs in their department, grouped by job_group_id
-let closingGroup = null;     // SUPERVISOR: the open job group currently being closed
-let openjobsSub = 'list';    // SUPERVISOR openjobs tab: 'list' | 'close'
 let deptFilter='ALL', empFilter='', searchTerm='', dateRange='today';
 let openMatrixEmp = null;
 let openRosterDept = null;
@@ -317,27 +302,16 @@ async function afterLogin(user){
   refreshRoleBadge();
   buildNav();
   await loadTasksFromDb();
-  if (isWorker()) await refreshMyOpenJob();
   wireRealtime();
-  goTab('new');
+  goTab(navForRole()[0].id);
   await refreshAll();
-}
-
-async function refreshMyOpenJob(){
-  try{
-    const { data, error } = await sb.from('jobs').select('*')
-      .eq('created_by', currentUser.id).eq('status', 'open')
-      .order('created_at', { ascending:false }).limit(1);
-    if (error) throw error;
-    myOpenJob = (data && data[0]) || null;
-  }catch(e){ myOpenJob = null; }
 }
 
 async function logout(){
   try { sessionStorage.removeItem('gw-app'); } catch (e) {}  // next person gets device routing again
   try { await sb.auth.signOut(); } catch (e) {}
   profile = null; currentUser = null;
-  jobs = []; roster = []; myOpenJob = null; workerStep = 'list';
+  jobs = []; roster = [];
   if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
   goLogin();
 }
@@ -464,19 +438,13 @@ async function loadTasksFromDb(){
 
 // ================= NAV (role-dependent, built after login) =================
 function navForRole(){
-  if (isAdmin()) return [
-    {id:'new', label:'เริ่มงาน', icon:'bolt'},
-    {id:'history', label:'ประวัติ', icon:'chart'},
-    {id:'manage', label:'คนงาน', icon:'users'},
-  ];
+  // LV1-2 (OF/SO): read-only, only their own jobs
   if (isWorker()) return [
-    {id:'new', label:'งานของฉัน', icon:'bolt'},
-    {id:'history', label:'ประวัติ', icon:'chart'},
+    {id:'history', label:'งานของฉัน', icon:'chart'},
   ];
-  // LV2+: record work directly — open a job (log start), close it (log end). LV3+ also approves.
+  // ADMIN + LV3+: record finished jobs
   return [
-    {id:'new', label:'เปิดงาน', icon:'bolt'},
-    {id:'openjobs', label:'งานเปิดอยู่', icon:'clock'},
+    {id:'new', label:'บันทึกงาน', icon:'bolt'},
     {id:'tasks', label:'ชนิดงาน', icon:'box'},
     {id:'manage', label:'คนงาน', icon:'users'},
     {id:'history', label:'ประวัติ', icon:'chart'},
@@ -491,26 +459,22 @@ function buildNav(){
 }
 buildNav();
 
-const TAB_TITLE = { new:'เริ่มงาน', history:'ประวัติ', manage:'รายชื่อคนงาน', approve:'อนุมัติงาน', tasks:'ชนิดงาน', openjobs:'งานที่เปิดอยู่' };
+const TAB_TITLE = { new:'บันทึกงาน', history:'ประวัติ', manage:'รายชื่อคนงาน', tasks:'ชนิดงาน' };
 
 let historySub = 'list';
 function goTab(tab){
   activeTab = tab; supOpenDone = false;
   if (tab==='new'){
-    if (isAdmin() || isSupervisorRole()){
-      flowMode = isAdmin() ? 'admin' : 'sup-open';
-      oTaskVal = null; crew = []; doneFieldsBuiltForTask = null;
+    if (isWriter()){
+      oTaskVal = null; crew = []; crewQuery = ''; doneFieldsBuiltForTask = null;
       const whs = myWarehouses();
       oWhVal = whs.length === 1 ? whs[0] : null;
       const ds = oWhVal ? deptsForWh(oWhVal) : [];
       if (oWhVal && ds.length === 1){ oDeptVal = ds[0]; activeStep = 2; renderStep2(); }
       else { oDeptVal = null; activeStep = 1; renderStep1(); }
     }
-    else if (isWorker()){ renderWorkerHome(); }
   }
-  if (tab==='openjobs'){ openjobsSub = 'list'; refreshOpenJobs().then(renderOpenJobs); }
   if (tab==='history'){ historySub = 'list'; refreshJobs().then(renderHistory); }
-  if (tab==='approve') refreshPendingApprovals().then(renderApproveQueue);
   if (tab==='tasks') refreshDeptTasks().then(renderTaskManager);
   if (tab==='manage') refreshRoster().then(renderRosterManager);
   document.querySelectorAll('.nav-btn').forEach(b=>b.setAttribute('aria-selected', b.dataset.nav===tab));
@@ -521,41 +485,24 @@ function renderScreens(){
   let screenId, title, showBack=false;
   if (activeTab==='new'){
     const whPfx = oWhVal ? (oWhVal + ' · ') : '';
-    if (isAdmin()){
-      if (activeStep===1){ screenId='screen-step1'; title='เริ่มงาน'; }
-      else if (activeStep===2){ screenId='screen-step2'; title=whPfx+(oDeptVal?deptName(oDeptVal,oWhVal):''); showBack=true; }
-      else if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
-      else if (activeStep===4){ screenId='screen-success'; title='เริ่มงาน'; }
-    } else if (isSupervisorRole()){
-      // SUPERVISOR opens a job: [pick warehouse + dept] -> pick task (step2) -> crew + start (step3)
-      if (supOpenDone){ screenId='screen-success'; title='เปิดงานแล้ว'; }
-      else if (activeStep===1){ screenId='screen-step1'; title='เริ่มงาน'; }
-      else if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
-      else { screenId='screen-step2'; title=whPfx+(oDeptVal?deptName(oDeptVal,oWhVal):'เลือกงาน'); showBack=step1HasChoice(); }
-    } else if (isWorker()){
-      if (workerStep==='success'){ screenId='screen-worker-success'; title='งานของฉัน'; }
-      else { screenId = myOpenJob ? 'screen-worker-active' : 'screen-worker-tasks'; title = myOpenJob ? 'กำลังทำงาน' : 'งานของฉัน'; }
-    } else {
-      screenId = 'screen-step1'; title = 'เริ่มงาน';
-    }
+    // writer records a finished job: [pick warehouse + dept] -> pick task (step2) -> crew + details (step3)
+    if (supOpenDone){ screenId='screen-success'; title='บันทึกงานแล้ว'; }
+    else if (activeStep===1){ screenId='screen-step1'; title='บันทึกงาน'; }
+    else if (activeStep===3){ screenId='screen-step3'; title=taskById(oTaskVal)?.label || 'เลือกคน'; showBack=true; }
+    else { screenId='screen-step2'; title=whPfx+(oDeptVal?deptName(oDeptVal,oWhVal):'เลือกงาน'); showBack=step1HasChoice(); }
   } else if (activeTab==='history'){
     if (historySub==='matrix'){ screenId='screen-matrix'; title='ใครทำอะไรได้บ้าง'; showBack=true; }
-    else { screenId='screen-history'; title='ประวัติ'; }
-  } else if (activeTab==='openjobs'){
-    if (openjobsSub==='close'){ screenId='screen-closejob'; title='ปิดงาน'; showBack=true; }
-    else { screenId='screen-openjobs'; title='งานที่เปิดอยู่'; }
+    else { screenId='screen-history'; title = isWorker() ? 'งานของฉัน' : 'ประวัติ'; }
   } else {
     screenId = 'screen-'+activeTab;
     title = TAB_TITLE[activeTab];
   }
   document.getElementById(screenId).classList.add('active');
   document.getElementById('topbarTitle').textContent = title;
-  if (screenId==='screen-openjobs' || screenId==='screen-closejob'){ if (!liveTimer) liveTimer = setInterval(tickLive, 30000); tickLive(); }
-  else if (liveTimer){ clearInterval(liveTimer); liveTimer = null; }
   document.getElementById('backBtn').hidden = !showBack;
   const stepNo = {'screen-step1':1,'screen-step2':2,'screen-step3':3}[screenId];
   const stepInfo = document.getElementById('stepInfo');
-  const showSteps = activeTab==='new' && !isWorker() && !!stepNo;
+  const showSteps = activeTab==='new' && !!stepNo;
   stepInfo.classList.toggle('on', showSteps);
   if (showSteps){
     document.getElementById('stepLabel').textContent = 'ขั้นที่ ' + stepNo + ' จาก 3';
@@ -565,22 +512,15 @@ function renderScreens(){
 }
 document.getElementById('backBtn').addEventListener('click', ()=>{
   if (activeTab==='new' && activeStep>1){
-    if (isSupervisorRole()){
-      // step3 -> step2; step2 -> step1 only when step 1 offers a choice
-      if (activeStep===3){ activeStep=2; renderStep2(); }
-      else if (activeStep===2 && step1HasChoice()){
-        activeStep=1; oDeptVal=null;
-        if (myWarehouses().length>1) oWhVal=null;
-        renderStep1();
-      }
-      renderScreens(); return;
+    // step3 -> step2; step2 -> step1 only when step 1 offers a choice
+    if (activeStep===3){ activeStep=2; renderStep2(); }
+    else if (activeStep===2 && step1HasChoice()){
+      activeStep=1; oDeptVal=null;
+      if (myWarehouses().length>1) oWhVal=null;
+      renderStep1();
     }
-    activeStep -= 1;
-    if(activeStep===2) renderStep2();
-    if(activeStep===1){ oDeptVal=null; renderStep1(); }
-    renderScreens();
+    renderScreens(); return;
   }
-  else if (activeTab==='openjobs' && openjobsSub==='close'){ openjobsSub='list'; renderOpenJobs(); renderScreens(); }
   else if (activeTab==='history' && historySub==='matrix'){ historySub='list'; renderScreens(); }
 });
 
@@ -598,7 +538,7 @@ function renderStep1(){
     }
   }
   const q = document.getElementById('step1Q');
-  if (q) q.textContent = !oWhVal ? 'เลือกคลังก่อน' : (isAdmin() ? 'วันนี้จะทำงานฝั่งไหน?' : 'เปิดงานฝั่งไหน?');
+  if (q) q.textContent = !oWhVal ? 'เลือกคลังก่อน' : 'บันทึกงานฝั่งไหน?';
   const depts = oWhVal ? deptsForWh(oWhVal) : [];
   document.getElementById('deptTiles').innerHTML = depts.map(d=>`
     <button type="button" class="tile" data-pick-dept="${esc(d)}" style="background:${esc(deptColor(d,oWhVal))}17;color:${esc(deptColor(d,oWhVal))}">
@@ -648,34 +588,36 @@ function renderStep2(){
 }
 
 // ================= STEP 3 =================
-function renderStep3(){
-  const task = taskById(oTaskVal);
-  document.getElementById('step3Title').textContent = task ? task.label : 'ใครทำงานนี้บ้าง?';
-  const list = roster.filter(r=>r.department===oDeptVal && (r.warehouse==null || r.warehouse===oWhVal));
+function renderCrewList(){
   const box = document.getElementById('empCheckList');
-  if (list.length===0){
-    box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง ${esc(deptName(oDeptVal, oWhVal))}<br>ไปเพิ่มที่แถบ "คนงาน" ด้านล่างก่อน</div>`;
-  } else {
-    box.innerHTML = list.map(r=>`
+  const q = crewQuery.trim().toLowerCase();
+  const byName = (a,b)=>String(a.name).localeCompare(String(b.name),'th');
+  const isHome = r => r.department===oDeptVal && (r.warehouse==null || r.warehouse===oWhVal);
+  const match = r => !q || String(r.name).toLowerCase().includes(q);
+  const home = roster.filter(r=>isHome(r) && match(r)).sort(byName);
+  const others = roster.filter(r=>!isHome(r) && match(r)).sort(byName);
+  const item = r => `
       <button type="button" class="emp-check" data-pick-emp="${esc(r.id)}" aria-pressed="${crew.includes(String(r.id))}">
         <span class="ec-av">${esc(Array.from(String(r.name).trim())[0]||'')}</span>
         <span class="ec-text"><span class="ec-name">${esc(r.name)}</span><span class="ec-sub">${(()=>{ const n = jobs.filter(j=>j.task_id===oTaskVal && (j.crew||[]).includes(r.name)).length; return n ? 'ทำงานนี้ '+n+' ครั้ง' : 'ยังไม่เคยทำงานนี้'; })()}</span></span>
         <span class="ec-box">${crew.includes(String(r.id)) ? ICONS.checksm : ''}</span>
-      </button>`).join('');
-  }
-  document.getElementById('d-date').value = document.getElementById('d-date').value || todayISO();
-  document.getElementById('d-start').value = document.getElementById('d-start').value || timeNowHHMM();
-  // A SUPERVISOR opening a job only logs the start; end time + result are entered
-  // later on the "ปิดงาน" screen. The one-shot ADMIN flow keeps all fields.
-  const supOpen = flowMode === 'sup-open';
-  const endField = document.getElementById('d-end').closest('.field');
-  if (endField) endField.style.display = supOpen ? 'none' : '';
-  document.getElementById('doneResultFields').style.display = supOpen ? 'none' : '';
-  document.getElementById('openSubmitBtn').textContent = supOpen ? 'เปิดงาน · เริ่มจับเวลา' : 'บันทึกงาน';
-  if (!supOpen){
-    document.getElementById('d-end').value = document.getElementById('d-end').value || timeNowHHMM();
-    if (task && doneFieldsBuiltForTask !== oTaskVal) renderDoneFields();
-  }
+      </button>`;
+  let html = '';
+  if (home.length) html += home.map(item).join('');
+  else if (!q) html += `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง ${esc(deptName(oDeptVal, oWhVal))}<br>เลือกจากแผนกอื่นด้านล่าง หรือไปเพิ่มที่แถบ "คนงาน"</div>`;
+  if (others.length) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">แผนกอื่น</p>` + others.map(item).join('');
+  if (!html) html = `<div class="empty-roster-inline">ไม่พบชื่อที่ค้นหา</div>`;
+  box.innerHTML = html;
+}
+function renderStep3(){
+  const task = taskById(oTaskVal);
+  document.getElementById('step3Title').textContent = task ? task.label : 'ใครทำงานนี้บ้าง?';
+  renderCrewList();
+  const dEl = document.getElementById('d-date');
+  dEl.min = minDateISO(); dEl.max = todayISO();
+  dEl.value = dEl.value || todayISO();
+  document.getElementById('openSubmitBtn').textContent = 'บันทึกงาน';
+  if (task && doneFieldsBuiltForTask !== oTaskVal) renderDoneFields();
 }
 
 // ================= RESULT-FIELD BUILDER =================
@@ -738,136 +680,6 @@ function renderDoneFields(){
   document.getElementById('doneResultFields').innerHTML = buildResultFieldsHTML(task, 'd');
   wireContainerAutofill(task, 'd');
   doneFieldsBuiltForTask = oTaskVal;
-}
-
-// ================= USER role: open/close one job at a time =================
-function renderWorkerHome(){
-  workerStep = 'list';
-  if (myOpenJob) renderActiveJobCard(); else renderWorkerTaskList();
-}
-function renderWorkerTaskList(){
-  const list = TASKS[profile.department] || [];
-  const box = document.getElementById('workerTaskList');
-  if (list.length===0){ box.innerHTML = `<div class="empty-roster-inline">ยังไม่มีชนิดงานของฝั่ง ${esc(deptName(profile.department))}<br>ติดต่อหัวหน้างานให้เพิ่มชนิดงานก่อน</div>`; return; }
-  box.innerHTML = list.map((t,i)=>`
-    <button type="button" class="job-choice" data-open-task="${esc(t.id)}">
-      <span class="pill-n">${String(i+1).padStart(2,'0')}</span>
-      <span class="jc-body"><span class="jc-name">${esc(t.label)}</span><span class="jc-sub">${esc(t.sub||'')}</span></span>
-      <span class="t-chev">${ICONS.chev}</span>
-    </button>`).join('');
-}
-function renderActiveJobCard(){
-  const task = taskById(myOpenJob.task_id);
-  const startedLocal = myOpenJob.started_at
-    ? new Date(myOpenJob.started_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})
-    : (myOpenJob.details&&myOpenJob.details.start) || '–';
-  document.getElementById('activeJobCard').innerHTML = `
-    <div class="active-job-name">${esc(task?task.label:myOpenJob.task_id)}</div>
-    <div class="active-job-meta">เริ่มงานเวลา ${esc(startedLocal)} น.</div>
-  `;
-  document.getElementById('workerDoneFields').innerHTML = task ? buildResultFieldsHTML(task, 'w') : '';
-  if (task) wireContainerAutofill(task, 'w');
-  document.getElementById('workerCloseHint').textContent = '';
-}
-async function openWorkerJob(taskId){
-  const { data, error } = await sb.from('jobs').insert({
-    warehouse: profile.warehouse || 'A', department: profile.department, task_id: taskId, employee_name: profile.full_name,
-    created_by: currentUser.id, status: 'open', started_at: new Date().toISOString(),
-    details: { date: todayISO(), start: timeNowHHMM() },
-  }).select().single();
-  if (error){ toast('เปิดงานไม่สำเร็จ: ' + mapDbError(error)); return; }
-  myOpenJob = data;
-  renderActiveJobCard();
-  renderScreens();
-}
-function showWorkerSuccess(taskLabel){
-  document.getElementById('workerSuccessSub').textContent = taskLabel;
-  workerStep = 'success';
-  renderScreens();
-  setTimeout(()=>{ renderWorkerHome(); renderScreens(); }, 1100);
-}
-document.getElementById('workerCloseBtn').addEventListener('click', async ()=>{
-  if (!myOpenJob) return;
-  const hint = document.getElementById('workerCloseHint');
-  const task = taskById(myOpenJob.task_id);
-  if (!task){ hint.textContent = 'ไม่พบชนิดงานนี้แล้ว ติดต่อหัวหน้างาน'; return; }
-  const start = (myOpenJob.details&&myOpenJob.details.start) || timeNowHHMM();
-  const end = timeNowHHMM();
-  const unitVal = Number(document.getElementById('w-unit').value)||0;
-  const details = { ...(myOpenJob.details||{}), end, mins: minutesBetween(start,end), qty: unitVal };
-  if (task.unit==='containers'){
-    details.containers = unitVal;
-    details.vehicles = Number(document.getElementById('w-vehicles').value) || (unitVal*task.vehiclesPerContainer);
-    details.qty = details.vehicles;
-  }
-  if (task.hasIssue){
-    const issueYes = document.querySelector('input[name="issue-w"]:checked')?.value==='yes';
-    details.hasIssue = issueYes;
-    details.issueCount = issueYes ? (Number(document.getElementById('w-issue').value)||0) : 0;
-  }
-  hint.textContent = 'กำลังบันทึก...';
-  try{
-    const { error } = await sb.from('jobs').update({
-      status: 'approved', ended_at: new Date().toISOString(), details,
-      approved_by: currentUser.id, approved_at: new Date().toISOString(),
-    }).eq('id', myOpenJob.id);
-    if (error) throw error;
-    hint.textContent = '';
-    myOpenJob = null;
-    await refreshJobs();
-    showWorkerSuccess(task.label);
-  }catch(err){
-    hint.textContent = '';
-    toast('ปิดงานไม่สำเร็จ: ' + mapDbError(err));
-  }
-});
-
-// ================= SUPERVISOR role: approvals =================
-async function refreshPendingApprovals(){
-  try{
-    const { data, error } = await sb.from('jobs')
-      .select('*, requester:profiles!jobs_created_by_fkey(employee_code,full_name)')
-      .eq('department', profile.department).eq('status', 'pending')
-      .order('created_at', { ascending:true });
-    if (error) throw error;
-    supervisorPending = data || [];
-  }catch(e){ supervisorPending = []; }
-}
-function renderApproveQueue(){
-  const box = document.getElementById('approveList');
-  const empty = document.getElementById('approveEmpty');
-  if (!box) return;
-  if (supervisorPending.length===0){ box.innerHTML=''; empty.hidden=false; return; }
-  empty.hidden = true;
-  box.innerHTML = supervisorPending.map(j=>{
-    const task = taskById(j.task_id); const d = j.details||{};
-    const code = j.requester && j.requester.employee_code;
-    return `<div class="hist-card">
-      <div class="hist-top"><div>
-        <div class="hist-task">${esc(task?task.label:j.task_id)}</div>
-        <div class="hist-crew">${esc(j.employee_name||'')}${code ? ` · รหัส ${esc(code)}` : ''}</div>
-      </div></div>
-      <div class="hist-meta">
-        <span>${esc(d.date)}</span>
-        <span>${esc(d.start||'')}–${esc(d.end||'–')} (${d.mins == null ? '–' : num(d.mins)} นาที)</span>
-        <span class="hist-result">${esc(formatResult(d, task))}</span>
-      </div>
-      <div class="approve-actions">
-        <button type="button" class="mini-btn approve" data-approve-job="${esc(j.id)}">อนุมัติ</button>
-        <button type="button" class="mini-btn reject" data-reject-job="${esc(j.id)}">ไม่อนุมัติ</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-async function setJobStatusSupervisor(jobId, status){
-  try{
-    const { error } = await sb.from('jobs').update({
-      status, approved_by: currentUser.id, approved_at: new Date().toISOString(),
-    }).eq('id', jobId);
-    if (error) throw error;
-    await refreshPendingApprovals(); renderApproveQueue();
-    await refreshJobs(); render();
-  }catch(err){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(err)); }
 }
 
 // Fill a <select> with the caller's departments for a given warehouse
@@ -1070,177 +882,83 @@ document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
   }
 });
 
-// ================= SUPERVISOR role: open / close jobs directly =================
-// One model: the SUPERVISOR picks a task + crew and opens the job (logs the
-// start), then later closes it (logs the end + quantity). No approval step —
-// closing writes status 'approved' straight away.
-function showSupOpenSuccess(task, members, start){
+// ================= RECORD A FINISHED JOB (LV3+ and ADMIN) =================
+// One model: the writer records a job that is already done (date + start + end +
+// result) in one go. Rows are written 'approved' straight away; the DB trigger
+// is the final judge (no future dates, max 3 days back, no overlap per person).
+function showRecordSuccess(task, members, date, start, end, mins){
   document.getElementById('successText').textContent = 'บันทึกงานแล้ว';
-  document.getElementById('successSub').textContent = 'เริ่มจับเวลา ' + start + ' · งานอยู่ในแท็บ “งานเปิดอยู่”';
+  document.getElementById('successSub').textContent = `${date} · ${start}–${end} · ${mins} นาที`;
   const names = members.map(m=>m.name);
   const card = document.getElementById('successCard');
   card.innerHTML = `<div class="sc-title">${esc(task ? task.label : '')}</div>
     <div class="sc-sub">${esc(deptName(oDeptVal, oWhVal))} · ${esc(WH_PLAIN[oWhVal]||oWhVal||'')}</div>
-    <div class="sc-foot">${avatarStack(names, 32)}<span>${names.length} คน · เริ่ม ${esc(start)}</span></div>`;
+    <div class="sc-foot">${avatarStack(names, 32)}<span>${names.length} คน · ${esc(start)}–${esc(end)}</span></div>`;
   card.hidden = false;
   document.getElementById('successActions').hidden = false;
   supOpenDone = true; renderScreens();
 }
-async function openSupervisorJobs(){
+async function recordJob(){
   const hint = document.getElementById('openHint');
   if (!oWhVal || !oDeptVal){ hint.textContent='เลือกคลังและฝั่งก่อน'; return; }
   if (crew.length===0){ hint.textContent='แตะเลือกคนอย่างน้อย 1 คนก่อน'; return; }
   const task = taskById(oTaskVal);
-  const crewMembers = crew.map(id => roster.find(r=>r.id==id)).filter(Boolean);
+  if (!task){ hint.textContent='เลือกชนิดงานก่อน'; return; }
+  const crewMembers = crew.map(id => roster.find(r=>String(r.id)===String(id))).filter(Boolean);
   if (crewMembers.length===0){ hint.textContent='ไม่พบรายชื่อที่เลือก ลองใหม่'; return; }
-  const date = document.getElementById('d-date').value || todayISO();
-  const start = document.getElementById('d-start').value || timeNowHHMM();
+  const date = document.getElementById('d-date').value;
+  const start = document.getElementById('d-start').value;
+  const end = document.getElementById('d-end').value;
+  if (!date){ hint.textContent='เลือกวันที่ก่อน'; return; }
+  if (date > todayISO()){ hint.textContent='วันที่เป็นอนาคตไม่ได้'; return; }
+  if (date < minDateISO()){ hint.textContent='บันทึกย้อนหลังได้ไม่เกิน 3 วัน'; return; }
+  if (!start || !end){ hint.textContent='ใส่เวลาเริ่มและเวลาจบก่อน'; return; }
+  if (end <= start){ hint.textContent='เวลาจบต้องหลังเวลาเริ่ม'; return; }
+  if (date === todayISO() && end > timeNowHHMM()){ hint.textContent='เวลาจบยังไม่ถึง (เกินเวลาปัจจุบัน)'; return; }
+  const mins = minutesBetween(start, end);
+  const unitVal = Number(document.getElementById('d-unit').value)||0;
+  const details = { date, start, end, mins, qty: unitVal, crew: crewMembers.map(m=>m.name) };
+  if (task.unit==='containers'){
+    details.containers = unitVal;
+    details.vehicles = Number(document.getElementById('d-vehicles').value) || (unitVal*task.vehiclesPerContainer);
+    details.qty = details.vehicles;
+  }
+  if (task.hasIssue){
+    const issueYes = document.querySelector('input[name="issue-d"]:checked')?.value==='yes';
+    details.hasIssue = issueYes;
+    details.issueCount = issueYes ? (Number(document.getElementById('d-issue').value)||0) : 0;
+  }
   const groupId = (window.crypto && crypto.randomUUID)
     ? crypto.randomUUID()
     : (Date.now() + '-' + Math.random().toString(16).slice(2));
-  const details = { date, start, crew: crewMembers.map(m=>m.name) };
-  hint.textContent = 'กำลังเปิดงาน...';
+  const nowIso = new Date().toISOString();
+  const startedAt = new Date(`${date}T${start}:00+07:00`).toISOString();
+  const endedAt = new Date(`${date}T${end}:00+07:00`).toISOString();
+  hint.textContent = 'กำลังบันทึก...';
   try{
-    const dept = oDeptVal || myDepts()[0];
+    // Schema stores one employee per job row: one row per crew member, shared group id + details.
     const rows = crewMembers.map(m => ({
-      warehouse: oWhVal, department: dept, task_id: oTaskVal,
+      warehouse: oWhVal, department: oDeptVal, task_id: oTaskVal,
       employee_id: m.id, employee_name: m.name,
-      created_by: currentUser.id, status: 'open',
-      job_group_id: groupId, started_at: new Date().toISOString(),
+      created_by: currentUser.id, status: 'approved',
+      approved_by: currentUser.id, approved_at: nowIso,
+      job_group_id: groupId, started_at: startedAt, ended_at: endedAt,
       details,
     }));
     const { error } = await sb.from('jobs').insert(rows);
     if (error) throw error;
     hint.textContent = '';
-    crew = []; oTaskVal = null; doneFieldsBuiltForTask = null;
+    crew = []; oTaskVal = null; doneFieldsBuiltForTask = null; crewQuery = '';
     document.getElementById('d-date').value = '';
     document.getElementById('d-start').value = '';
-    await Promise.all([refreshOpenJobs(), refreshJobs()]);
-    showSupOpenSuccess(task, crewMembers, start);
+    document.getElementById('d-end').value = '';
+    await refreshJobs();
+    showRecordSuccess(task, crewMembers, date, start, end, mins);
   }catch(err){
     hint.textContent = '';
-    toast('เปิดงานไม่สำเร็จ: ' + mapDbError(err));
+    toast('บันทึกไม่สำเร็จ: ' + mapDbError(err));
   }
 }
-
-async function refreshOpenJobs(){
-  try{
-    const { data, error } = await sb.from('jobs').select('*')
-      .in('department', myDepts()).eq('status', 'open')
-      .order('created_at', { ascending:true });
-    if (error) throw error;
-    const map = new Map();
-    (data||[]).forEach(r=>{
-      const key = r.job_group_id ? ('g:'+r.job_group_id) : ('row:'+r.id);
-      if (!map.has(key)) map.set(key, { ...r, rowIds:[], crewNames:[] });
-      const g = map.get(key);
-      g.rowIds.push(r.id);
-      if (r.employee_name) g.crewNames.push(r.employee_name);
-    });
-    openJobGroups = [...map.values()];
-  }catch(e){ openJobGroups = []; }
-}
-
-function renderOpenJobs(){
-  const box = document.getElementById('openJobsList');
-  const empty = document.getElementById('openJobsEmpty');
-  if (!box) return;
-  if (openJobGroups.length===0){ box.innerHTML=''; empty.hidden=false; return; }
-  empty.hidden = true;
-  box.innerHTML = openJobGroups.map((g,i)=>{
-    const task = taskById(g.task_id);
-    const d = g.details || {};
-    const started = g.started_at
-      ? new Date(g.started_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})
-      : (d.start || '–');
-    const elapsed = g.started_at ? `<div class="job-timer"><b data-started="${esc(g.started_at)}">${fmtElapsed(Date.now() - new Date(g.started_at).getTime())}</b><span>ชม.:นาที</span></div>` : '';
-    return `<div class="hist-card">
-      <div class="hist-top">
-        <div>
-          <div class="hist-task">${esc(task?task.label:g.task_id)}</div>
-          <div class="hist-tags" style="margin-top:4px;">
-            <span class="wh-tag">${esc(WH_PLAIN[g.warehouse]||g.warehouse||'–')}</span>
-            ${deptBadge(g.department, g.warehouse)}
-            <span class="status-badge open">${STATUS_LABEL.open}</span>
-          </div>
-        </div>
-        ${elapsed}
-      </div>
-      <div class="hist-foot">
-        <span class="crew-av">${avatarStack(g.crewNames, 26)}<span class="hist-crew">${esc(g.crewNames.length)} คน</span></span>
-        <span class="hist-crew" style="flex:none;">เริ่ม ${esc(started)} น.</span>
-      </div>
-      <button type="button" class="btn sm gh w" data-close-group="${i}">ปิดงาน · บันทึกผล</button>
-    </div>`;
-  }).join('');
-}
-
-function openCloseForm(idx){
-  closingGroup = openJobGroups[idx];
-  if (!closingGroup) return;
-  const task = taskById(closingGroup.task_id);
-  const d = closingGroup.details || {};
-  const started = closingGroup.started_at
-    ? new Date(closingGroup.started_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'})
-    : (d.start || '–');
-  const cjStartMs = closingGroup.started_at ? new Date(closingGroup.started_at).getTime() : NaN;
-  document.getElementById('closeJobCard').innerHTML = `
-    <span class="ttl">${esc(task?task.label:closingGroup.task_id)}</span>
-    <div class="sum-row">
-      <div><div class="sub">เริ่ม</div><b>${esc(started)}</b></div>
-      <div><div class="sub">ตอนนี้</div><b id="cjNow">${esc(timeNowHHMM())}</b></div>
-      <div><div class="sub">ใช้เวลา</div><b class="acc"${isNaN(cjStartMs) ? '' : ` data-started="${esc(closingGroup.started_at)}"`}>${isNaN(cjStartMs) ? '–' : fmtElapsed(Date.now() - cjStartMs)}</b></div>
-    </div>
-    <div class="sum-crew">${avatarStack(closingGroup.crewNames, 28)}<span class="sub">${esc(closingGroup.crewNames.join(', '))}</span></div>`;
-  document.getElementById('closeDoneFields').innerHTML = task ? buildResultFieldsHTML(task, 'c') : '';
-  if (task) wireContainerAutofill(task, 'c');
-  document.getElementById('c-end').value = timeNowHHMM();
-  document.getElementById('closeJobHint').textContent = '';
-  openjobsSub = 'close';
-  renderScreens();
-}
-
-async function closeSupervisorGroup(){
-  if (!closingGroup) return;
-  const hint = document.getElementById('closeJobHint');
-  const task = taskById(closingGroup.task_id);
-  const start = (closingGroup.details && closingGroup.details.start) || timeNowHHMM();
-  const end = document.getElementById('c-end').value || timeNowHHMM();
-  const unitVal = Number(document.getElementById('c-unit').value)||0;
-  const details = { ...(closingGroup.details||{}), end, mins: minutesBetween(start, end), qty: unitVal };
-  if (task && task.unit==='containers'){
-    details.containers = unitVal;
-    details.vehicles = Number(document.getElementById('c-vehicles').value) || (unitVal*task.vehiclesPerContainer);
-    details.qty = details.vehicles;
-  }
-  if (task && task.hasIssue){
-    const y = document.querySelector('input[name="issue-c"]:checked')?.value==='yes';
-    details.hasIssue = y;
-    details.issueCount = y ? (Number(document.getElementById('c-issue').value)||0) : 0;
-  }
-  hint.textContent = 'กำลังปิดงาน...';
-  try{
-    let q = sb.from('jobs').update({
-      status: 'approved', ended_at: new Date().toISOString(),
-      approved_by: currentUser.id, approved_at: new Date().toISOString(),
-      details,
-    });
-    q = closingGroup.job_group_id
-      ? q.eq('job_group_id', closingGroup.job_group_id)
-      : q.in('id', closingGroup.rowIds);
-    const { error } = await q;
-    if (error) throw error;
-    hint.textContent = '';
-    closingGroup = null; openjobsSub = 'list';
-    await Promise.all([refreshOpenJobs(), refreshJobs()]);
-    toast('ปิดงานเรียบร้อย บันทึกผลแล้ว', 'ok');
-    goTab('openjobs');
-  }catch(err){
-    hint.textContent = '';
-    toast('ปิดงานไม่สำเร็จ: ' + mapDbError(err));
-  }
-}
-document.getElementById('closeJobBtn').addEventListener('click', closeSupervisorGroup);
 
 // ================= EVENT DELEGATION =================
 document.addEventListener('click', async (e)=>{
@@ -1259,9 +977,6 @@ document.addEventListener('click', async (e)=>{
   const pickDept = e.target.closest('[data-pick-dept]');
   if (pickDept){ oDeptVal = pickDept.dataset.pickDept; oTaskVal=null; crew=[]; activeStep=2; renderStep2(); renderScreens(); return; }
 
-  const openTask = e.target.closest('[data-open-task]');
-  if (openTask){ await openWorkerJob(openTask.dataset.openTask); return; }
-
   const pickTask = e.target.closest('[data-pick-task]');
   if (pickTask){
     oTaskVal = pickTask.dataset.pickTask; activeStep=3;
@@ -1273,7 +988,7 @@ document.addEventListener('click', async (e)=>{
   if (pickEmp){
     const id = pickEmp.dataset.pickEmp;
     crew = crew.includes(id) ? crew.filter(n=>n!==id) : [...crew, id];
-    renderStep3();
+    renderCrewList();
     return;
   }
 
@@ -1353,14 +1068,6 @@ document.addEventListener('click', async (e)=>{
     return;
   }
 
-  const closeGroupBtn = e.target.closest('[data-close-group]');
-  if (closeGroupBtn){ openCloseForm(Number(closeGroupBtn.dataset.closeGroup)); return; }
-
-  const approveBtn = e.target.closest('[data-approve-job]');
-  if (approveBtn){ setJobStatusSupervisor(approveBtn.dataset.approveJob, 'approved'); return; }
-  const rejectBtn = e.target.closest('[data-reject-job]');
-  if (rejectBtn){ setJobStatusSupervisor(rejectBtn.dataset.rejectJob, 'rejected'); return; }
-
   if (e.target.closest('#toggleAddTaskLink')){ openAddTaskModal(); return; }
   if (e.target.closest('[data-add-template]')){
     if (isAdmin() || isSupervisorRole()) openAddTaskModal({ wh: oWhVal, dept: oDeptVal });
@@ -1384,51 +1091,7 @@ document.addEventListener('click', async (e)=>{
   }
 });
 
-document.getElementById('openSubmitBtn').addEventListener('click', async ()=>{
-  if (flowMode === 'sup-open'){ await openSupervisorJobs(); return; }
-  const hint = document.getElementById('openHint');
-  if (!oWhVal || !oDeptVal){ hint.textContent='เลือกคลังและฝั่งก่อน'; return; }
-  if (crew.length===0){ hint.textContent='แตะเลือกคนอย่างน้อย 1 คนก่อน'; return; }
-  const task = taskById(oTaskVal);
-  const crewMembers = crew.map(id => roster.find(r=>r.id==id)).filter(Boolean);
-  const crewNames = crewMembers.map(m=>m.name);
-
-  const date = document.getElementById('d-date').value || todayISO();
-  const start = document.getElementById('d-start').value || timeNowHHMM();
-  const end = document.getElementById('d-end').value || timeNowHHMM();
-  const unitVal = Number(document.getElementById('d-unit').value)||0;
-  const details = {
-    date, start, end, mins: minutesBetween(start, end), qty: unitVal, crew: crewNames,
-  };
-  if (task.unit==='containers'){
-    details.containers = unitVal;
-    details.vehicles = Number(document.getElementById('d-vehicles').value) || (unitVal*task.vehiclesPerContainer);
-    details.qty = details.vehicles;
-  }
-  if (task.hasIssue){
-    const issueYes = document.querySelector('input[name="issue-d"]:checked')?.value==='yes';
-    details.hasIssue = issueYes;
-    details.issueCount = issueYes ? (Number(document.getElementById('d-issue').value)||0) : 0;
-  }
-
-  hint.textContent = 'กำลังบันทึก...';
-  try{
-    // Schema stores one employee per job row, so a multi-person crew is
-    // logged as one row per teammate, sharing the same task/details/crew list.
-    const rows = crewMembers.map(m => ({
-      warehouse: oWhVal, department: oDeptVal, task_id: oTaskVal, employee_id: m.id, employee_name: m.name,
-      details, created_by: currentUser.id,
-    }));
-    const { error } = await sb.from('jobs').insert(rows);
-    if (error) throw error;
-    hint.textContent = '';
-    await refreshJobs();
-    showSuccess(task?.label||'', crewMembers.length);
-  } catch(err){
-    hint.textContent = '';
-    toast('บันทึกไม่สำเร็จ: ' + mapDbError(err));
-  }
-});
+document.getElementById('openSubmitBtn').addEventListener('click', recordJob);
 
 function mapDbError(err){
   if (!err) return 'unknown error';
@@ -1436,22 +1099,6 @@ function mapDbError(err){
   if (err.code === '23505') return 'ข้อมูลซ้ำกับที่มีอยู่แล้ว';
   if (err.code === '23503' || /foreign key/i.test(err.message||'')) return 'ชนิดงานนี้ยังไม่มีในระบบ ไปเพิ่มที่แถบ "ชนิดงาน" ก่อน';
   return err.message || err.code || 'unknown error';
-}
-
-function showSuccess(taskLabel, crewCount){
-  document.getElementById('successCard').hidden = true;
-  document.getElementById('successActions').hidden = true;
-  document.getElementById('successText').textContent = 'บันทึกงานเรียบร้อย';
-  document.getElementById('successSub').textContent = `${taskLabel} · ทีม ${crewCount} คน`;
-  activeStep = 4; renderScreens();
-  setTimeout(()=>{
-    oTaskVal=null; crew=[]; doneFieldsBuiltForTask=null;
-    oWhVal = null; oDeptVal = null;
-    document.getElementById('d-date').value=''; document.getElementById('d-start').value=''; document.getElementById('d-end').value='';
-    document.getElementById('openHint').textContent='';
-    goTab('history');
-    render();
-  }, 1100);
 }
 
 // ================= EMPLOYEE ROSTER =================
@@ -1548,7 +1195,7 @@ function groupJobs(rows){
 
 // ================= SKILL MATRIX =================
 function renderMatrix(){
-  const scopedJobs = jobs.filter(j=>inScope(j.department) && inWh(j.warehouse));
+  const scopedJobs = scopedJobList();
   const rosterScoped = roster.filter(r=>inScope(r.department) && inWh(r.warehouse));
   const tasksScoped = ALL_TASKS().filter(t=>inScope(t.dept) && (t.warehouse==null || inWh(t.warehouse)));
   const rosterNames = rosterScoped.map(r=>r.name);
@@ -1596,7 +1243,11 @@ function renderMatrix(){
 // ================= HISTORY LIST =================
 function renderHistory(){
   document.getElementById('dateFilterChips').style.display = '';
-  const scopedJobs = jobs.filter(j=>inScope(j.department) && inWh(j.warehouse));
+  // LV1-2 are read-only: just their own jobs (RLS already limits rows), no matrix / people filter
+  const ro = isWorker();
+  ['openMatrixBtn','toggleMoreFiltersLink'].forEach(id=>{ const el = document.getElementById(id); if (el) el.style.display = ro ? 'none' : ''; });
+  if (ro) document.getElementById('moreFiltersPanel').hidden = true;
+  const scopedJobs = scopedJobList();
   const rosterScoped = roster.filter(r=>inScope(r.department) && inWh(r.warehouse));
   const rosterNames = rosterScoped.map(r=>r.name);
   const logNames = scopedJobs.flatMap(j=>j.crew||[]);
@@ -1623,13 +1274,19 @@ function renderHistory(){
 
   const list = document.getElementById('historyList');
   const empty = document.getElementById('historyEmpty');
+  const sum = document.getElementById('histSummary');
+  if (ro && filtered.length){
+    const mins = filtered.reduce((s,j)=>s + (Number(j.details && j.details.mins)||0), 0);
+    sum.innerHTML = `<div class="stat-card"><div class="n num">${filtered.length}</div><div class="l">จำนวนงาน</div></div>
+      <div class="stat-card"><div class="n num">${(mins/60).toFixed(1)}</div><div class="l">ชั่วโมงรวม</div></div>`;
+    sum.style.display = '';
+  } else { sum.innerHTML = ''; sum.style.display = 'none'; }
   if (filtered.length===0){ list.innerHTML=''; empty.hidden=false; return; }
   empty.hidden=true;
   list.innerHTML = filtered.map(j=>{
     const task = taskById(j.task_id);
     const d = j.details || {};
     const issueBadge = (task && task.hasIssue && d.hasIssue) ? `<span class="badge issue">มีปัญหา</span>` : '';
-    const status = j.status || 'approved';
     return `
     <div class="hist-card">
       <div class="hist-top">
@@ -1637,7 +1294,6 @@ function renderHistory(){
           <div class="hist-task">${task ? esc(task.label) : esc(j.task_id)}</div>
           <div class="hist-time">${ICONS.clock}${esc(d.start||'')}–${esc(d.end||'–')} · ${d.mins == null ? '–' : num(d.mins)} นาที</div>
         </div>
-        <span class="status-badge ${esc(status)}">${STATUS_LABEL[status]||esc(status)}</span>
       </div>
       <div class="hist-foot">
         <span class="crew-av">${avatarStack(j.crew||[], 26)}<span class="hist-crew">${esc((j.crew||[]).join(', '))}</span></span>
@@ -1655,7 +1311,7 @@ function renderHistory(){
 
 // ================= MASTER RENDER =================
 function render(){
-  const scopedJobs = jobs.filter(j=>inScope(j.department) && inWh(j.warehouse));
+  const scopedJobs = scopedJobList();
   const rosterScoped = roster.filter(r=>inScope(r.department) && inWh(r.warehouse));
   document.getElementById('statRow').innerHTML = `
     <div class="stat-card"><div class="n num">${rosterScoped.length}</div><div class="l">คนงาน</div></div>
@@ -1665,21 +1321,7 @@ function render(){
   renderMatrix();
   renderHistory();
   renderRosterManager();
-  if (activeTab==='new'){
-    if (isAdmin()){
-      if (activeStep===1) renderStep1();
-      if (activeStep===2) renderStep2();
-      if (activeStep===3) renderStep3();
-    } else if (isSupervisorRole() && activeStep===3){
-      renderStep3();
-    } else if (isWorker() && workerStep!=='success'){
-      renderWorkerHome();
-    }
-  } else if (false){
-    refreshPendingApprovals().then(renderApproveQueue);
-  } else if (activeTab==='openjobs' && isSupervisorRole()){
-    if (openjobsSub==='list') refreshOpenJobs().then(renderOpenJobs);
-  }
+  if (activeTab==='new' && isWriter() && activeStep===3 && !supOpenDone) renderStep3();
 }
 
 // ================= DATA REFRESH =================
@@ -1760,6 +1402,7 @@ document.getElementById('jobChoiceList').addEventListener('click', e=>{
   h.setAttribute('aria-expanded', String(open));
 });
 document.getElementById('rosterSearch').addEventListener('input', e=>{ rosterQuery = e.target.value; renderRosterList(); });
-document.getElementById('successGoOpenBtn').addEventListener('click', ()=> goTab('openjobs'));
+document.getElementById('successGoOpenBtn').addEventListener('click', ()=> goTab('history'));
+document.getElementById('empSearch').addEventListener('input', e=>{ crewQuery = e.target.value; renderCrewList(); });
 document.getElementById('successNewBtn').addEventListener('click', ()=> goTab('new'));
 document.getElementById('pmLogoutBtn').addEventListener('click', ()=>{ closeProfileModal(); logout(); });

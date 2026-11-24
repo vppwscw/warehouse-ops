@@ -1199,14 +1199,14 @@ function renderKpis(closed){
   const avgMins  = set => { const w = withMins(set); return w.length ? Math.round(w.reduce((s,j)=>s+num(j.details.mins),0)/w.length) : 0; };
 
   const total   = closed.length;
-  const openNow = jobs.filter(j=>j.status==='open' && matchScope(j)).length;
+  const manHrs  = Math.round(closed.reduce((t,j)=>t+num((j.details||{}).mins)*Math.max(1,(j.crew||[]).length),0)/60);
   const avg     = avgMins(closed);
   const people  = peopleCount(closed);
 
   const cards = [
     { k:'total',   lab:'งานทั้งหมด',       val:total, foot:deltaChip(total, prev ? prev.length : null) },
-    { k:'open',    lab:'กำลังทำงาน',       val:openNow,
-      foot:`<span class="kpi-sub">งานที่เปิดอยู่ตอนนี้</span>` },
+    { k:'open',    lab:'ชั่วโมงคน',        val:manHrs,
+      foot:`<span class="kpi-sub">นาทีงาน × จำนวนคน</span>` },
     { k:'avg',     lab:'เฉลี่ย นาที/งาน',  val:avg, foot:deltaChip(avg, prev ? avgMins(prev) : null, true) },
     { k:'people',  lab:'คนทำงาน',          val:people, foot:deltaChip(people, prev ? peopleCount(prev) : null) },
   ];

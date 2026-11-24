@@ -952,7 +952,6 @@ async function recordJob(){
   if (date < minDateISO()){ hint.textContent='บันทึกย้อนหลังได้ไม่เกิน 3 วัน'; return; }
   if (!start || !end){ hint.textContent='ใส่เวลาเริ่มและเวลาจบก่อน'; return; }
   if (end <= start){ hint.textContent='เวลาจบต้องหลังเวลาเริ่ม'; return; }
-  if (date === todayISO() && end > timeNowHHMM()){ hint.textContent='เวลาจบยังไม่ถึง (เกินเวลาปัจจุบัน)'; return; }
   const mins = minutesBetween(start, end);
   const unitVal = Number(document.getElementById('d-unit').value)||0;
   const details = { date, start, end, mins, qty: unitVal, crew: crewMembers.map(m=>m.name) };

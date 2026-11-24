@@ -123,7 +123,8 @@ function avatarHTML(name, size){
 }
 function avatarStack(names, size){ return `<span class="avs">${(names||[]).slice(0,4).map(n=>avatarHTML(n,size)).join('')}</span>`; }
 let supOpenDone = false;     // writer just recorded a job -> show success screen
-let crewQuery = '';          // crew picker search text
+let crewQuery = '';
+let crewWhTab = null;   // crew picker warehouse tab (null = job's warehouse)          // crew picker search text
 let rosterQuery = '', rosterDeptFilter = 'all';
 document.getElementById('backBtn').innerHTML = ICONS.back;
 document.querySelector('.ok-circle').innerHTML = ICONS.check;
@@ -468,7 +469,7 @@ function goTab(tab){
   activeTab = tab; supOpenDone = false;
   if (tab==='new'){
     if (isWriter()){
-      oTaskVal = null; crew = []; crewQuery = ''; doneFieldsBuiltForTask = null;
+      oTaskVal = null; crew = []; crewQuery = ''; crewWhTab = null; doneFieldsBuiltForTask = null;
       const whs = myWarehouses();
       oWhVal = whs.length === 1 ? whs[0] : null;
       const ds = oWhVal ? deptsForWh(oWhVal) : [];
@@ -611,27 +612,29 @@ function closeRecordModal(){
 function renderCrewList(){
   syncCrewNext();
   const box = document.getElementById('empCheckList');
+  const tab = crewWhTab || oWhVal;
+  const tabs = document.getElementById('crewWhTabs');
+  if (tabs) tabs.innerHTML = WH_KEYS.map(w=>{
+    const n = crew.filter(id=>{ const r = roster.find(x=>String(x.id)===String(id)); return r && (r.warehouse||oWhVal)===w; }).length;
+    return `<button type="button" class="wh-btn ${tab===w?'on':''}" data-crew-wh="${w}" aria-pressed="${tab===w}">${esc(WH_PLAIN[w])}${w===oWhVal?'':' (มาช่วย)'}${n?` · ${n}`:''}</button>`;
+  }).join('');
   const q = crewQuery.trim().toLowerCase();
   const byName = (a,b)=>String(a.name).localeCompare(String(b.name),'th');
-  const isHome = r => r.department===oDeptVal && (r.warehouse==null || r.warehouse===oWhVal);
+  const inTab = r => (r.warehouse||oWhVal) === tab;
   const match = r => !q || String(r.name).toLowerCase().includes(q);
-  const home = roster.filter(r=>isHome(r) && match(r)).sort(byName);
-  const sameWh = r => r.warehouse==null || r.warehouse===oWhVal;   // crew can cross departments, never warehouses
-  const others = roster.filter(r=>!isHome(r) && sameWh(r) && match(r)).sort(byName);
-  const otherWh = q ? roster.filter(r=>!sameWh(r) && match(r)).sort(byName) : [];   // helpers from the other warehouse: search only
+  const isHome = r => tab===oWhVal && r.department===oDeptVal;
+  const home = roster.filter(r=>inTab(r) && isHome(r) && match(r)).sort(byName);
+  const rest = roster.filter(r=>inTab(r) && !isHome(r) && match(r)).sort(byName);
   const item = r => `
       <button type="button" class="emp-check" data-pick-emp="${esc(r.id)}" aria-pressed="${crew.includes(String(r.id))}">
         <span class="ec-av">${esc(Array.from(String(r.name).trim())[0]||'')}</span>
-        <span class="ec-text"><span class="ec-name">${esc(r.name)}${sameWh(r) ? '' : ` <span style="font-size:11px;padding:1px 6px;border-radius:6px;background:var(--line);color:var(--ink);white-space:nowrap;">${esc((WH_PLAIN[r.warehouse]||r.warehouse)+' · '+(r.department||''))}</span>`}</span><span class="ec-sub">${(()=>{ const n = jobs.filter(j=>j.task_id===oTaskVal && (j.crew||[]).includes(r.name)).length; return n ? 'ทำงานนี้ '+n+' ครั้ง' : 'ยังไม่เคยทำงานนี้'; })()}</span></span>
+        <span class="ec-text"><span class="ec-name">${esc(r.name)}</span><span class="ec-sub">${esc(r.department||'')} · ${(()=>{ const n = jobs.filter(j=>j.task_id===oTaskVal && (j.crew||[]).includes(r.name)).length; return n ? 'ทำงานนี้ '+n+' ครั้ง' : 'ยังไม่เคยทำงานนี้'; })()}</span></span>
         <span class="ec-box">${crew.includes(String(r.id)) ? ICONS.checksm : ''}</span>
       </button>`;
   let html = '';
   if (home.length) html += home.map(item).join('');
-  else if (!q) html += `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง ${esc(deptName(oDeptVal, oWhVal))}<br>เลือกจากแผนกอื่นด้านล่าง หรือไปเพิ่มที่แถบ "คนงาน"</div>`;
-  if (others.length) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">แผนกอื่นใน${esc(WH_PLAIN[oWhVal] || ('คลัง '+oWhVal))}</p>` + others.map(item).join('');
-  if (otherWh.length) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">คนจากคลังอื่น (มาช่วย)</p>` + otherWh.map(item).join('');
-  else if (!q) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">คนจากคลังอื่นมาช่วย: พิมพ์ชื่อในช่องค้นหา</p>`;
-  if (!html) html = `<div class="empty-roster-inline">ไม่พบชื่อที่ค้นหา</div>`;
+  if (rest.length) html += (home.length ? `<p class="hint" style="text-align:left;margin:14px 0 6px;">แผนกอื่น</p>` : '') + rest.map(item).join('');
+  if (!html) html = `<div class="empty-roster-inline">${q ? 'ไม่พบชื่อที่ค้นหา' : 'ไม่มีรายชื่อใน'+esc(WH_PLAIN[tab]||tab)}</div>`;
   box.innerHTML = html;
 }
 function renderStep3(){
@@ -983,7 +986,7 @@ async function recordJob(){
     const { error } = await sb.from('jobs').insert(rows);
     if (error) throw error;
     hint.textContent = '';
-    crew = []; oTaskVal = null; doneFieldsBuiltForTask = null; crewQuery = '';
+    crew = []; oTaskVal = null; doneFieldsBuiltForTask = null; crewQuery = ''; crewWhTab = null;
     document.getElementById('d-date').value = '';
     document.getElementById('d-start').value = '';
     document.getElementById('d-end').value = '';
@@ -1003,7 +1006,7 @@ document.addEventListener('click', async (e)=>{
 
   const pickWh = e.target.closest('[data-pick-wh]');
   if (pickWh){
-    oWhVal = pickWh.dataset.pickWh; oDeptVal=null; oTaskVal=null; crew=[];
+    oWhVal = pickWh.dataset.pickWh; oDeptVal=null; oTaskVal=null; crew=[]; crewWhTab=null;
     const ds = deptsForWh(oWhVal);
     if (ds.length === 1){ oDeptVal = ds[0]; activeStep=2; renderStep2(); }
     else { activeStep=1; renderStep1(); }
@@ -1020,6 +1023,8 @@ document.addEventListener('click', async (e)=>{
     renderStep3(); renderScreens(); return;
   }
 
+  const crewWh = e.target.closest('[data-crew-wh]');
+  if (crewWh){ crewWhTab = crewWh.dataset.crewWh; renderCrewList(); return; }
   const pickEmp = e.target.closest('[data-pick-emp]');
   if (pickEmp){
     const id = pickEmp.dataset.pickEmp;

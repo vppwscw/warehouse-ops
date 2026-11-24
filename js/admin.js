@@ -155,8 +155,6 @@ let jobs = [], roster = [], users = [], allEmployees = [], taskList = [], scopes
 let realtimeChannel = null;
 let dateRange = 'today', deptFilter = 'ALL', whFilter = 'ALL', searchTerm = '', activeView = 'dashboard';
 let dateFrom = null, dateTo = null;   // ISO yyyy-mm-dd, used when dateRange === 'custom'
-let jobsPreset = 'all'; // dashboard jobs-table preset tab: all | pending | today
-let prevKpi = {};        // last-rendered KPI values, for the counter animation
 
 // ---------- URL hash deep-link (2026-09-17) ----------
 // view + คลัง + ฝั่ง + ช่วงวัน ผูกกับ #hash ไว้ — refresh/แชร์ลิงก์แล้วไม่เสีย
@@ -602,13 +600,6 @@ function goView(id){
   render();
 }
 
-function setJobsPreset(preset){
-  jobsPreset = preset;
-  document.querySelectorAll('#jobsPresets .preset').forEach(p=>
-    p.setAttribute('aria-pressed', p.dataset.preset===preset));
-  if (activeView!=='dashboard') goView('dashboard'); else render();
-}
-
 document.addEventListener('change', e=>{
   if (e.target.id === 'whSelect'){ whFilter = e.target.value; buildDeptChips(); render(); return; }
   if (e.target.id === 'deptSelect'){ deptFilter = e.target.value; render(); return; }
@@ -692,20 +683,8 @@ document.addEventListener('click', e=>{
     const pop = document.getElementById('datePop');
     if (pop && !pop.hidden) pop.hidden = true;
   }
-  const presetBtn = e.target.closest('#jobsPresets [data-preset]');
-  if (presetBtn){ setJobsPreset(presetBtn.dataset.preset); return; }
-
   if (e.target.closest('#actionStripBtn')){ goView('queue'); return; }
   if (e.target.closest('#exportCsvBtn')){ exportJobsCsv(); return; }
-  if (e.target.closest('#trendTableToggle')){
-    const btn = e.target.closest('#trendTableToggle');
-    const wrap = document.getElementById('trendTableWrap');
-    wrap.hidden = !wrap.hidden;
-    btn.setAttribute('aria-expanded', String(!wrap.hidden));
-    btn.textContent = wrap.hidden ? 'ดูตาราง' : 'ซ่อนตาราง';
-    if (!wrap.hidden) renderTrendTable();
-    return;
-  }
   if (e.target.closest('#exportEmpCsvBtn')){ exportEmployeesXlsx(); return; }
 
   const batchBtn = e.target.closest('[data-approve-dept]');
@@ -1193,203 +1172,341 @@ function unitTotals(set, weight){
     .sort((a,b)=>b.n-a.n);
 }
 
-function renderKpis(closed){
-  const prev = prevPeriodJobs();
-  const withMins = set => set.filter(j=>j.details && j.details.mins!=null);
-  const avgMins  = set => { const w = withMins(set); return w.length ? Math.round(w.reduce((s,j)=>s+num(j.details.mins),0)/w.length) : 0; };
+// ---- dashboard (one-viewport bento): KPI + stacked hourly/daily columns + dept split + tasks + people + heat ----
+// Model is built from the already-filtered `closed` set; SVG/size-dependent parts are
+// (re)drawn from container sizes by drawDash(), driven by a ResizeObserver so the
+// panels follow the sidebar collapsing. Grow animations run once per data change.
+let dash = null, dashSig = '', dashAnim = false, dashTips = {}, dashRO = null, dashRaf = 0;
+const DASH_WD = ['อา','จ','อ','พ','พฤ','ศ','ส'], DASH_WD_ORDER = [1,2,3,4,5,6,0];
+const fmtH = v => (Math.round(v*10)/10).toLocaleString('en-US');
+const jobMh = j => num((j.details||{}).mins) * Math.max(1, (j.crew||[]).length) / 60;   // man-hours
+const jobHour = j => { const m = /^(\d{1,2})/.exec((j.details||{}).start || ''); return m ? Math.min(23, +m[1]) : null; };
+const isoPlus = (iso, n) => { const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return d.toLocaleDateString('sv-SE'); };
+const shortDate = iso => `${+iso.slice(8,10)}/${+iso.slice(5,7)}`;
+const pad2 = n => String(n).padStart(2,'0');
+const dkSw = (c, tex) => `<b class="dk-sw${tex?' tex':''}" style="background-color:${esc(c)}"></b>`;
+const dkEl = id => document.getElementById(id);
 
-  const total   = closed.length;
-  const manHrs  = Math.round(closed.reduce((t,j)=>t+num((j.details||{}).mins)*Math.max(1,(j.crew||[]).length),0)/60);
-  const avg     = avgMins(closed);
-  const people  = peopleCount(closed);
-
-  const cards = [
-    { k:'total',   lab:'งานทั้งหมด',       val:total, foot:deltaChip(total, prev ? prev.length : null) },
-    { k:'open',    lab:'ชั่วโมงคน',        val:manHrs,
-      foot:`<span class="kpi-sub">นาทีงาน × จำนวนคน</span>` },
-    { k:'avg',     lab:'เฉลี่ย นาที/งาน',  val:avg, foot:deltaChip(avg, prev ? avgMins(prev) : null, true) },
-    { k:'people',  lab:'คนทำงาน',          val:people, foot:deltaChip(people, prev ? peopleCount(prev) : null) },
-  ];
-  // decorative per-day sparkline (same filters as the trend chart) — presentation only
-  const sDays = trendDays(), sIdx = Object.fromEntries(sDays.map((d,i)=>[d,i]));
-  const sJobs = jobs.filter(j=> j.details && (j.details.date in sIdx) && matchScope(j) && matchSearch(j));
-  const sTot = sDays.map(()=>0), sPen = sDays.map(()=>0), sMin = sDays.map(()=>[]), sPpl = sDays.map(()=>new Set());
-  sJobs.forEach(j=>{
-    const i = sIdx[j.details.date]; sTot[i]++;
-    if ((j.status||'approved')==='pending') sPen[i]++;
-    if (j.details.mins!=null) sMin[i].push(num(j.details.mins));
-    (j.crew||[]).forEach(n=>sPpl[i].add(n));
-  });
-  const sAvg = sMin.map(a=> a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0);
-  const sparkSeries = { total:sTot, pending:sPen, avg:sAvg, people:sPpl.map(x=>x.size) };
-  const spark = vals => {
-    if (!vals || vals.length < 2) return '';
-    const mx = Math.max(...vals), mn = Math.min(...vals), rg = (mx-mn) || 1;
-    const pts = vals.map((v,i)=> (i/(vals.length-1)*96).toFixed(1)+','+(34-((v-mn)/rg)*30).toFixed(1)).join(' ');
-    return `<svg class="kpi-spark" viewBox="0 0 96 38" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
-  };
-  document.getElementById('kpiRow').innerHTML = cards.map(c=>`
-    <div class="kpi kpi-${esc(c.k)} ${c.tone ? 'kpi-'+c.tone : ''}">
-      <div class="kpi-top"><div class="kpi-lab">${esc(c.lab)}</div><span class="kpi-ic" aria-hidden="true">${ICONS[{total:'list',open:'queue',avg:'dash',people:'users'}[c.k]] || ''}</span></div>
-      <div class="kpi-mid">
-        <div class="kpi-vf"><div class="kpi-val num" data-kpi="${c.k}">${c.val}</div><div class="kpi-foot">${c.foot || ''}</div></div>
-        ${spark(sparkSeries[c.k])}
-      </div>
-    </div>`).join('');
-  if (window.Anim) cards.forEach(c=>{
-    Anim.count(document.querySelector(`[data-kpi="${c.k}"]`), c.val, prevKpi[c.k] || 0);
-    prevKpi[c.k] = c.val;
-  });
-}
-
-// day list for the trend chart — follows the active range; 'today'/'all' fall
-// back to a sensible fixed window so the chart is never one bar or 500.
-function trendDays(){
-  if (dateRange==='week')  return [...Array(7)].map((_,i)=>daysAgoISO(6-i));
-  if (dateRange==='month') return [...Array(30)].map((_,i)=>daysAgoISO(29-i));
-  if (dateRange==='custom' && dateFrom && dateTo){
-    const out = []; let d = new Date(dateFrom+'T00:00:00'); const end = new Date(dateTo+'T00:00:00');
-    while (d <= end && out.length < 120){ out.push(d.toLocaleDateString('sv-SE')); d = new Date(d.getTime()+86400000); }
-    return out.length >= 2 ? out : [...Array(7)].map((_,i)=>daysAgoISO(6-i));
-  }
-  return [...Array(7)].map((_,i)=>daysAgoISO(6-i));   // 'today' or 'all'
-}
-
-// last-rendered trend data, kept so the "ดูตาราง" toggle can build its table
-// alternative without re-deriving from `jobs` — same numbers as the chart.
-let lastTrend = null;
-
-// plain-language insight for the chart's aria-label — screen readers get the
-// story (total + direction), not just "trend chart" with no numbers.
-function trendInsight(days, totals){
-  const sum = totals.reduce((a,b)=>a+b, 0);
-  if (!sum) return `แนวโน้มงานรายวัน ${days.length} วันล่าสุด — ไม่มีข้อมูล`;
-  const half = Math.max(1, Math.floor(days.length/2));
-  const firstSum = totals.slice(0, half).reduce((a,b)=>a+b, 0);
-  const secondSum = totals.slice(half).reduce((a,b)=>a+b, 0);
-  let trendTxt;
-  if (firstSum === 0) trendTxt = secondSum > 0 ? ' เพิ่มขึ้นจากไม่มีงานในครึ่งแรกของช่วง' : '';
+// period of the current filter (pFrom..pTo) as a day list; "ทั้งหมด" = span of the data
+function dashPeriod(closed){
+  const t = todayISO();
+  const ds = closed.map(j=>(j.details||{}).date).filter(Boolean).sort();
+  let from, to;
+  if (dateRange==='today') from = to = t;
+  else if (dateRange==='week'){ from = daysAgoISO(6); to = t; }
+  else if (dateRange==='month'){ from = daysAgoISO(29); to = t; }
   else {
-    const pct = Math.round((secondSum-firstSum)/firstSum*100);
-    trendTxt = pct > 0 ? ` เพิ่มขึ้น ${pct}% เทียบครึ่งแรกของช่วง`
-      : pct < 0 ? ` ลดลง ${Math.abs(pct)}% เทียบครึ่งแรกของช่วง`
-      : ' คงที่เทียบครึ่งแรกของช่วง';
+    from = (dateRange==='custom' && dateFrom) || ds[0] || t;
+    to   = (dateRange==='custom' && dateTo)   || ds[ds.length-1] || t;
   }
-  return `แนวโน้มงานรายวัน ${days.length} วันล่าสุด รวม ${sum} งาน${trendTxt}`;
-}
-function renderTrendTable(){
-  const wrap = document.getElementById('trendTableWrap');
-  if (!lastTrend || wrap.hidden) return;
-  const { days, series, totals } = lastTrend;
-  document.querySelector('#trendTable thead').innerHTML =
-    `<tr><th>วันที่</th>${series.map(s=>`<th>${esc(deptName(s.dept, whFilter))}</th>`).join('')}<th>รวม</th></tr>`;
-  document.querySelector('#trendTable tbody').innerHTML = days.map((d,i)=>
-    `<tr><td>${esc(fmtThaiDate(d))}</td>${series.map(s=>`<td class="mono">${s.vals[i]}</td>`).join('')}<td class="mono"><b>${totals[i]}</b></td></tr>`
-  ).join('');
+  if (from > to) to = from;
+  const days = [];
+  for (let d = from; d <= to && days.length < 800; d = isoPlus(d, 1)) days.push(d);
+  return { from, to, days };
 }
 
-// stacked-area job trend, one band per department
-function renderTrend(){
-  const days = trendDays();
-  const idx  = Object.fromEntries(days.map((d,i)=>[d,i]));
-  const series = deptKeysFor(whFilter).map(dept=>({ dept, color:deptColor(dept, whFilter), vals:days.map(()=>0) }));
-  const byDept = Object.fromEntries(series.map(s=>[s.dept, s]));
-  jobs.forEach(j=>{
-    const d = (j.details && j.details.date);
-    if (!(d in idx) || !matchScope(j) || !matchSearch(j)) return;
-    const s = byDept[j.department]; if (s) s.vals[idx[d]]++;
-  });
-  const totals = days.map((_,i)=>series.reduce((sum,s)=>sum+s.vals[i], 0));
-  const max = Math.max(1, ...totals);
+function niceScale(max){
+  if (!(max > 0)) return { top:4, step:1 };
+  const raw = max/4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1,2,2.5,5,10].map(m=>m*mag).find(s=>s>=raw-1e-9);
+  return { top: Math.ceil(max/step - 1e-9) * step, step };
+}
 
-  const W=720, H=210, PL=32, PR=10, PT=12, PB=26;
-  const iw = W-PL-PR, ih = H-PT-PB;
-  const X = i => PL + (days.length===1 ? iw/2 : i/(days.length-1)*iw);
-  const Y = v => PT + ih - (v/max)*ih;
+function buildDash(closed){
+  const per = dashPeriod(closed), single = per.days.length === 1;
+  const codes = (deptFilter!=='ALL' ? [deptFilter] : deptKeysFor(whFilter)).slice();
+  closed.forEach(j=>{ if (j.department && !codes.includes(j.department)) codes.push(j.department); });
+  const ci = Object.fromEntries(codes.map((c,i)=>[c,i]));
+  const series = codes.map(c=>({ code:c, name:deptName(c, whFilter), color:deptColor(c, whFilter) }));
 
-  // Catmull-Rom → cubic bezier, so the trend reads as a smooth curve not a
-  // zig-zag. `lead` false continues the current path (for the return edge).
-  const clampY = y => Math.max(PT, Math.min(PT+ih, y));
-  const smooth = (pts, lead) => {
-    if (pts.length < 3) return (lead?'M':'L') + pts.map(p=>p.join(',')).join(' L');
-    let d = (lead?'M':'L') + pts[0].join(',');
-    for (let i=0;i<pts.length-1;i++){
-      const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
-      d += ` C${(p1[0]+(p2[0]-p0[0])/6).toFixed(1)},${clampY(p1[1]+(p2[1]-p0[1])/6).toFixed(1)}`
-        +  ` ${(p2[0]-(p3[0]-p1[0])/6).toFixed(1)},${clampY(p2[1]-(p3[1]-p1[1])/6).toFixed(1)}`
-        +  ` ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  let hMin = 8, hMax = 17;
+  closed.forEach(j=>{ const h = jobHour(j); if (h!=null){ hMin = Math.min(hMin, h); hMax = Math.max(hMax, h); } });
+  const hours = []; for (let h = hMin; h <= hMax; h++) hours.push(h);
+
+  // main chart columns
+  const blank = () => codes.map(()=>0);
+  let cols, colOf;
+  if (single){
+    cols = hours.map(h=>({ label:pad2(h), title:`${pad2(h)}:00–${pad2(h)}:59`, vals:blank(), total:0, hour:h }));
+    colOf = j => { const h = jobHour(j); return h==null ? -1 : h - hMin; };
+  } else {
+    const n = per.days.length, step = n <= 31 ? 1 : n <= 217 ? 7 : 30, dayCol = {};
+    cols = [];
+    for (let i = 0; i < n; i += step){
+      const f = per.days[i], t = per.days[Math.min(n-1, i+step-1)];
+      per.days.slice(i, i+step).forEach(d=>{ dayCol[d] = cols.length; });
+      cols.push({ label:shortDate(f), title: step===1 ? fmtThaiDate(f) : fmtThaiDate(f)+' – '+fmtThaiDate(t), vals:blank(), total:0 });
     }
-    return d;
-  };
-  let lower = days.map(()=>0);
-  const defs = [];
-  const bands = series.map((s,si)=>{
-    const upper = lower.map((lo,i)=>lo + s.vals[i]);
-    const top = upper.map((v,i)=>[X(i), Y(v)]);
-    const bot = lower.map((v,i)=>[X(i), Y(v)]).reverse();
-    lower = upper;
-    const gid = 'tg'+si;
-    defs.push(`<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">`
-      + `<stop offset="0" stop-color="${esc(s.color)}" stop-opacity=".42"/>`
-      + `<stop offset="1" stop-color="${esc(s.color)}" stop-opacity=".1"/></linearGradient>`);
-    return `<path d="${smooth(top,true)} ${smooth(bot,false)} Z" fill="url(#${gid})"/>`
-      + `<path d="${smooth(top,true)}" fill="none" stroke="${esc(s.color)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
-  }).join('');
-  // emphasised endpoint — where the stack stands today
-  const lastTotal = totals[totals.length-1] || 0;
-  const endDot = lastTotal
-    ? `<circle cx="${X(days.length-1).toFixed(1)}" cy="${Y(lastTotal).toFixed(1)}" r="3.5" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="1.5"/>`
-    : '';
+    colOf = j => { const c = dayCol[(j.details||{}).date]; return c==null ? -1 : c; };
+  }
 
-  const grid = [0,.25,.5,.75,1].map(f=>{
-    const gy = Y(max*f);
-    return `<line x1="${PL}" y1="${gy}" x2="${W-PR}" y2="${gy}" stroke="var(--line)" stroke-width="${f===0?1.25:1}"/>`
-         + `<text x="${PL-6}" y="${gy+3}" text-anchor="end" class="c-axis">${Math.round(max*f)}</text>`;
-  }).join('');
-  const step = Math.max(1, Math.ceil(days.length/6));
-  const xlab = days.map((d,i)=> (i%step===0 || i===days.length-1)
-    ? `<text x="${X(i)}" y="${H-8}" text-anchor="middle" class="c-axis">${esc(fmtThaiDate(d))}</text>` : '').join('');
+  // sparkline buckets: per hour (one day) / per day (<=12 days) / ~8 equal chunks
+  let nb, spOf;
+  if (single){ nb = hours.length; spOf = colOf; }
+  else {
+    const n = per.days.length, sz = n <= 12 ? 1 : Math.ceil(n/8), dayB = {};
+    per.days.forEach((d,i)=>{ dayB[d] = Math.floor(i/sz); });
+    nb = Math.ceil(n/sz);
+    spOf = j => { const b = dayB[(j.details||{}).date]; return b==null ? -1 : b; };
+  }
+  const sp = { mh:Array(nb).fill(0), jobs:Array(nb).fill(0), min:Array(nb).fill(0), minN:Array(nb).fill(0),
+               ppl:Array.from({length:nb}, ()=>new Set()) };
 
-  document.getElementById('trendSub').textContent = days.length + ' วันล่าสุด';
-  document.getElementById('trendChart').innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" class="c-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${esc(trendInsight(days, totals))}">
-       <defs>${defs.join('')}</defs>
-       ${grid}${bands}${endDot}${xlab}
-     </svg>`;
-  document.getElementById('trendLegend').innerHTML = series.map(s=>
-    `<span class="lg"><i style="background:${esc(s.color)}"></i>${esc(deptName(s.dept, whFilter))}</span>`).join('');
-  lastTrend = { days, series, totals };
-  renderTrendTable();   // no-op if the table toggle is currently closed
+  let totalMh = 0;
+  const deptAB = codes.map(()=>({ A:0, B:0 }));
+  const tasks = new Map(), ppl = new Map(), heat = {}, wdSeen = new Set();
+  closed.forEach(j=>{
+    const d = j.details || {}, mh = jobMh(j), crew = (j.crew||[]).filter(Boolean), k = ci[j.department];
+    totalMh += mh;
+    const c = colOf(j);
+    if (c >= 0 && k != null){ cols[c].vals[k] += mh; cols[c].total += mh; }
+    if (k != null) deptAB[k][j.warehouse==='B' ? 'B' : 'A'] += mh;
+    const b = spOf(j);
+    if (b >= 0){
+      sp.mh[b] += mh; sp.jobs[b]++;
+      if (d.mins != null){ sp.min[b] += num(d.mins); sp.minN[b]++; }
+      crew.forEach(n=>sp.ppl[b].add(n));
+    }
+    const t = taskById(j.task_id), label = t ? t.label : (j.task_id || 'ไม่ทราบ');
+    const te = tasks.get(label) || { label, h:0, dept:j.department, wh:j.warehouse };
+    te.h += mh; tasks.set(label, te);
+    const ph = num(d.mins) / 60;
+    crew.forEach(n=>{
+      const p = ppl.get(n) || { name:n, h:0, by:{}, wh:j.warehouse };
+      p.h += ph; p.by[j.department] = (p.by[j.department]||0) + ph; ppl.set(n, p);
+    });
+    const h = jobHour(j);
+    if (h != null && d.date){
+      const wd = new Date(d.date+'T00:00:00').getDay();
+      heat[wd+'|'+h] = (heat[wd+'|'+h]||0) + mh; wdSeen.add(wd);
+    }
+  });
+
+  // dashed "เฉลี่ย 7 วัน": average man-hours per hour over the 7 days before the viewed day
+  let avg = null;
+  if (single){
+    const a0 = isoPlus(per.from, -7), a1 = isoPlus(per.from, -1), sum = hours.map(()=>0);
+    let any = false;
+    jobs.forEach(j=>{
+      const d = (j.details||{}).date;
+      if (!d || d < a0 || d > a1 || !matchScope(j) || !matchSearch(j)) return;
+      any = true;
+      const h = jobHour(j); if (h != null && h >= hMin && h <= hMax) sum[h-hMin] += jobMh(j);
+    });
+    if (any) avg = sum.map(v=>v/7);
+  }
+
+  // KPI cards
+  const prev = prevPeriodJobs();
+  const avgOf = set => { const w = set.filter(j=>j.details && j.details.mins!=null); return w.length ? Math.round(w.reduce((s,j)=>s+num(j.details.mins),0)/w.length) : 0; };
+  const avgM = avgOf(closed), pplN = peopleCount(closed);
+  const kpis = [
+    { lab:'ชั่วโมงคน', val:fmtH(totalMh), hero:true, spark:sp.mh,
+      chip:deltaChip(totalMh, prev ? prev.reduce((s,j)=>s+jobMh(j),0) : null) },
+    { lab:'งานทั้งหมด', val:String(closed.length), spark:sp.jobs, chip:deltaChip(closed.length, prev ? prev.length : null) },
+    { lab:'เฉลี่ย นาที/งาน', val:String(avgM), spark:sp.min.map((m,i)=>sp.minN[i] ? m/sp.minN[i] : 0),
+      chip:deltaChip(avgM, prev ? avgOf(prev) : null, true) },
+    { lab:'คนทำงาน', val:String(pplN), spark:sp.ppl.map(s=>s.size), chip:deltaChip(pplN, prev ? peopleCount(prev) : null) },
+  ];
+
+  const taskRows = [...tasks.values()].sort((a,b)=>b.h-a.h).slice(0,6).map(t=>({
+    label:t.label, h:t.h, color:deptColor(t.dept, t.wh), dept:deptName(t.dept, t.wh) }));
+  const pplRows = [...ppl.values()].sort((a,b)=>b.h-a.h).slice(0,6).map(p=>{
+    const top = Object.keys(p.by).sort((x,y)=>p.by[y]-p.by[x])[0];
+    return { name:p.name, h:p.h, dept:top ? deptName(top, p.wh) : '' };
+  });
+  const wds = DASH_WD_ORDER.filter(w=>wdSeen.has(w));
+  const heatWds = wds.length ? wds : [1,2,3,4,5];
+  const sig = [per.from, per.to, whFilter, deptFilter, searchTerm, closed.length, Math.round(totalMh*100)].join('|');
+  return { per, single, series, cols, avg, hours, hMin, kpis, deptAB, totalMh, taskRows, pplRows, heat, heatWds, sig };
 }
 
-// donut — job share by department
-function renderDeptDonut(closed){
-  const data = deptKeysFor(whFilter)
-    .map(d=>({ d, n:closed.filter(j=>j.department===d).length, c:deptColor(d, whFilter) }))
-    .filter(x=>x.n>0);
-  const total = data.reduce((s,x)=>s+x.n, 0);
-  const box = document.getElementById('deptDonut');
-  if (!total){ box.innerHTML = '<p class="c-empty">ยังไม่มีงานในช่วงนี้</p>'; return; }
-  const R=58, SW=20, C=2*Math.PI*R, cx=80, cy=80;
-  let off = 0;
-  const segs = data.map(x=>{
-    const len = x.n/total*C;
-    const seg = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${esc(x.c)}" stroke-width="${SW}"`
-      + ` stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})"/>`;
-    off += len; return seg;
-  }).join('');
-  const legend = data.map(x=>`<li><span class="lg"><i style="background:${esc(x.c)}"></i>${esc(deptName(x.d, whFilter))}</span>`
-    + `<b class="num">${x.n}</b><span class="c-pct">${Math.round(x.n/total*100)}%</span></li>`).join('');
-  const top = data.reduce((a,b)=>b.n>a.n?b:a, data[0]);
-  const donutLabel = `สัดส่วนงานตามฝั่ง รวม ${total} งาน — ${esc(deptName(top.d, whFilter))} มากที่สุด ${Math.round(top.n/total*100)}%`;
-  box.innerHTML =
-    `<svg viewBox="0 0 160 160" class="donut-svg" role="img" aria-label="${donutLabel}">
-       ${segs}
-       <text x="80" y="78" text-anchor="middle" class="donut-c-n">${total}</text>
-       <text x="80" y="95" text-anchor="middle" class="donut-c-l">งาน</text>
-     </svg>
-     <ul class="c-legend">${legend}</ul>`;
+function renderDash(closed){
+  dash = buildDash(closed);
+  if (dash.sig !== dashSig){ dashSig = dash.sig; dashAnim = true; }
+  dashTips = {};
+  const D = dash, tips = dashTips;
+
+  // KPI cards
+  dkEl('kpiRow').innerHTML = D.kpis.map((k,i)=>`
+    <div class="dk-kpi${k.hero?' hero':''}">
+      <div class="l">${esc(k.lab)}</div>
+      <div class="v num">${esc(k.val)}</div>${k.chip || '<span></span>'}
+      <svg class="dk-spark" data-i="${i}" aria-hidden="true"></svg>
+    </div>`).join('');
+
+  // trend header: title + legend
+  dkEl('dkTrendTitle').textContent = D.single ? 'ชั่วโมงคนรายชั่วโมง'
+    : (D.cols.length < D.per.days.length ? 'ชั่วโมงคนรายสัปดาห์' : 'ชั่วโมงคนรายวัน');
+  dkEl('dkLegend').innerHTML = D.series.map(s=>`<span>${dkSw(s.color)}${esc(s.name)}</span>`).join('')
+    + (D.avg ? `<span><b style="width:14px;height:0;border-top:2px dashed var(--ink-2);border-radius:0"></b>เฉลี่ย 7 วัน</span>` : '');
+
+  // dept split: A solid / B striped (single solid bar when one warehouse is filtered)
+  const both = whFilter === 'ALL';
+  dkEl('dkDeptSub').textContent = both ? 'คลัง A / B' : (WH_PLAIN[whFilter] || whFilter);
+  dkEl('dkDept').innerHTML = D.series.length
+    ? D.series.map((s,i)=>{
+        const a = D.deptAB[i].A, b = D.deptAB[i].B, t = a + b;
+        let track, under, tip;
+        if (both){
+          track = `<div class="dk-track">${a>0?`<span style="width:calc(${a/t*100}% - 1px);background-color:${esc(s.color)}"></span>`:''}`
+                + `${b>0?`<span class="b" style="width:calc(${b/t*100}% - 1px);background-color:${esc(s.color)}"></span>`:''}</div>`;
+          under = `<span>A ${fmtH(a)}</span><span>B ${fmtH(b)}</span>`;
+          tip = `<div class="tt-h">${esc(s.name)}</div>`
+            + `<div class="tt-r">${dkSw(s.color)}คลัง A<span class="num">${fmtH(a)} ชม. · ${t?Math.round(a/t*100):0}%</span></div>`
+            + `<div class="tt-r">${dkSw(s.color,true)}คลัง B<span class="num">${fmtH(b)} ชม. · ${t?Math.round(b/t*100):0}%</span></div>`;
+        } else {
+          const share = D.totalMh ? t/D.totalMh*100 : 0;
+          track = `<div class="dk-track" style="background:var(--surface-2);border-radius:7px"><span style="width:${share}%;background-color:${esc(s.color)}"></span></div>`;
+          under = `<span>${Math.round(share)}% ของทั้งหมด</span><span></span>`;
+          tip = `<div class="tt-h">${esc(s.name)}</div><div class="tt-r">${dkSw(s.color)}${esc(WH_PLAIN[whFilter]||whFilter)}<span class="num">${fmtH(t)} ชม. · ${Math.round(share)}%</span></div>`;
+        }
+        tips['d'+i] = tip;
+        return `<div class="dk-drow" data-tip="d${i}"><span class="dk-dk">${dkSw(s.color)}<span>${esc(s.name)}</span></span>${track}`
+          + `<span class="num dk-dv">${fmtH(t)}<small> ชม.</small></span><span class="dk-ab">${under}</span></div>`;
+      }).join('')
+      + (both ? `<div class="dk-legend"><span><b class="dk-sw" style="background:var(--ink-2)"></b>คลัง A (ทึบ)</span><span><b class="dk-sw tex" style="background-color:var(--ink-2)"></b>คลัง B (ลาย)</span></div>` : '')
+    : '<p class="c-empty">ยังไม่มีข้อมูล</p>';
+
+  // leaderboard
+  const pmax = D.pplRows.length ? D.pplRows[0].h || 1 : 1;
+  dkEl('dkLb').innerHTML = D.pplRows.length
+    ? D.pplRows.map((p,i)=>`<div class="dk-lr"><span class="dk-rk">${i+1}</span>`
+        + `<span class="dk-nm">${esc(p.name)} <small>${esc(p.dept)}</small></span><span class="dk-lv num">${fmtH(p.h)}</span>`
+        + `<div class="dk-lbar"><i style="width:${Math.max(2, p.h/pmax*100)}%"></i></div></div>`).join('')
+    : '<p class="c-empty">ยังไม่มีข้อมูล</p>';
+
+  // heat grid: weekday x hour, man-hours, 5-step scale
+  const R = D.heatWds.length, nh = D.hours.length;
+  let hmax = 0; Object.keys(D.heat).forEach(k=>{ if (D.heat[k] > hmax) hmax = D.heat[k]; });
+  let hh = '<span></span>' + D.hours.map(h=>`<span class="h">${pad2(h)}</span>`).join('');
+  D.heatWds.forEach((wd,r)=>{
+    hh += `<span class="h">${DASH_WD[wd]}</span>`;
+    D.hours.forEach((h,c)=>{
+      const v = D.heat[wd+'|'+h] || 0, lv = v > 0 ? Math.max(1, Math.ceil(v/hmax*4 - 1e-9)) : 0;
+      tips[`h${r}-${c}`] = `<div class="tt-h">${DASH_WD[wd]} ${pad2(h)}:00</div><div class="tt-r">ชั่วโมงคน<span class="num">${fmtH(v)}</span></div>`;
+      hh += `<div class="cell" style="background:var(--heat-${lv})" data-tip="h${r}-${c}"></div>`;
+    });
+  });
+  const heatEl = dkEl('dkHeat');
+  heatEl.style.gridTemplateColumns = `28px repeat(${nh}, minmax(0,1fr))`;
+  heatEl.style.gridTemplateRows = `16px repeat(${R}, minmax(0,1fr))`;
+  heatEl.innerHTML = hh;
+
+  if (!dashRO && window.ResizeObserver){
+    dashRO = new ResizeObserver(()=>{ cancelAnimationFrame(dashRaf); dashRaf = requestAnimationFrame(drawDash); });
+    dashRO.observe(dkEl('view-dashboard'));
+  }
+  drawDash();
 }
+
+function drawDash(){
+  if (!dash || activeView !== 'dashboard') return;
+  const box = dkEl('dkTrend');
+  if (!box || !box.clientWidth || !box.clientHeight) return;   // hidden / not laid out yet
+  const anim = dashAnim;
+  drawSparks(); drawTrend(anim); drawTasks(anim);
+  dashAnim = false;
+}
+
+function drawSparks(){
+  document.querySelectorAll('#kpiRow .dk-spark').forEach(s=>{
+    const w = s.clientWidth, h = s.clientHeight, v = dash.kpis[+s.dataset.i].spark;
+    if (!w || !h || v.length < 2){ s.innerHTML = ''; return; }
+    const mn = Math.min(...v), mx = Math.max(...v);
+    const p = v.map((y,i)=>[2 + i/(v.length-1)*(w-8), h - 4 - (y-mn)/(mx-mn||1)*(h-8)]);
+    const hero = !!s.closest('.hero'), c = hero ? 'var(--signal)' : 'var(--accent)', e = p[p.length-1];
+    s.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    s.innerHTML = `<path d="M${p.map(q=>q[0].toFixed(1)+','+q[1].toFixed(1)).join('L')}" fill="none" style="stroke:${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+      + `<circle cx="${e[0].toFixed(1)}" cy="${e[1].toFixed(1)}" r="3.5" style="fill:${c};stroke:${hero?'var(--night)':'var(--surface)'}" stroke-width="2"/>`;
+  });
+}
+
+function drawTrend(anim){
+  const box = dkEl('dkTrend'), W = box.clientWidth, H = box.clientHeight, D = dash, n = D.cols.length;
+  const L = 30, R = W - 4, T = 18, B = 18, cw = R - L, ch = H - B - T;
+  if (cw < 20 || ch < 20){ box.innerHTML = ''; return; }
+  const peak = Math.max(0, ...D.cols.map(c=>c.total), ...(D.avg || [0]));
+  const { top, step } = niceScale(peak);
+  const Y = v => T + ch - v/top*ch, slot = cw/n, bw = Math.max(3, Math.min(34, slot*.56));
+  const nowIdx = D.single && D.per.from === todayISO() ? nowBkk().getHours() - D.hMin : -1;
+  const lblEvery = Math.max(1, Math.ceil(30/slot));
+  let g = '', cs = '', hits = '';
+  for (let v = 0; v <= top + 1e-9; v += step){
+    const y = Y(v);
+    g += `<line x1="${L}" x2="${R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" style="stroke:var(${v ? '--line' : '--ink-3'})"/>`
+      + `<text class="dk-ax" x="${L-6}" y="${(y+4).toFixed(1)}" text-anchor="end">${+v.toFixed(1)}</text>`;
+  }
+  let maxI = -1, maxV = 0;
+  D.cols.forEach((c,i)=>{ if (c.total > maxV){ maxV = c.total; maxI = i; } });
+  D.cols.forEach((col,i)=>{
+    const cx = L + slot*(i+.5), isNow = i === nowIdx;
+    if (i % lblEvery === 0) cs += `<text class="dk-ax${isNow?' now':''}" x="${cx.toFixed(1)}" y="${H-4}" text-anchor="middle">${esc(col.label)}</text>`;
+    if (col.total > 0){
+      let base = 0; const last = col.vals.map(v=>v>0).lastIndexOf(true);
+      col.vals.forEach((v,si)=>{
+        if (!(v > 0)) return;
+        const y1 = Y(base+v), hgt = Math.max(1, Y(base) - y1 - (base ? 2 : 0)), x = cx - bw/2, rr = Math.min(4, hgt, bw/2);
+        const d = si === last
+          ? `M${x},${y1+hgt}V${y1+rr}Q${x},${y1} ${x+rr},${y1}H${x+bw-rr}Q${x+bw},${y1} ${x+bw},${y1+rr}V${y1+hgt}Z`
+          : `M${x},${y1}h${bw}v${hgt}h${-bw}Z`;
+        cs += `<path d="${d}" fill="${esc(D.series[si].color)}"${anim ? ` class="dk-g" style="transform-origin:0 ${T+ch}px;animation-delay:${(i*.4/n).toFixed(2)}s"` : ''}/>`;
+        base += v;
+      });
+    } else cs += `<rect x="${(cx-bw/2).toFixed(1)}" y="${T+ch-3}" width="${bw}" height="2" rx="1" style="fill:var(--line)"/>`;
+    let tip = `<div class="tt-h">${esc(col.title)}${isNow?' · กำลังเดิน':''}</div>`;
+    tip += col.total
+      ? col.vals.map((v,si)=>v>0 ? `<div class="tt-r">${dkSw(D.series[si].color)}${esc(D.series[si].name)}<span class="num">${fmtH(v)}</span></div>` : '').reverse().join('')
+        + `<div class="tt-r tt-t">รวม<span class="num">${fmtH(col.total)} ชม.</span></div>`
+      : '<div class="tt-r">ยังไม่มีงาน</div>';
+    if (D.avg) tip += `<div class="tt-r tt-m">เฉลี่ย 7 วัน<span class="num">${fmtH(D.avg[i])}</span></div>`;
+    dashTips['c'+i] = tip;
+    hits += `<rect x="${(L+slot*i).toFixed(1)}" y="${T}" width="${slot.toFixed(1)}" height="${ch}" fill="transparent" data-tip="c${i}" data-gx="${(L+slot*i).toFixed(1)}"/>`;
+  });
+  let extra = '';
+  if (D.avg) extra += `<path d="M${D.avg.map((v,i)=>(L+slot*(i+.5)).toFixed(1)+','+Y(v).toFixed(1)).join('L')}" fill="none" style="stroke:var(--ink-2)" stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round"/>`;
+  if (maxI >= 0) extra += `<text class="dk-tot" x="${(L+slot*(maxI+.5)).toFixed(1)}" y="${(Y(maxV)-6).toFixed(1)}" text-anchor="middle">${fmtH(maxV)}</text>`;
+  if (!D.totalMh) extra += `<text class="dk-empty" x="${W/2}" y="${H/2}" text-anchor="middle">ยังไม่มีงานในช่วงนี้</text>`;
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(dkEl('dkTrendTitle').textContent)} รวม ${fmtH(D.totalMh)} ชั่วโมงคน">${g}`
+    + `<rect id="dkGuide" class="dk-guide" y="${T}" width="${slot.toFixed(1)}" height="${ch}" rx="6" style="fill:var(--ink);fill-opacity:.05"/>${cs}${extra}${hits}</svg>`;
+}
+
+function drawTasks(anim){
+  const box = dkEl('dkTasks'), W = box.clientWidth, rows = dash.taskRows;
+  if (!W) return;
+  if (!rows.length){ box.innerHTML = '<p class="c-empty">ยังไม่มีข้อมูล</p>'; return; }
+  const stack = W < 360, max = rows[0].h || 1, tot = dash.totalMh || 1;
+  box.innerHTML = '<div class="dk-tasks">' + rows.map((r,i)=>{
+    dashTips['t'+i] = `<div class="tt-h">${esc(r.label)}</div><div class="tt-r">${dkSw(r.color)}${esc(r.dept)}<span class="num">${fmtH(r.h)} ชม.คน</span></div>`
+      + `<div class="tt-r tt-m">สัดส่วน<span class="num">${Math.round(r.h/tot*100)}%</span></div>`;
+    return `<div class="dk-trow${stack?' stack':''}" data-tip="t${i}"><span class="dk-tl" title="${esc(r.label)}">${esc(r.label)}</span>`
+      + `<div class="dk-tbar"><i${anim ? ` class="dk-gx" style="animation-delay:${(i*.06).toFixed(2)}s;` : ' style="'}width:${Math.max(2, r.h/max*100).toFixed(1)}%;background:${esc(r.color)}"></i></div>`
+      + `<span class="dk-tv num">${fmtH(r.h)}</span></div>`;
+  }).join('') + '</div>';
+}
+
+// one shared tooltip + column guide, delegated
+document.addEventListener('mousemove', e=>{
+  const tip = dkEl('dkTip'); if (!tip) return;
+  const t = e.target.closest ? e.target.closest('#view-dashboard [data-tip]') : null;
+  const guide = dkEl('dkGuide');
+  if (!t || !dashTips[t.dataset.tip]){
+    if (!tip.hidden) tip.hidden = true;
+    if (guide) guide.style.opacity = 0;
+    return;
+  }
+  if (guide){
+    if (t.dataset.gx != null){ guide.setAttribute('x', t.dataset.gx); guide.style.opacity = 1; }
+    else guide.style.opacity = 0;
+  }
+  tip.innerHTML = dashTips[t.dataset.tip]; tip.hidden = false;
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY - r.height - 10;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y < 8) y = e.clientY + 16;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+});
+document.addEventListener('mouseleave', ()=>{ const tip = dkEl('dkTip'); if (tip) tip.hidden = true; });
 
 // generic horizontal-bar list
 function hbars(box, rows){
@@ -1400,34 +1517,6 @@ function hbars(box, rows){
         <span class="hbar-track"><i style="transform:scaleX(${(Math.max(2, r.n/max*100)/100).toFixed(4)});background:${esc(r.color||'var(--accent)')}"></i></span>
         <b class="hbar-n num">${r.disp != null ? esc(r.disp) : r.n}</b>
       </div>`).join('')
-    : '<p class="c-empty">ยังไม่มีข้อมูล</p>';
-}
-
-function renderWhBars(closed){
-  hbars(document.getElementById('whBars'),
-    WH_KEYS.map(w=>({ label:WH_PLAIN[w], n:closed.filter(j=>j.warehouse===w).length, color:'var(--accent)' })));
-}
-
-// total output by real unit (ชิ้น / กล่อง / คัน / ตู้ / custom)
-function renderUnitOutput(closed){
-  const rows = unitTotals(closed).map(r=>({ label:r.label, n:r.n, disp:r.n.toLocaleString('en-US') }));
-  hbars(document.getElementById('unitOutput'), rows);
-}
-
-function renderTopTasks(closed){
-  const agg = new Map();   // label -> { n, color }
-  closed.forEach(j=>{
-    const t = taskById(j.task_id);
-    const label = t ? t.label : (j.task_id || 'ไม่ทราบ');
-    const cur = agg.get(label) || { n:0, color:deptColor(j.department, j.warehouse) };
-    cur.n++; agg.set(label, cur);
-  });
-  const rows = [...agg.entries()]
-    .map(([label,v])=>({ label, n:v.n, color:v.color }))
-    .sort((a,b)=>b.n-a.n).slice(0,6);
-  // ranked list (mockup "งานยอดนิยม"): index pill · task · count
-  document.getElementById('topTasks').innerHTML = rows.length
-    ? rows.map((r,i)=>`<div class="rank-row"><span class="rank-n">${String(i+1).padStart(2,'0')}</span><span class="rank-lab" title="${esc(r.label)}">${esc(r.label)}</span><b class="rank-c num">${r.n} ครั้ง</b></div>`).join('')
     : '<p class="c-empty">ยังไม่มีข้อมูล</p>';
 }
 
@@ -1468,16 +1557,6 @@ function renderJobRows(tbody, rows, emptyMsg){
   tbody.innerHTML = rows.length
     ? rows.map(jobRowHTML).join('')
     : emptyRow(10, emptyMsg || 'ไม่พบรายการ');
-}
-
-// Dashboard bottom table — filtered set, narrowed by the preset tabs, capped.
-function renderDashJobs(closed){
-  let rows = closed;
-  if (jobsPreset==='pending') rows = closed.filter(j=>(j.status||'approved')==='pending');
-  else if (jobsPreset==='today'){ const t = todayISO(); rows = closed.filter(j=>(j.details&&j.details.date)===t); }
-  rows = [...rows].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).slice(0,6);
-  renderJobRows(document.querySelector('#dashJobsTable tbody'), rows,
-    jobsPreset==='pending' ? 'ไม่มีงานรออนุมัติในช่วงนี้' : 'ยังไม่มีงานที่บันทึกในช่วงนี้');
 }
 
 // ---------- "งานทั้งหมด" data table: sort + status facet + column toggle + pager ----------
@@ -3114,8 +3193,7 @@ function render(){
   const closed = filteredJobs();
   updatePendingBadges();
   if (activeView==='dashboard'){
-    renderActionStrip(); renderScopeLine(closed); renderKpis(closed); renderTrend();
-    renderUnitOutput(closed); renderDeptDonut(closed); renderWhBars(closed); renderTopTasks(closed); renderDashJobs(closed);
+    renderActionStrip(); renderScopeLine(closed); renderDash(closed);
   } else if (activeView==='queue'){
     renderQueue();
   } else if (activeView==='details'){

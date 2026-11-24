@@ -7,7 +7,7 @@
 <title>Skill Matrix</title>
 <script src="js/gateway.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=83">
+<link rel="stylesheet" href="css/admin.css?v=84">
 </head>
 <body>
 
@@ -92,62 +92,35 @@
       <div class="action-strip" id="actionStrip" hidden></div>
       <p class="scope-line" id="scopeLine"></p>
 
-      <div class="kpi-row" id="kpiRow"></div>
+      <div class="dk-kpis" id="kpiRow"></div>
 
-      <div class="dash-grid">
-        <div class="panel g-trend">
-          <div class="panel-head">
-            <div>
-              <h2>แนวโน้มงานรายวัน</h2>
-              <p class="panel-sub" id="trendSub">7 วันล่าสุด</p>
-            </div>
-            <div class="trend-head-actions">
-              <div class="chip-legend" id="trendLegend"></div>
-              <button type="button" class="btn-sm" id="trendTableToggle" aria-expanded="false">ดูตาราง</button>
-            </div>
-          </div>
-          <div class="chart-trend" id="trendChart"></div>
-          <div class="table-wrap trend-table-wrap" id="trendTableWrap" hidden>
-            <table id="trendTable"><thead></thead><tbody></tbody></table>
-          </div>
+      <div class="dk-row dk-r1">
+        <div class="dk-card">
+          <h2><span id="dkTrendTitle">ชั่วโมงคนรายชั่วโมง</span><span class="dk-legend" id="dkLegend"></span></h2>
+          <div class="dk-fill" id="dkTrend"></div>
         </div>
+        <div class="dk-card">
+          <h2>สัดส่วนแผนก <span class="dk-sub" id="dkDeptSub"></span></h2>
+          <div class="dk-dept" id="dkDept"></div>
+        </div>
+      </div>
 
-        <div class="panel g-donut">
-          <h2>สัดส่วนงานตามฝั่ง</h2>
-          <p class="panel-sub">แยกตามแผนก · คลัง A / B</p>
-          <div class="chart-donut" id="deptDonut"></div>
-          <div class="chart-hbars donut-wh" id="whBars"></div>
+      <div class="dk-row dk-r2">
+        <div class="dk-card">
+          <h2>ชนิดงานยอดนิยม <span class="dk-sub">ชั่วโมงคน</span></h2>
+          <div class="dk-fill" id="dkTasks"></div>
         </div>
-
-        <div class="panel g-unit">
-          <h2>ผลงานตามหน่วย</h2>
-          <p class="panel-sub">ยอดรวมตามหน่วยจริงของแต่ละชนิดงาน</p>
-          <div class="chart-hbars" id="unitOutput"></div>
+        <div class="dk-card">
+          <h2>ผลงานสูงสุด <span class="dk-sub">ชม.คน</span></h2>
+          <div class="dk-lb" id="dkLb"></div>
         </div>
-
-        <div class="panel g-top">
-          <h2>งานยอดนิยม</h2>
-          <p class="panel-sub">ชนิดงานที่บันทึกมากที่สุด (สูงสุด 6 อันดับ)</p>
-          <div class="chart-hbars" id="topTasks"></div>
-        </div>
-
-        <div class="panel g-jobs" style="padding-bottom:6px;">
-        <div class="table-toolbar">
-          <h2 class="tt-title">งานล่าสุด</h2>
-          <div class="chipgroup" id="jobsPresets">
-            <button type="button" class="preset" data-preset="all" aria-pressed="true">ทั้งหมด</button>
-            <button type="button" class="preset" data-preset="today" aria-pressed="false">วันนี้</button>
-          </div>
-        </div>
-        <div class="table-wrap" style="border:none;">
-          <table id="dashJobsTable">
-            <thead><tr><th>วันที่</th><th>คลัง</th><th>ฝั่ง</th><th>งาน</th><th>ทีม</th><th>เริ่ม–จบ</th><th>นาที</th><th>ผลลัพธ์</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
+        <div class="dk-card">
+          <h2>ความหนาแน่น <span class="dk-key">น้อย<i style="background:var(--heat-1)"></i><i style="background:var(--heat-2)"></i><i style="background:var(--heat-3)"></i><i style="background:var(--heat-4)"></i>มาก</span></h2>
+          <div class="dk-heat" id="dkHeat"></div>
         </div>
       </div>
     </section>
+    <div id="dkTip" class="dk-tip" hidden></div>
 
     <!-- ===== VIEW: APPROVAL QUEUE ===== -->
     <section class="view" id="view-queue">
@@ -510,6 +483,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=4"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=91"></script>
+<script src="js/admin.js?v=92"></script>
 </body>
 </html>

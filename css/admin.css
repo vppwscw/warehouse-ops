@@ -1101,6 +1101,6 @@ html,body,.sidebar,.main,.table-wrap,.hm-scroll,.modal{scrollbar-width:none;-ms-
 }
 @media (prefers-reduced-motion: reduce){ .dk-g,.dk-gx{animation:none} }
 
-/* dashboard: no page title (user 2026-11-24) */
-.main:has(#view-dashboard.active) .pagehead > div:first-child{display:none}
-.main:has(#view-dashboard.active) .pagehead:not(:has(#acctActions)){display:none}
+/* no page title on any view (user 2026-11-24) */
+.pagehead > div:first-child{display:none}
+.pagehead:not(:has(#acctActions)){display:none}

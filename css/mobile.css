@@ -130,7 +130,7 @@ button,input,select{font-family:inherit;}
 .emp-check .ec-name{font-weight:600;font-size:15px;order:2;flex:1;min-width:0;}
 .empty-roster-inline{font-size:13px;color:var(--ink-dim);padding:14px;text-align:center;background:var(--surface);border-radius:12px;border:1px dashed var(--line);}
 
-.sticky-cta{position:sticky;bottom:-1px;background:var(--surface);border-top:1px solid var(--line);margin:16px -18px -28px;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px));}
+.sticky-cta{position:sticky;bottom:-29px;background:var(--surface);border-top:1px solid var(--line);margin:16px -18px -28px;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px));}
 #openSubmitBtn,#closeJobBtn,#workerCloseBtn{background:var(--signal);color:var(--signal-ink);}
 .link-btn{background:none;border:none;color:var(--accent);font-weight:600;font-size:13px;cursor:pointer;padding:6px 0;text-decoration:underline;text-underline-offset:2px;}
 .optional-panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;margin:10px 0 16px;}
@@ -277,7 +277,7 @@ footer.build-footer{font-size:11px;color:var(--ink-faint);text-align:center;padd
 .hint:empty{display:none;}
 .field[hidden]{display:none;}
 .content{padding:16px 16px 24px;}
-.sticky-cta{margin:16px -16px -24px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));}
+.sticky-cta{bottom:-25px;margin:16px -16px -24px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));}
 .success-flash{margin:-16px -16px -24px;}
 .step-q{font-size:16px;font-weight:600;line-height:1.4;margin:0 0 12px;}
 .ttl{font-size:16px;font-weight:600;}

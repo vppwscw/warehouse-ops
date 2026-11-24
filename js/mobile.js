@@ -428,6 +428,7 @@ async function loadTasksFromDb(){
           unit: t.unit_label ? 'custom' : 'vehicles', unitLabel: t.unit_label || 'จำนวน',
           icon: ICON_BY_TASK_ID[t.id] || 'box',
           group: (t.task_group && String(t.task_group).trim()) || null,
+          fixedQty: t.fixed_qty || null,
         });
       });
       Object.keys(byDept).forEach(d=>{ if (byDept[d].length) TASKS[d] = byDept[d]; });
@@ -463,6 +464,7 @@ const TAB_TITLE = { new:'บันทึกงาน', history:'ประวั�
 
 let historySub = 'list';
 function goTab(tab){
+  closeRecordModal();
   activeTab = tab; supOpenDone = false;
   if (tab==='new'){
     if (isWriter()){
@@ -588,7 +590,26 @@ function renderStep2(){
 }
 
 // ================= STEP 3 =================
+function syncCrewNext(){
+  const b = document.getElementById('crewNextBtn');
+  if (b) b.textContent = crew.length ? `ถัดไป · เลือกแล้ว ${crew.length} คน` : 'ถัดไป';
+  const h = document.getElementById('crewHint'); if (h && crew.length) h.textContent = '';
+}
+function openRecordModal(){
+  const h = document.getElementById('crewHint');
+  if (crew.length===0){ h.textContent = 'แตะเลือกคนอย่างน้อย 1 คนก่อน'; return; }
+  const names = crew.map(id => (roster.find(r=>String(r.id)===String(id))||{}).name).filter(Boolean);
+  document.getElementById('recordCrewText').textContent = `${names.length} คน: ${names.join(', ')}`;
+  document.getElementById('openHint').textContent = '';
+  document.getElementById('recordBackdrop').classList.add('open');
+  document.getElementById('recordModal').classList.add('open');
+}
+function closeRecordModal(){
+  document.getElementById('recordBackdrop').classList.remove('open');
+  document.getElementById('recordModal').classList.remove('open');
+}
 function renderCrewList(){
+  syncCrewNext();
   const box = document.getElementById('empCheckList');
   const q = crewQuery.trim().toLowerCase();
   const byName = (a,b)=>String(a.name).localeCompare(String(b.name),'th');
@@ -622,6 +643,12 @@ function renderStep3(){
 
 // ================= RESULT-FIELD BUILDER =================
 function buildResultFieldsHTML(task, prefix){
+  // task with a fixed quantity: the number is locked, nothing to type
+  if (task.fixedQty) return `<div class="field" style="margin-bottom:14px;">
+      <label>${esc(task.unitLabel)}</label>
+      <input id="${prefix}-unit" type="number" value="${Number(task.fixedQty)}" readonly aria-readonly="true" style="text-align:center;font-weight:700;">
+      <p class="hint" style="text-align:left;">ล็อกตามที่ตั้งไว้ในชนิดงาน</p>
+    </div>`;
   let fields = `<div class="field" style="margin-bottom:14px;">
       <label>${esc(task.unitLabel)}</label>
       <div class="stepper">
@@ -753,7 +780,7 @@ function renderTaskManager(){
       <div class="tg-head" style="background:${esc(c)}1f;color:${esc(c)}"><span class="tg-ico">${ICONS[DEPT_ICON[g.d]]||ICONS.box}</span>${esc(deptName(g.d, g.wh))}${multiWh ? ` · ${esc(g.wh||'–')}` : ''}<span class="tg-count">${g.items.length} ชนิดงาน</span></div>
       <div class="tg-body">${g.items.map(t=>`
         <div class="tg-row">
-          <div class="tg-main"><div class="tg-name ${t.active?'':'t-inactive'}">${esc(t.name)}</div><div class="sub">หน่วย: ${esc(t.unit_label || 'จำนวน')}</div></div>
+          <div class="tg-main"><div class="tg-name ${t.active?'':'t-inactive'}">${esc(t.name)}</div><div class="sub">หน่วย: ${esc(t.unit_label || 'จำนวน')}${t.fixed_qty ? ' · ล็อก '+esc(t.fixed_qty) : ''}</div></div>
           <button type="button" class="mini-btn ${t.active?'reject':'approve'}" data-toggle-task="${esc(t.id)}" data-next-active="${t.active?'false':'true'}">${t.active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
         </div>`).join('')}</div>
     </div>`;
@@ -829,6 +856,7 @@ function openAddTaskModal(lock){
   addTaskLock = (lock && lock.wh && lock.dept) ? lock : null;
   document.getElementById('t-name').value='';
   const tu = document.getElementById('t-unit'); if (tu) tu.value='';
+  const tq = document.getElementById('t-fixed'); if (tq) tq.value='';
   document.getElementById('taskHint').textContent='';
   fillWhSelect('t-wh', 't-wh-field');
   wireWhDeptLink('t-wh', 't-dept', 't-dept-field');
@@ -866,7 +894,10 @@ document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
   try{
     const id = wh.toLowerCase() + '_' + dept.toLowerCase() + '_' + Date.now();
     const unitLabel = (document.getElementById('t-unit')?.value || '').trim() || null;
-    const { error } = await sb.from('tasks').insert({ id, warehouse: wh, department: dept, name, active: true, unit_label: unitLabel, task_group: taskGroup });
+    const fixedRaw = (document.getElementById('t-fixed')?.value || '').trim();
+    const fixedQty = fixedRaw ? Math.floor(Number(fixedRaw)) : null;
+    if (fixedRaw && !(fixedQty > 0)){ hint.textContent = 'จำนวนต่อครั้งต้องเป็นเลขมากกว่า 0'; return; }
+    const { error } = await sb.from('tasks').insert({ id, warehouse: wh, department: dept, name, active: true, unit_label: unitLabel, task_group: taskGroup, fixed_qty: fixedQty });
     if (error) throw error;
     hint.textContent = `เพิ่ม "${name}" แล้ว`;
     await refreshDeptTasks(); renderTaskManager();
@@ -953,6 +984,7 @@ async function recordJob(){
     document.getElementById('d-start').value = '';
     document.getElementById('d-end').value = '';
     await refreshJobs();
+    closeRecordModal();
     showRecordSuccess(task, crewMembers, date, start, end, mins);
   }catch(err){
     hint.textContent = '';
@@ -1092,6 +1124,9 @@ document.addEventListener('click', async (e)=>{
 });
 
 document.getElementById('openSubmitBtn').addEventListener('click', recordJob);
+document.getElementById('crewNextBtn').addEventListener('click', openRecordModal);
+document.getElementById('recordBackBtn').addEventListener('click', closeRecordModal);
+document.getElementById('recordBackdrop').addEventListener('click', closeRecordModal);
 
 function mapDbError(err){
   if (!err) return 'unknown error';

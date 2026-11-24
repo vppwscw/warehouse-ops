@@ -477,7 +477,6 @@ function navForRole(){
   return [
     {id:'new', label:'เปิดงาน', icon:'bolt'},
     {id:'openjobs', label:'งานเปิดอยู่', icon:'clock'},
-    ...(canApproveRole() ? [{id:'approve', label:'อนุมัติ', icon:'check'}] : []),
     {id:'tasks', label:'ชนิดงาน', icon:'box'},
     {id:'manage', label:'คนงาน', icon:'users'},
     {id:'history', label:'ประวัติ', icon:'chart'},
@@ -809,7 +808,8 @@ document.getElementById('workerCloseBtn').addEventListener('click', async ()=>{
   hint.textContent = 'กำลังบันทึก...';
   try{
     const { error } = await sb.from('jobs').update({
-      status: 'pending', ended_at: new Date().toISOString(), details,
+      status: 'approved', ended_at: new Date().toISOString(), details,
+      approved_by: currentUser.id, approved_at: new Date().toISOString(),
     }).eq('id', myOpenJob.id);
     if (error) throw error;
     hint.textContent = '';
@@ -1675,7 +1675,7 @@ function render(){
     } else if (isWorker() && workerStep!=='success'){
       renderWorkerHome();
     }
-  } else if (activeTab==='approve' && canApproveRole()){
+  } else if (false){
     refreshPendingApprovals().then(renderApproveQueue);
   } else if (activeTab==='openjobs' && isSupervisorRole()){
     if (openjobsSub==='list') refreshOpenJobs().then(renderOpenJobs);

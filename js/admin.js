@@ -425,7 +425,6 @@ async function loadTasksFromDb(){
 // bottom tab bar. `short` is the bottom-bar label.
 const NAV = [
   {id:'dashboard',  label:'ภาพรวม',      short:'ภาพรวม', icon:'dash',  title:'ภาพรวม', sub:'สรุปผลงานคลังสินค้าตามช่วงเวลาที่เลือก'},
-  {id:'queue',      label:'คิวอนุมัติ',   short:'คิว',    icon:'queue', title:'คิวอนุมัติ', sub:'งานที่รออนุมัติ เรียงตามความเร่งด่วน'},
   {id:'details',    label:'งานทั้งหมด',   short:'งาน',    icon:'list',  title:'งานทั้งหมด', sub:'รายการงานทุกชิ้นตามตัวกรองที่เลือก'},
   {id:'tasks',      label:'ชนิดงาน',      short:'ชนิด',   icon:'box',   title:'ชนิดงาน', sub:'ชนิดงานทั้งหมดของแต่ละฝั่ง — ปิดใช้งานหรือลบถาวรได้'},
   {id:'employees',  label:'พนักงาน',      short:'คน',    icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
@@ -586,6 +585,7 @@ function applyCustomRange(){
 }
 
 function goView(id){
+  if (id === 'queue') id = 'dashboard';   // approval queue removed 2026-11-24
   if (id === 'users' && !canManageUsers()){ openProfileModal(); return; }
   if (id === 'positions'){ id = isUserAdminFull() ? 'users' : 'dashboard'; if (id==='users') setTimeout(openPosModal, 0); }
   activeView = id;
@@ -1104,6 +1104,7 @@ function ageText(iso){
 function renderActionStrip(){
   const el = document.getElementById('actionStrip');
   if (!el) return;
+  el.hidden = true; return;   // approval queue removed 2026-11-24
   const pend = jobs.filter(j => (j.status||'approved')==='pending' && matchScope(j));
   el.hidden = false;
   if (!pend.length){
@@ -1198,14 +1199,14 @@ function renderKpis(closed){
   const avgMins  = set => { const w = withMins(set); return w.length ? Math.round(w.reduce((s,j)=>s+num(j.details.mins),0)/w.length) : 0; };
 
   const total   = closed.length;
-  const pending = jobs.filter(j=>(j.status||'approved')==='pending' && matchScope(j)).length;
+  const openNow = jobs.filter(j=>j.status==='open' && matchScope(j)).length;
   const avg     = avgMins(closed);
   const people  = peopleCount(closed);
 
   const cards = [
     { k:'total',   lab:'งานทั้งหมด',       val:total, foot:deltaChip(total, prev ? prev.length : null) },
-    { k:'pending', lab:'รออนุมัติ',        val:pending, tone: pending ? 'warn' : 'ok',
-      foot:`<span class="kpi-sub">${pending ? 'ต้องตรวจ' : 'เคลียร์แล้ว'}</span>` },
+    { k:'open',    lab:'กำลังทำงาน',       val:openNow,
+      foot:`<span class="kpi-sub">งานที่เปิดอยู่ตอนนี้</span>` },
     { k:'avg',     lab:'เฉลี่ย นาที/งาน',  val:avg, foot:deltaChip(avg, prev ? avgMins(prev) : null, true) },
     { k:'people',  lab:'คนทำงาน',          val:people, foot:deltaChip(people, prev ? peopleCount(prev) : null) },
   ];
@@ -1229,7 +1230,7 @@ function renderKpis(closed){
   };
   document.getElementById('kpiRow').innerHTML = cards.map(c=>`
     <div class="kpi kpi-${esc(c.k)} ${c.tone ? 'kpi-'+c.tone : ''}">
-      <div class="kpi-top"><div class="kpi-lab">${esc(c.lab)}</div><span class="kpi-ic" aria-hidden="true">${ICONS[{total:'list',pending:'queue',avg:'dash',people:'users'}[c.k]] || ''}</span></div>
+      <div class="kpi-top"><div class="kpi-lab">${esc(c.lab)}</div><span class="kpi-ic" aria-hidden="true">${ICONS[{total:'list',open:'queue',avg:'dash',people:'users'}[c.k]] || ''}</span></div>
       <div class="kpi-mid">
         <div class="kpi-vf"><div class="kpi-val num" data-kpi="${c.k}">${c.val}</div><div class="kpi-foot">${c.foot || ''}</div></div>
         ${spark(sparkSeries[c.k])}
@@ -1440,7 +1441,7 @@ const IC_DOTS  = `<svg ${_ICS}><circle cx="12" cy="5" r="1"/><circle cx="12" cy=
 function jobRowHTML(j){
   const task = taskById(j.task_id); const d = j.details||{};
   const status = j.status || 'approved';
-  const canAct = !isReadOnly() && status==='pending';
+  const canAct = false;   // approval queue removed 2026-11-24
   return `<tr>
     <td class="mono">${esc(d.date)}</td>
     <td><span class="wh-tag">${esc(WH_PLAIN[j.warehouse]||j.warehouse||'–')}</span></td>

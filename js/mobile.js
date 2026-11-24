@@ -296,6 +296,10 @@ async function afterLogin(user){
     return;
   }
   if (!allowedApps(profile).includes('mobile')){
+    if (allowedApps(profile).includes('erp') && window.gwSwitchTo){
+      window.gwSwitchTo('erp');
+      return;
+    }
     document.getElementById('loginHint').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้แอปมือถือ (ใช้ได้เฉพาะระบบ ERP)';
     await sb.auth.signOut();
     profile = null;
@@ -328,6 +332,7 @@ async function refreshMyOpenJob(){
 }
 
 function logout(){
+  try { sessionStorage.removeItem('gw-app'); } catch (e) {}  // next person gets device routing again
   sb.auth.signOut();
   profile = null; currentUser = null;
   jobs = []; roster = []; myOpenJob = null; workerStep = 'list';

@@ -344,6 +344,7 @@ function confirmModal(text, opts){
 }
 
 async function doLogout(){
+  try { sessionStorage.removeItem('gw-app'); } catch (e) {}  // next person gets device routing again
   await sb.auth.signOut();
   profile = null; currentUser = null; jobs = []; roster = [];
   renderNav();
@@ -391,6 +392,10 @@ async function afterLogin(user){
     return;
   }
   if (!allowedApps(profile).includes('erp')){
+    if (allowedApps(profile).includes('mobile') && window.gwSwitchTo){
+      window.gwSwitchTo('mobile');
+      return;
+    }
     document.getElementById('deniedText').textContent = 'บัญชีนี้ไม่มีสิทธิ์ใช้ Skill Matrix';
     showScreen('denied');
     return;

@@ -616,7 +616,8 @@ function renderCrewList(){
   const isHome = r => r.department===oDeptVal && (r.warehouse==null || r.warehouse===oWhVal);
   const match = r => !q || String(r.name).toLowerCase().includes(q);
   const home = roster.filter(r=>isHome(r) && match(r)).sort(byName);
-  const others = roster.filter(r=>!isHome(r) && match(r)).sort(byName);
+  const sameWh = r => r.warehouse==null || r.warehouse===oWhVal;   // crew can cross departments, never warehouses
+  const others = roster.filter(r=>!isHome(r) && sameWh(r) && match(r)).sort(byName);
   const item = r => `
       <button type="button" class="emp-check" data-pick-emp="${esc(r.id)}" aria-pressed="${crew.includes(String(r.id))}">
         <span class="ec-av">${esc(Array.from(String(r.name).trim())[0]||'')}</span>
@@ -626,7 +627,7 @@ function renderCrewList(){
   let html = '';
   if (home.length) html += home.map(item).join('');
   else if (!q) html += `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง ${esc(deptName(oDeptVal, oWhVal))}<br>เลือกจากแผนกอื่นด้านล่าง หรือไปเพิ่มที่แถบ "คนงาน"</div>`;
-  if (others.length) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">แผนกอื่น</p>` + others.map(item).join('');
+  if (others.length) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">แผนกอื่นใน${esc(WH_PLAIN[oWhVal] || ('คลัง '+oWhVal))}</p>` + others.map(item).join('');
   if (!html) html = `<div class="empty-roster-inline">ไม่พบชื่อที่ค้นหา</div>`;
   box.innerHTML = html;
 }

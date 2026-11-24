@@ -7,7 +7,7 @@
 <title>Skill Matrix</title>
 <script src="js/gateway.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=81">
+<link rel="stylesheet" href="css/admin.css?v=83">
 </head>
 <body>
 
@@ -303,35 +303,58 @@
     <!-- ===== VIEW: USERS ===== -->
     <section class="view" id="view-users">
       <div class="user-admin-bar" id="userAdminBar" hidden></div>
-      <div class="users-layout">
-      <form class="add-user-form uc-create" id="addUserForm" hidden autocomplete="off">
-        <h3 class="eac-title">สร้างบัญชีใหม่</h3>
-        <div class="auf-grid">
-          <div class="field"><label for="nuCode">รหัสพนักงาน</label><input type="text" id="nuCode" placeholder="เช่น VP0123" autocomplete="off" autocapitalize="characters" maxlength="20"></div>
-          <div class="field"><label for="nuName">ชื่อ-นามสกุล</label><input type="text" id="nuName" placeholder="ชื่อ นามสกุล"></div>
-          <div class="field"><label for="nuPass">รหัสผ่านชั่วคราว</label><div style="display:flex;gap:6px;"><input type="text" id="nuPass" placeholder="อย่างน้อย 8 ตัว" autocomplete="off" style="flex:1;min-width:0;"><button type="button" class="btn-sm" id="nuGenPassBtn">สร้างรหัสชั่วคราว</button></div></div>
-          <div class="field"><label for="nuPos">ตำแหน่ง (LV)</label><select id="nuPos"></select></div>
-          <div class="field nu-nonadmin"><label for="nuWh">คลังหลัก</label><select id="nuWh"></select></div>
-          <div class="field nu-nonadmin"><label for="nuDept">แผนกหลัก</label><select id="nuDept"></select></div>
-          <div class="field field-wide nu-nonadmin"><label>สิทธิ์เสริม (คลัง×แผนก) — ไม่บังคับ</label><div id="nuScopeGrid"></div></div>
-          <div class="field field-wide"><label>ระบบที่ใช้ได้ (เว้นว่าง = ตามตำแหน่ง)</label><div id="nuAppCbs" class="dept-cb-row"></div></div>
+      <div class="users-head">
+        <div class="users-head-tx">
+          <p class="sub" id="usersViewNote">รายชื่อผู้ใช้งานในระบบ</p>
         </div>
-        <div class="auf-actions">
-          <button type="button" class="btn-sm primary uc-create-btn" id="createUserBtn">＋ สร้างบัญชี</button>
+        <div class="users-head-btns" id="usersHeadBtns" hidden>
+          <button type="button" class="btn-sm primary" id="openAddUserBtn">+ สร้างบัญชี</button>
           <button type="button" class="btn-sm" id="bulkUserBtn">สร้างหลายบัญชี</button>
-          <span class="form-hint" id="addUserHint"></span>
         </div>
-      </form>
-      <div class="users-side">
-        <h3 class="eac-title" id="usersCount">ผู้ใช้ทั้งหมด</h3>
-        <p class="sub" id="usersViewNote" style="margin:0 0 14px;">รายชื่อผู้ใช้งานในระบบ</p>
-        <div id="usersList" class="users-list"></div>
       </div>
+      <div class="users-filters">
+        <div class="seg u-seg" id="usersStatusTabs" role="group" aria-label="สถานะ"></div>
+        <div class="seg u-seg" id="usersWhTabs" role="group" aria-label="คลัง"></div>
+        <div class="searchbox users-search"><input type="search" id="usersSearch" placeholder="ค้นหา รหัส / ชื่อ" autocomplete="off" aria-label="ค้นหาผู้ใช้"></div>
       </div>
+      <div class="seg u-seg u-depts" id="usersDeptTabs" role="group" aria-label="แผนก" hidden></div>
+      <div class="u-table-wrap"><table class="u-table">
+        <thead><tr><th>ชื่อ</th><th>ตำแหน่ง</th><th>คลัง · แผนก</th><th>ระบบ</th><th>สถานะ</th><th></th></tr></thead>
+        <tbody id="usersList"></tbody>
+      </table></div>
     </section>
   </main>
 
   <nav class="botnav" id="botNav"></nav>
+</div>
+
+<!-- create single account modal -->
+<div class="modal-overlay" id="addUserModal" hidden>
+  <div class="modal u-modal">
+    <form class="add-user-form uc-create" id="addUserForm" autocomplete="off">
+      <h3 class="eac-title">สร้างบัญชีใหม่</h3>
+      <div class="auf-grid">
+        <div class="field"><label for="nuCode">รหัสพนักงาน</label><input type="text" id="nuCode" placeholder="เช่น VP0123" autocomplete="off" autocapitalize="characters" maxlength="20"></div>
+        <div class="field"><label for="nuName">ชื่อ-นามสกุล</label><input type="text" id="nuName" placeholder="ชื่อ นามสกุล"></div>
+        <div class="field"><label for="nuPass">รหัสผ่านชั่วคราว</label><div style="display:flex;gap:6px;"><input type="text" id="nuPass" placeholder="อย่างน้อย 8 ตัว" autocomplete="off" style="flex:1;min-width:0;"><button type="button" class="btn-sm" id="nuGenPassBtn">สร้างรหัสชั่วคราว</button></div></div>
+        <div class="field"><label for="nuPos">ตำแหน่ง (LV)</label><select id="nuPos"></select></div>
+        <div class="field nu-nonadmin"><label for="nuWh">คลังหลัก</label><select id="nuWh"></select></div>
+        <div class="field nu-nonadmin"><label for="nuDept">แผนกหลัก</label><select id="nuDept"></select></div>
+        <div class="field field-wide nu-nonadmin"><label>สิทธิ์เสริม (คลัง×แผนก) — ไม่บังคับ</label><div id="nuScopeGrid"></div></div>
+        <div class="field field-wide"><label>ระบบที่ใช้ได้ (เว้นว่าง = ตามตำแหน่ง)</label><div id="nuAppCbs" class="dept-cb-row"></div></div>
+      </div>
+      <div class="auf-actions">
+        <button type="button" class="btn-sm primary uc-create-btn" id="createUserBtn">＋ สร้างบัญชี</button>
+        <button type="button" class="btn-sm" id="nuClose">ปิด</button>
+        <span class="form-hint" id="addUserHint"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- user detail / edit modal (filled by renderUsersTable) -->
+<div class="modal-overlay" id="userModal" hidden>
+  <div class="modal u-modal" id="userModalBody" role="dialog" aria-modal="true" aria-label="รายละเอียดผู้ใช้"></div>
 </div>
 
 <!-- password modal — inline replacement for window.prompt() -->
@@ -485,6 +508,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=4"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=86"></script>
+<script src="js/admin.js?v=88"></script>
 </body>
 </html>

@@ -1087,3 +1087,42 @@ tbody td{padding:10px 12px;}
 }
 html,body,.sidebar,.main,.table-wrap,.hm-scroll,.modal{scrollbar-width:none;-ms-overflow-style:none;}
 *::-webkit-scrollbar{width:0;height:0;display:none;}
+
+/* ===== users view: header / filters / table / detail modal ===== */
+.users-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px 16px;flex-wrap:wrap;margin-bottom:14px;}
+.users-head-tx{min-width:0;flex:1 1 280px;}
+.users-title{font-size:20px;font-weight:700;margin:0 0 2px;color:var(--ink);}
+.users-head .sub{margin:0;font-size:13px;color:var(--ink-3);}
+.users-head-btns{display:flex;gap:8px;flex-wrap:wrap;}
+.users-head-btns[hidden]{display:none;}
+.users-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px;}
+.users-filters .users-search{flex:1;min-width:180px;max-width:none;margin-left:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-pill);padding:7px 12px;}
+.u-seg[hidden]{display:none;}
+.u-depts{margin-bottom:10px;}
+.u-seg .chip{background:var(--surface);}
+.u-seg .chip[aria-pressed="true"]{background:var(--night);color:#fff;border-color:var(--night);}
+.u-n{font-size:11px;font-weight:600;opacity:.7;margin-left:2px;}
+.u-table-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-2);}
+.u-table{width:100%;min-width:760px;border-collapse:collapse;font-size:13px;}
+.u-table th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.3px;color:var(--ink-3);background:var(--surface-2);padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap;}
+.u-table td{padding:6px 14px;border-bottom:1px solid var(--line);vertical-align:middle;height:44px;}
+.u-row{cursor:pointer;}
+.u-row:hover,.u-row:focus-visible{background:var(--surface-2);}
+.u-row.row-inactive td{opacity:.6;}
+.u-name{display:flex;align-items:center;gap:10px;}
+.u-name b{font-weight:600;color:var(--ink);}
+.u-code{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;color:var(--ink-3);}
+.u-self{font-size:10px;font-weight:600;padding:1px 7px;border-radius:var(--r-pill);background:var(--accent-wash);color:var(--accent);margin-left:4px;}
+.u-chip{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:var(--r-pill);background:var(--surface-3);color:var(--ink-2);margin-right:4px;}
+.u-manage{color:var(--ink-3);font-size:12px;white-space:nowrap;text-align:right;}
+.u-row:hover .u-manage{color:var(--accent);}
+.u-group td{height:auto;padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);background:var(--surface-2);cursor:default;}
+.u-modal{max-width:640px;max-height:90vh;overflow:auto;}
+.u-mhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--line);}
+.u-mhead .uc-title{flex:1;min-width:140px;}
+.u-spacer{flex:1;}
+#userModalBody .uc-btns{align-items:center;}
+.u-modal .add-user-form{border:0;padding:0;margin:0;background:none;box-shadow:none;}
+
+/* users table: keep position pill on one line; page title already says ผู้ใช้งานระบบ */
+.u-table .role-pill{white-space:nowrap;}

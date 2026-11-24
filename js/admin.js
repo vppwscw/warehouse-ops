@@ -507,7 +507,7 @@ const VIEW_FILTERS = {
   positions: [],
   employees: ['wh','dept','search'],
   skillmatrix: ['wh','dept','search'],
-  users:     ['search'],
+  users:     [],   // users view has its own search + tabs
 };
 function syncFilterbar(){
   const show = VIEW_FILTERS[activeView] || ['range','wh','dept','search'];
@@ -742,6 +742,19 @@ document.addEventListener('click', e=>{
   const deptDelBtn = e.target.closest('[data-dept-del]');
   if (deptDelBtn){ deleteDept(deptDelBtn.dataset.deptDel); return; }
 
+  const ustat = e.target.closest('[data-ustatus]');
+  if (ustat){ usersStatus = ustat.dataset.ustatus; renderUsersTable(); return; }
+  const uwh = e.target.closest('[data-uwh]');
+  if (uwh){ usersWh = uwh.dataset.uwh; usersDept = 'ALL'; renderUsersTable(); return; }
+  const udept = e.target.closest('[data-udept]');
+  if (udept){ usersDept = udept.dataset.udept; renderUsersTable(); return; }
+  if (e.target.closest('[data-close-umodal]')){ closeUserModal(); return; }
+  if (e.target.id === 'userModal'){ closeUserModal(); return; }
+  if (e.target.id === 'addUserModal' || e.target.closest('#nuClose')){ document.getElementById('addUserModal').hidden = true; return; }
+  if (e.target.closest('#openAddUserBtn')){ if (isUserAdminFull()){ document.getElementById('addUserModal').hidden = false; const c = document.getElementById('nuCode'); if (c) c.focus(); } return; }
+  const openUser = e.target.closest('[data-open-user]');
+  if (openUser){ openUserModal(openUser.dataset.openUser); return; }
+
   const kebab = e.target.closest('[data-kebab]');
   document.querySelectorAll('.uc-menu:not([hidden])').forEach(m=>{
     if (!kebab || m !== kebab.nextElementSibling){ m.hidden = true; const b = m.previousElementSibling; if (b) b.setAttribute('aria-expanded','false'); }
@@ -813,6 +826,19 @@ document.addEventListener('click', e=>{
     document.querySelectorAll('#dtStatusBtn,#dtColsBtn').forEach(b=>b.setAttribute('aria-expanded','false'));
   }
 });
+{
+  const us = document.getElementById('usersSearch');
+  if (us) us.addEventListener('input', e=>{ usersQ = e.target.value.trim().toLowerCase(); renderUsersTable(); });
+  document.addEventListener('keydown', e=>{
+    const t = e.target;
+    if (e.key === 'Enter' && t && t.matches && t.matches('tr[data-open-user]')){ openUserModal(t.dataset.openUser); return; }
+    if (e.key !== 'Escape') return;
+    const open = id => { const m = document.getElementById(id); return m && !m.hidden; };
+    if (open('confirmModal') || open('pwModal')) return;   // those handle their own Esc
+    if (open('addUserModal')){ document.getElementById('addUserModal').hidden = true; return; }
+    if (open('userModal')) closeUserModal();
+  });
+}
 document.getElementById('searchInput').addEventListener('input', e=>{ searchTerm = e.target.value.trim().toLowerCase(); render(); });
 
 document.getElementById('dtSearch').addEventListener('input', e=>{
@@ -2577,23 +2603,129 @@ function appCheckboxes(selected, cls, disabled){
   ).join('') + `</span>`;
 }
 
-// Users-view sort: active first, then Admin, then highest LV, then name (Thai).
+// ---------- users view: filters + sorted table + detail modal ----------
+let usersStatus = 'active', usersWh = 'ALL', usersDept = 'ALL', usersQ = '', usersModalId = null;
+const userRank = u => isAdminP(u) ? 99 : lvOf(u);
+const whOrd = w => { const i = WH_KEYS.indexOf(w); return i < 0 ? 99 : i; };
+const userDeptName = u => u.department ? String(deptName(u.department, u.warehouse) || '') : '';
+
+// Admin first, then LV5..LV1, then no position; within a level: คลัง A,B -> แผนก -> ชื่อ (Thai)
 function sortedUsers(){
-  const rank = u => isAdminP(u) ? 99 : lvOf(u);
   return users.slice().sort((a,b)=>
-    ((a.active!==false?0:1) - (b.active!==false?0:1))
-    || (rank(b) - rank(a))
+    (userRank(b) - userRank(a))
+    || (whOrd(a.warehouse) - whOrd(b.warehouse))
+    || userDeptName(a).localeCompare(userDeptName(b), 'th')
     || String(a.full_name||'').localeCompare(String(b.full_name||''), 'th'));
+}
+
+function userSegHTML(items, cur, attr){
+  return items.map(it=>`<button type="button" class="chip" ${attr}="${esc(it.k)}" aria-pressed="${it.k===cur}">${esc(it.label)} <span class="u-n">${it.n}</span></button>`).join('');
+}
+
+function userHomeText(u){
+  if (isAdminP(u)) return 'ทุกคลัง · ทุกแผนก';
+  return u.warehouse ? `${esc(WH_PLAIN[u.warehouse]||u.warehouse)} · ${u.department ? esc(deptName(u.department, u.warehouse)) : '–'}` : '–';
+}
+function userAppChips(u){
+  const chips = allowedApps(u).map(a=>`<span class="u-chip">${a==='erp'?'ERP':esc(APP_LABEL[a]||a)}</span>`).join('');
+  return chips + (Array.isArray(u.apps) && u.apps.length ? '' : ' <span class="td-sub">(ตามตำแหน่ง)</span>');
+}
+function userRoleCls(u){ const l = lvOf(u); return isAdminP(u) ? 'r-admin' : l >= 4 ? 'r-asst' : l >= 2 ? 'r-sup' : 'r-user'; }
+
+function closeUserModal(){
+  usersModalId = null;
+  const ov = document.getElementById('userModal'); if (ov) ov.hidden = true;
+  const b = document.getElementById('userModalBody'); if (b){ b.innerHTML = ''; b.removeAttribute('data-user-row'); }
+}
+function openUserModal(id){
+  if (!canManageUsers()) return;
+  usersModalId = id; renderUserModal();
+}
+
+function renderUserModal(){
+  const ov = document.getElementById('userModal'), body = document.getElementById('userModalBody');
+  if (!ov || !body) return;
+  const u = usersModalId && canManageUsers() ? users.find(x=>x.id===usersModalId) : null;
+  if (!u){ closeUserModal(); return; }
+  const full = isUserAdminFull();
+  const active = u.active !== false;
+  const isSelf = currentUser && u.id === currentUser.id;
+  const isAdm = isAdminP(u);
+  const nm = u.full_name || '–';
+  const pairs = userScopePairs(u.id);
+  const effApps = allowedApps(u);
+  const head = `
+    <div class="u-mhead">
+      <span class="emp-avatar uc-av" aria-hidden="true">${esc(nm.trim().slice(0,1))}</span>
+      <div class="uc-title">
+        <span class="uc-name">${esc(nm)}${isSelf ? ' <span class="u-self">บัญชีคุณ</span>' : ''}</span>
+        <div class="uc-sub">${u.employee_code ? `<span class="u-code">${esc(u.employee_code)}</span>` : '<span class="td-sub">ยังไม่มีรหัสพนักงาน (เข้าสู่ระบบไม่ได้)</span>'}</div>
+      </div>
+      <span class="role-pill ${userRoleCls(u)}">${esc(posLabel(u))}</span>
+      <span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>
+    </div>`;
+  let inner;
+  if (!full){
+    inner = `${head}
+      <div class="uc-fields">
+        <div class="uc-field"><span class="uc-lbl">คลัง · แผนกหลัก</span><div>${userHomeText(u)}</div></div>
+        <div class="uc-field"><span class="uc-lbl">สิทธิ์เสริม (คลัง×แผนก)</span><div>${scopeSummary(pairs)}</div></div>
+        <div class="uc-field"><span class="uc-lbl">ระบบที่ใช้ได้</span><div>${userAppChips(u)}</div></div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn-sm" data-close-umodal>ปิด</button></div>`;
+  } else {
+    const scopeCell = `<span class="td-sub" data-scope-admin ${isAdm?'':'hidden'}>ทุกคลัง · ทุกแผนก</span><div data-scope-grid ${isAdm?'hidden':''}>${scopeGridHTML(pairs, 'u-scope-cb')}</div>`;
+    inner = `${head}
+      <div class="uc-fields">
+        <div class="uc-field">
+          <span class="uc-lbl">ตำแหน่ง</span>
+          <select class="mini-select" data-u-pos ${isSelf?'disabled title="เปลี่ยนตำแหน่งตัวเองไม่ได้"':''}>${positionOptions(isAdm ? 'ADMIN' : u.position_id, true)}</select>
+        </div>
+        <div class="uc-field" data-home-block ${isAdm?'hidden':''}>
+          <span class="uc-lbl">คลังหลัก</span>
+          <select class="mini-select" data-u-wh>${whOptions(u.warehouse)}</select>
+        </div>
+        <div class="uc-field" data-home-block ${isAdm?'hidden':''}>
+          <span class="uc-lbl">แผนกหลัก</span>
+          <select class="mini-select" data-u-dept>${deptOptions(u.warehouse || WH_KEYS[0], u.department)}</select>
+        </div>
+        <div class="uc-field" style="grid-column:1/-1;">
+          <span class="uc-lbl">สิทธิ์เสริม (คลัง×แผนก) · ไม่บังคับ</span>
+          <div class="scope-cell">${scopeCell}</div>
+        </div>
+        <div class="uc-field">
+          <span class="uc-lbl">ระบบที่ใช้ได้</span>
+          ${appCheckboxes(effApps, 'u-app-cb')}
+        </div>
+        <div class="uc-field">
+          <span class="uc-lbl">รหัสพนักงาน</span>
+          <input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส" readonly title="รหัสพนักงานแก้ไม่ได้ (ใช้เป็นชื่อเข้าสู่ระบบ)">
+        </div>
+      </div>
+      <div class="uc-btns">
+        <button type="button" class="mini-btn approve" data-save-user="${esc(u.id)}">บันทึก</button>
+        <button type="button" class="mini-btn" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
+        ${isSelf ? '' : `<button type="button" class="mini-btn" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}
+        ${!isSelf && !isAdm ? `<button type="button" class="mini-btn reject" data-del-user="${esc(u.id)}">ลบถาวร</button>` : ''}
+        <span class="u-spacer"></span>
+        <button type="button" class="btn-sm" data-close-umodal>ปิด</button>
+      </div>`;
+  }
+  const keepScroll = body.scrollTop;
+  body.setAttribute('data-user-row', u.id);
+  body.innerHTML = inner;
+  body.scrollTop = keepScroll;
+  ov.hidden = false;
 }
 
 function renderUsersTable(){
   const wrap = document.getElementById('usersList');
   if (!wrap) return;
-  if (!canManageUsers()){ wrap.innerHTML = ''; return; }
-  const full = isUserAdminFull();          // ADMIN = full toolset; ASSISTANT = scope + active only
+  if (!canManageUsers()){ wrap.innerHTML = ''; closeUserModal(); return; }
+  const full = isUserAdminFull();          // ADMIN = full toolset; LV4+ = read-only
   const bar = document.getElementById('userAdminBar');
   if (bar) bar.hidden = true;
-  { const f = document.getElementById('addUserForm'); if (f) f.hidden = !full; }
+  const hb = document.getElementById('usersHeadBtns'); if (hb) hb.hidden = !full;
   const note = document.getElementById('usersViewNote');
   if (note) note.textContent = full
     ? 'เพิ่มบัญชี / แก้สิทธิ์-แผนก-รหัสพนักงาน / ปิดใช้งาน หรือ ลบถาวรได้จากที่นี่ · บัญชีที่มีประวัติงานลบถาวรไม่ได้ ให้ปิดใช้งานแทน'
@@ -2616,103 +2748,63 @@ function renderUsersTable(){
     syncNewUserAdmin();
   }
 
-  if (users.length===0){ wrap.innerHTML = `<p class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</p>`; return; }
+  const base = users.filter(u=> full || !isAdminP(u));   // non-admin never sees ADMIN rows (RLS also enforces)
+  const whs = seesAllWh() ? WH_KEYS.slice() : myWhList();
+  if (usersWh !== 'ALL' && !whs.includes(usersWh)) usersWh = 'ALL';
+  if (usersWh === 'ALL' || !deptKeysFor(usersWh).includes(usersDept)) usersDept = 'ALL';
+  const q = usersQ;
+  const mq = u => !q || (u.full_name||'').toLowerCase().includes(q) || (u.employee_code||'').toLowerCase().includes(q);
+  const ms = u => usersStatus === 'all' || (usersStatus === 'active') === (u.active !== false);
+  const mw = u => usersWh === 'ALL' || u.warehouse === usersWh;
+  const md = u => usersDept === 'ALL' || u.department === usersDept;
 
-  const q = searchTerm;
-  let list = sortedUsers();
-  if (!full) list = list.filter(u=>!isAdminP(u));   // non-admin never sees ADMIN rows (RLS also enforces)
-  if (q) list = list.filter(u=>
-    (u.full_name||'').toLowerCase().includes(q)
-    || (u.employee_code||'').toLowerCase().includes(q)
-    || posLabel(u).toLowerCase().includes(q));
-  if (list.length===0){ wrap.innerHTML = `<p class="empty-note">ไม่พบผู้ใช้ที่ตรงกับ "${esc(q)}"</p>`; return; }
+  const cnt = f => base.filter(f).length;
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set('usersStatusTabs', userSegHTML([
+    { k:'active', label:'ใช้งาน',  n: cnt(u=>mq(u)&&mw(u)&&md(u)&&u.active!==false) },
+    { k:'off',    label:'ปิดแล้ว', n: cnt(u=>mq(u)&&mw(u)&&md(u)&&u.active===false) },
+    { k:'all',    label:'ทั้งหมด', n: cnt(u=>mq(u)&&mw(u)&&md(u)) },
+  ], usersStatus, 'data-ustatus'));
+  set('usersWhTabs', userSegHTML(
+    [{ k:'ALL', label:'ทุกคลัง', n: cnt(u=>mq(u)&&ms(u)) }]
+      .concat(whs.map(w=>({ k:w, label:WH_PLAIN[w]||w, n: cnt(u=>mq(u)&&ms(u)&&u.warehouse===w) }))),
+    usersWh, 'data-uwh'));
+  const dEl = document.getElementById('usersDeptTabs');
+  if (dEl){
+    dEl.hidden = usersWh === 'ALL';
+    dEl.innerHTML = usersWh === 'ALL' ? '' : userSegHTML(
+      [{ k:'ALL', label:'ทุกแผนก', n: cnt(u=>mq(u)&&ms(u)&&u.warehouse===usersWh) }]
+        .concat(deptKeysFor(usersWh).map(d=>({ k:d, label:deptName(d, usersWh), n: cnt(u=>mq(u)&&ms(u)&&u.warehouse===usersWh&&u.department===d) }))),
+      usersDept, 'data-udept');
+  }
 
-  const cnt = document.getElementById('usersCount'); if (cnt) cnt.textContent = `ผู้ใช้ทั้งหมด · ${list.length} บัญชี`;
-  wrap.innerHTML = list.map(u=>{
-    const active = u.active !== false;
-    const isSelf = currentUser && u.id === currentUser.id;
-    const pairs = userScopePairs(u.id);
-    const isAdm = isAdminP(u);
-    const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
-    const effApps = allowedApps(u);
-    const nm = u.full_name || '–';
-    const ulv = lvOf(u);
-    const roleCls = isAdm ? 'r-admin' : ulv >= 4 ? 'r-asst' : ulv >= 2 ? 'r-sup' : 'r-user';
-    const homeTxt = u.warehouse
-      ? `${esc(WH_PLAIN[u.warehouse]||u.warehouse)} · ${u.department ? esc(deptName(u.department, u.warehouse)) : '–'}` : '–';
-    const head = (menu) => `
-      <div class="uc-top">
-        <span class="emp-avatar uc-av" aria-hidden="true">${esc(nm.trim().slice(0,1))}</span>
-        <div class="uc-title">
-          <span class="uc-name">${esc(nm)}</span>
-          <div class="uc-sub">
-            ${u.employee_code ? `<span class="uc-email">รหัส ${esc(u.employee_code)}</span>` : '<span class="td-sub">ยังไม่มีรหัสพนักงาน (เข้าสู่ระบบไม่ได้)</span>'}
-          </div>
-        </div>
-        ${active ? '' : statusBadge}
-        <span class="role-pill ${roleCls}">${esc(posLabel(u))}</span>
-        ${menu || ''}
-      </div>`;
-
-    // ---- ASSISTANT: read-only card, no controls, no footer ----
-    if (!full){
-      const appsRO = effApps.map(a=>`<span class="badge role">${APP_LABEL[a]||esc(a)}</span>`).join(' ')
-        + (Array.isArray(u.apps) && u.apps.length ? '' : ' <span class="td-sub">(ตามตำแหน่ง)</span>');
-      return `<article class="user-card ${active?'':'row-inactive'}">
-        ${head('')}
-        <div class="uc-fields">
-          <div class="uc-field"><span class="uc-lbl">คลัง · แผนกหลัก</span><div>${homeTxt}</div></div>
-          <div class="uc-field"><span class="uc-lbl">สิทธิ์เสริม (คลัง×แผนก)</span><div>${scopeSummary(pairs)}</div></div>
-          <div class="uc-field"><span class="uc-lbl">ระบบที่ใช้ได้</span><div>${appsRO}</div></div>
-        </div>
-      </article>`;
-    }
-
-    const scopeCell = `<span class="td-sub" data-scope-admin ${isAdm?'':'hidden'}>ทุกคลัง · ทุกแผนก</span><div data-scope-grid ${isAdm?'hidden':''}>${scopeGridHTML(pairs, 'u-scope-cb')}</div>`;
-    const menu = `<span class="uc-menu-wrap"><button type="button" class="ic-btn uc-kebab" data-kebab aria-haspopup="true" aria-expanded="false" aria-label="เมนูเพิ่มเติม" title="เมนูเพิ่มเติม">${IC_DOTS}</button>
-        <div class="uc-menu" hidden role="menu">
-          <button type="button" role="menuitem" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
-          ${isSelf ? ''
-            : `<button type="button" role="menuitem" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}
-          ${!isSelf && !isAdm
-            ? `<button type="button" role="menuitem" class="danger" data-del-user="${esc(u.id)}">ลบถาวร</button>` : ''}
-        </div></span>`;
-    return `<article class="user-card ${active?'':'row-inactive'}" data-user-row="${esc(u.id)}">
-      ${head(menu)}
-      <details class="uc-edit">
-        <summary>แก้ไขตำแหน่ง · คลัง/แผนก · ระบบ</summary>
-        <div class="uc-fields">
-          <div class="uc-field">
-            <span class="uc-lbl">ตำแหน่ง</span>
-            <select class="mini-select" data-u-pos ${isSelf?'disabled title="เปลี่ยนตำแหน่งตัวเองไม่ได้"':''}>${positionOptions(isAdm ? 'ADMIN' : u.position_id, true)}</select>
-          </div>
-          <div class="uc-field" data-home-block ${isAdm?'hidden':''}>
-            <span class="uc-lbl">คลังหลัก</span>
-            <select class="mini-select" data-u-wh>${whOptions(u.warehouse)}</select>
-          </div>
-          <div class="uc-field" data-home-block ${isAdm?'hidden':''}>
-            <span class="uc-lbl">แผนกหลัก</span>
-            <select class="mini-select" data-u-dept>${deptOptions(u.warehouse || WH_KEYS[0], u.department)}</select>
-          </div>
-          <div class="uc-field">
-            <span class="uc-lbl">สิทธิ์เสริม (คลัง×แผนก) · ไม่บังคับ</span>
-            <div class="scope-cell">${scopeCell}</div>
-          </div>
-          <div class="uc-field">
-            <span class="uc-lbl">ระบบที่ใช้ได้</span>
-            ${appCheckboxes(effApps, 'u-app-cb')}
-          </div>
-          <div class="uc-field">
-            <span class="uc-lbl">รหัสพนักงาน</span>
-            <input type="text" class="code-input" data-u-code value="${esc(u.employee_code||'')}" placeholder="รหัส" readonly title="รหัสพนักงานแก้ไม่ได้ (ใช้เป็นชื่อเข้าสู่ระบบ)">
-          </div>
-        </div>
-        <div class="uc-btns">
-          <button type="button" class="mini-btn approve" data-save-user="${esc(u.id)}">บันทึก</button>
-        </div>
-      </details>
-    </article>`;
-  }).join('');
+  const list = sortedUsers().filter(u=> (full || !isAdminP(u)) && mq(u) && ms(u) && mw(u) && md(u));
+  if (!list.length){
+    wrap.innerHTML = `<tr><td colspan="6" class="empty-note">ไม่พบผู้ใช้ตามตัวกรอง</td></tr>`;
+  } else {
+    const grp = u => isAdminP(u) ? 'Admin' : lvOf(u) > 0 ? 'LV' + lvOf(u) : 'ไม่มีตำแหน่ง';
+    const gCount = new Map(); list.forEach(u=>{ const g = grp(u); gCount.set(g, (gCount.get(g)||0) + 1); });
+    let lastG = null;
+    wrap.innerHTML = list.map(u=>{
+      const g = grp(u);
+      const gRow = g !== lastG ? `<tr class="u-group"><td colspan="6">${esc(g)} <span class="u-n">${gCount.get(g)}</span></td></tr>` : '';
+      lastG = g;
+      const active = u.active !== false;
+      const isSelf = currentUser && u.id === currentUser.id;
+      const nm = u.full_name || '–';
+      return gRow + `<tr class="u-row ${active?'':'row-inactive'}" data-open-user="${esc(u.id)}" tabindex="0">
+        <td><div class="u-name"><span class="emp-avatar uc-av" aria-hidden="true">${esc(nm.trim().slice(0,1))}</span>
+          <div><b>${esc(nm)}</b>${isSelf ? ' <span class="u-self">บัญชีคุณ</span>' : ''}
+          <div class="u-code">${u.employee_code ? esc(u.employee_code) : '<span class="td-sub">ยังไม่มีรหัส</span>'}</div></div></div></td>
+        <td><span class="role-pill ${userRoleCls(u)}">${esc(posLabel(u))}</span></td>
+        <td>${userHomeText(u)}</td>
+        <td>${userAppChips(u)}</td>
+        <td><span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span></td>
+        <td class="u-manage">จัดการ ›</td>
+      </tr>`;
+    }).join('');
+  }
+  renderUserModal();   // keep an open detail modal in sync after save / toggle / delete
 }
 
 async function saveUserRow(userId){

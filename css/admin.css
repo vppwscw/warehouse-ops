@@ -1104,3 +1104,17 @@ html,body,.sidebar,.main,.table-wrap,.hm-scroll,.modal{scrollbar-width:none;-ms-
 /* no page title on any view (user 2026-11-24) */
 .pagehead > div:first-child{display:none}
 .pagehead:not(:has(#acctActions)){display:none}
+
+/* rail locked; hover/focus expands the sidebar over the page (user 2026-11-24) */
+@media (min-width:640px){
+  .shell.rail .sidebar{transition:width .18s ease,box-shadow .18s ease;width:64px;z-index:40}
+  .shell.rail .sidebar:hover,.shell.rail .sidebar:focus-within{width:240px;padding:16px 14px;align-items:stretch;box-shadow:8px 0 24px -8px rgba(0,0,0,.35)}
+  .shell.rail .sidebar:hover .brand-full,.shell.rail .sidebar:focus-within .brand-full{display:block}
+  .shell.rail .sidebar:hover .brand-mark,.shell.rail .sidebar:focus-within .brand-mark{display:none}
+  .shell.rail .sidebar:hover #syncText,.shell.rail .sidebar:hover .navlist::before,.shell.rail .sidebar:hover #acctActions::before,
+  .shell.rail .sidebar:hover .navbtn .nav-tx,.shell.rail .sidebar:hover #acctActions .act-tx,
+  .shell.rail .sidebar:focus-within #syncText,.shell.rail .sidebar:focus-within .navlist::before,.shell.rail .sidebar:focus-within #acctActions::before,
+  .shell.rail .sidebar:focus-within .navbtn .nav-tx,.shell.rail .sidebar:focus-within #acctActions .act-tx{display:revert}
+  .shell.rail .sidebar:hover .navbtn,.shell.rail .sidebar:hover #acctActions button,.shell.rail .sidebar:hover .sync-box,
+  .shell.rail .sidebar:focus-within .navbtn,.shell.rail .sidebar:focus-within #acctActions button,.shell.rail .sidebar:focus-within .sync-box{justify-content:flex-start;gap:11px;padding:10px 12px}
+}

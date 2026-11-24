@@ -437,9 +437,10 @@ const ALL_NAV = [...NAV, ...SECONDARY];
 // adminOnly items (ตำแหน่ง & LV) only show for ADMIN — rebuilt on login/logout
 function renderNav(){
   const items = NAV.filter(n => !n.adminOnly || isUserAdminFull());
-  const gl = canManageUsers() ? 'ผู้ใช้งานระบบ' : 'โปรไฟล์';
-  const gb = document.getElementById('gearBtn');
-  gb.innerHTML = ICONS.gear + '<span class="act-tx">' + gl + '</span>'; gb.title = gl; gb.setAttribute('aria-label', gl);
+  // non-admin sees only โปรไฟล์ของฉัน + ออกจากระบบ in the account menu
+  const adm = canManageUsers();
+  document.getElementById('gearBtn').hidden = !adm;
+  document.getElementById('exportCsvBtn').hidden = !adm;
   document.getElementById('navList').innerHTML = items.map(n=>`
   <button type="button" class="navbtn" data-view="${n.id}" aria-current="${n.id===activeView}">
     <span class="nav-ic">${ICONS[n.icon]}</span><span class="nav-tx">${n.label}</span>
@@ -479,20 +480,8 @@ document.getElementById('logoutBtn').innerHTML    = ICONS.logout   + '<span clas
   if (!shell || !toggle) return;
   toggle.innerHTML = ICONS.chevron + '<span class="nav-tx">ย่อเมนู</span>';
   const forceMq = window.matchMedia('(max-width:960px)');
-  let saved = false;
-  try { saved = localStorage.getItem('wh_nav_rail') === '1'; } catch(e){}
-  const apply = () => {
-    const rail = forceMq.matches || saved;
-    shell.classList.toggle('rail', rail);
-    toggle.hidden = forceMq.matches;
-    toggle.setAttribute('aria-pressed', String(rail));
-    toggle.querySelector('.nav-tx').textContent = rail ? 'ขยายเมนู' : 'ย่อเมนู';
-  };
-  toggle.addEventListener('click', () => {
-    saved = !shell.classList.contains('rail');
-    try { localStorage.setItem('wh_nav_rail', saved ? '1' : '0'); } catch(e){}
-    apply();
-  });
+  // locked collapsed (user 2026-11-24); expands as an overlay on hover/focus (CSS)
+  const apply = () => { shell.classList.add('rail'); toggle.hidden = true; };
   forceMq.addEventListener('change', apply);
   apply();
 })();

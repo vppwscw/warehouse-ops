@@ -618,16 +618,19 @@ function renderCrewList(){
   const home = roster.filter(r=>isHome(r) && match(r)).sort(byName);
   const sameWh = r => r.warehouse==null || r.warehouse===oWhVal;   // crew can cross departments, never warehouses
   const others = roster.filter(r=>!isHome(r) && sameWh(r) && match(r)).sort(byName);
+  const otherWh = q ? roster.filter(r=>!sameWh(r) && match(r)).sort(byName) : [];   // helpers from the other warehouse: search only
   const item = r => `
       <button type="button" class="emp-check" data-pick-emp="${esc(r.id)}" aria-pressed="${crew.includes(String(r.id))}">
         <span class="ec-av">${esc(Array.from(String(r.name).trim())[0]||'')}</span>
-        <span class="ec-text"><span class="ec-name">${esc(r.name)}</span><span class="ec-sub">${(()=>{ const n = jobs.filter(j=>j.task_id===oTaskVal && (j.crew||[]).includes(r.name)).length; return n ? 'ทำงานนี้ '+n+' ครั้ง' : 'ยังไม่เคยทำงานนี้'; })()}</span></span>
+        <span class="ec-text"><span class="ec-name">${esc(r.name)}${sameWh(r) ? '' : ` <span style="font-size:11px;padding:1px 6px;border-radius:6px;background:var(--line);color:var(--ink);white-space:nowrap;">${esc((WH_PLAIN[r.warehouse]||r.warehouse)+' · '+(r.department||''))}</span>`}</span><span class="ec-sub">${(()=>{ const n = jobs.filter(j=>j.task_id===oTaskVal && (j.crew||[]).includes(r.name)).length; return n ? 'ทำงานนี้ '+n+' ครั้ง' : 'ยังไม่เคยทำงานนี้'; })()}</span></span>
         <span class="ec-box">${crew.includes(String(r.id)) ? ICONS.checksm : ''}</span>
       </button>`;
   let html = '';
   if (home.length) html += home.map(item).join('');
   else if (!q) html += `<div class="empty-roster-inline">ยังไม่มีรายชื่อคนงานฝั่ง ${esc(deptName(oDeptVal, oWhVal))}<br>เลือกจากแผนกอื่นด้านล่าง หรือไปเพิ่มที่แถบ "คนงาน"</div>`;
   if (others.length) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">แผนกอื่นใน${esc(WH_PLAIN[oWhVal] || ('คลัง '+oWhVal))}</p>` + others.map(item).join('');
+  if (otherWh.length) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">คนจากคลังอื่น (มาช่วย)</p>` + otherWh.map(item).join('');
+  else if (!q) html += `<p class="hint" style="text-align:left;margin:14px 0 6px;">คนจากคลังอื่นมาช่วย: พิมพ์ชื่อในช่องค้นหา</p>`;
   if (!html) html = `<div class="empty-roster-inline">ไม่พบชื่อที่ค้นหา</div>`;
   box.innerHTML = html;
 }

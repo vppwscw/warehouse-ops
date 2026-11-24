@@ -243,26 +243,6 @@
       </div>
     </section>
 
-    <!-- ===== VIEW: POSITIONS & LV (ADMIN) ===== -->
-    <section class="view" id="view-positions">
-      <p class="sub" style="margin:0 0 14px;">LV1 บันทึกงานตัวเอง · LV2 เปิด/ปิดงานทีม · LV3 อนุมัติ + ดู ERP · LV4 ทุกแผนกในคลังตัวเอง · LV5 ทั้งสองคลัง · ตำแหน่งที่มีผู้ใช้อยู่ลบไม่ได้ (ปิดใช้งานแทน)</p>
-      <form class="add-user-form" id="addPositionForm" hidden autocomplete="off">
-        <div class="auf-grid">
-          <div class="field"><label for="npName">ชื่อตำแหน่ง</label><input type="text" id="npName" placeholder="เช่น SP" maxlength="30" autocomplete="off"></div>
-          <div class="field"><label for="npLv">LV</label><select id="npLv"><option value="1">LV1</option><option value="2">LV2</option><option value="3">LV3</option><option value="4">LV4</option><option value="5">LV5</option></select></div>
-        </div>
-        <div class="auf-actions">
-          <button type="button" class="btn-sm primary" id="createPositionBtn">＋ เพิ่มตำแหน่ง</button>
-          <span class="form-hint" id="addPositionHint"></span>
-        </div>
-      </form>
-      <div class="table-wrap">
-        <table id="positionsTable">
-          <thead><tr><th>ตำแหน่ง</th><th>LV</th><th>สถานะ</th><th>ผู้ใช้</th><th>จัดการ</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
 
     <!-- ===== VIEW: EMPLOYEES ===== -->
     <section class="view" id="view-employees">
@@ -308,6 +288,7 @@
           <p class="sub" id="usersViewNote">รายชื่อผู้ใช้งานในระบบ</p>
         </div>
         <div class="users-head-btns" id="usersHeadBtns" hidden>
+          <button type="button" class="btn-sm" id="openPosBtn" hidden>ตำแหน่ง &amp; LV</button>
           <button type="button" class="btn-sm primary" id="openAddUserBtn">+ สร้างบัญชี</button>
           <button type="button" class="btn-sm" id="bulkUserBtn">สร้างหลายบัญชี</button>
         </div>
@@ -329,6 +310,28 @@
 </div>
 
 <!-- create single account modal -->
+<div class="modal-overlay" id="posModal" hidden>
+  <div class="modal u-modal" role="dialog" aria-modal="true" aria-label="ตำแหน่ง &amp; LV" style="max-height:90vh;overflow:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;"><h3 class="eac-title" style="margin:0;">ตำแหน่ง &amp; LV</h3><button type="button" class="btn-sm" id="posClose">ปิด</button></div>
+      <p class="sub" style="margin:0 0 14px;">LV1 บันทึกงานตัวเอง · LV2 เปิด/ปิดงานทีม · LV3 อนุมัติ + ดู ERP · LV4 ทุกแผนกในคลังตัวเอง · LV5 ทั้งสองคลัง · ตำแหน่งที่มีผู้ใช้อยู่ลบไม่ได้ (ปิดใช้งานแทน)</p>
+      <form class="add-user-form" id="addPositionForm" hidden autocomplete="off">
+        <div class="auf-grid">
+          <div class="field"><label for="npName">ชื่อตำแหน่ง</label><input type="text" id="npName" placeholder="เช่น SP" maxlength="30" autocomplete="off"></div>
+          <div class="field"><label for="npLv">LV</label><select id="npLv"><option value="1">LV1</option><option value="2">LV2</option><option value="3">LV3</option><option value="4">LV4</option><option value="5">LV5</option></select></div>
+        </div>
+        <div class="auf-actions">
+          <button type="button" class="btn-sm primary" id="createPositionBtn">＋ เพิ่มตำแหน่ง</button>
+          <span class="form-hint" id="addPositionHint"></span>
+        </div>
+      </form>
+      <div class="table-wrap">
+        <table id="positionsTable">
+          <thead><tr><th>ตำแหน่ง</th><th>LV</th><th>สถานะ</th><th>ผู้ใช้</th><th>จัดการ</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      </div>
+</div>
 <div class="modal-overlay" id="addUserModal" hidden>
   <div class="modal u-modal">
     <form class="add-user-form uc-create" id="addUserForm" autocomplete="off">
@@ -508,6 +511,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=4"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=88"></script>
+<script src="js/admin.js?v=89"></script>
 </body>
 </html>

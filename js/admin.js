@@ -428,7 +428,6 @@ const NAV = [
   {id:'queue',      label:'คิวอนุมัติ',   short:'คิว',    icon:'queue', title:'คิวอนุมัติ', sub:'งานที่รออนุมัติ เรียงตามความเร่งด่วน'},
   {id:'details',    label:'งานทั้งหมด',   short:'งาน',    icon:'list',  title:'งานทั้งหมด', sub:'รายการงานทุกชิ้นตามตัวกรองที่เลือก'},
   {id:'tasks',      label:'ชนิดงาน',      short:'ชนิด',   icon:'box',   title:'ชนิดงาน', sub:'ชนิดงานทั้งหมดของแต่ละฝั่ง — ปิดใช้งานหรือลบถาวรได้'},
-  {id:'positions',  label:'ตำแหน่ง & LV', short:'LV',     icon:'id',    title:'ตำแหน่ง & LV', sub:'จัดการตำแหน่งและระดับ LV — ผู้ใช้ทุกคนอ้างอิงตำแหน่งนี้', adminOnly:true},
   {id:'employees',  label:'พนักงาน',      short:'คน',    icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
   {id:'skillmatrix', label:'Skill Matrix', short:'สกิล',  icon:'matrix', title:'Skill Matrix', sub:'ใครทำงานชนิดไหนได้บ้าง — แต้มนับจากจำนวนครั้งที่เคยทำสำเร็จ'},
 ];
@@ -588,7 +587,7 @@ function applyCustomRange(){
 
 function goView(id){
   if (id === 'users' && !canManageUsers()){ openProfileModal(); return; }
-  if (id === 'positions' && !isUserAdminFull()) id = 'dashboard';
+  if (id === 'positions'){ id = isUserAdminFull() ? 'users' : 'dashboard'; if (id==='users') setTimeout(openPosModal, 0); }
   activeView = id;
   syncFilterbar();
   document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current', b.dataset.view===id));
@@ -599,7 +598,6 @@ function goView(id){
   document.getElementById('pageSub').textContent = n.sub;
   if (id==='users') Promise.all([refreshUsers(), refreshScopes()]).then(renderUsersTable);
   if (id==='tasks') refreshTasksAdmin().then(render);
-  if (id==='positions') Promise.all([loadPositions(), refreshUsers()]).then(render);
   if (id==='employees') refreshEmployeesAll().then(render);
   render();
 }
@@ -751,6 +749,8 @@ document.addEventListener('click', e=>{
   if (e.target.closest('[data-close-umodal]')){ closeUserModal(); return; }
   if (e.target.id === 'userModal'){ closeUserModal(); return; }
   if (e.target.id === 'addUserModal' || e.target.closest('#nuClose')){ document.getElementById('addUserModal').hidden = true; return; }
+  if (e.target.id === 'posModal' || e.target.closest('#posClose')){ document.getElementById('posModal').hidden = true; return; }
+  if (e.target.closest('#openPosBtn')){ openPosModal(); return; }
   if (e.target.closest('#openAddUserBtn')){ if (isUserAdminFull()){ document.getElementById('addUserModal').hidden = false; const c = document.getElementById('nuCode'); if (c) c.focus(); } return; }
   const openUser = e.target.closest('[data-open-user]');
   if (openUser){ openUserModal(openUser.dataset.openUser); return; }
@@ -835,6 +835,7 @@ document.addEventListener('click', e=>{
     if (e.key !== 'Escape') return;
     const open = id => { const m = document.getElementById(id); return m && !m.hidden; };
     if (open('confirmModal') || open('pwModal')) return;   // those handle their own Esc
+    if (open('posModal')){ document.getElementById('posModal').hidden = true; return; }
     if (open('addUserModal')){ document.getElementById('addUserModal').hidden = true; return; }
     if (open('userModal')) closeUserModal();
   });
@@ -2726,6 +2727,7 @@ function renderUsersTable(){
   const bar = document.getElementById('userAdminBar');
   if (bar) bar.hidden = true;
   const hb = document.getElementById('usersHeadBtns'); if (hb) hb.hidden = !full;
+  const pb = document.getElementById('openPosBtn'); if (pb) pb.hidden = !isUserAdminFull();
   const note = document.getElementById('usersViewNote');
   if (note) note.textContent = full
     ? 'เพิ่มบัญชี / แก้สิทธิ์-แผนก-รหัสพนักงาน / ปิดใช้งาน หรือ ลบถาวรได้จากที่นี่ · บัญชีที่มีประวัติงานลบถาวรไม่ได้ ให้ปิดใช้งานแทน'
@@ -3127,9 +3129,8 @@ function render(){
     renderTasksAdmin();
   } else if (activeView==='users'){
     renderUsersTable();
-  } else if (activeView==='positions'){
-    renderPositions();
   }
+  if (!document.getElementById('posModal').hidden) renderPositions();
   writeHashState();
 }
 
@@ -3276,6 +3277,12 @@ function renderPositions(){
       </td>
     </tr>`;
   }).join('');
+}
+function openPosModal(){
+  if (!isUserAdminFull()) return;
+  document.getElementById('posModal').hidden = false;
+  Promise.all([loadPositions(), refreshUsers()]).then(renderPositions);
+  renderPositions();
 }
 async function positionsRefresh(msg){
   await Promise.all([loadPositions(), refreshUsers()]);

@@ -98,13 +98,15 @@ function refreshColorHint(inputEl, hintEl){
 }
 const WH_KEYS = ['A','B'];
 const WH_PLAIN = { A:'คลัง A', B:'คลัง B' };
-const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 const STATUS_LABEL = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', open:'กำลังทำงาน' };
 const ADMIN_USERS_FN = SUPABASE_URL + '/functions/v1/admin-users';
-const ROLE_ORDER = ['USER','SUPERVISOR','ASSISTANT','ADMIN'];
-// Users-view display order within the active / inactive groups: ADMIN, then
-// ASSISTANT (ผู้ช่วยผู้จัดการ), then SUPERVISOR (หัวหน้างาน), then USER.
-const ROLE_RANK = { ADMIN:0, ASSISTANT:1, SUPERVISOR:2, USER:3 };
+// LV model: positions(id,name,lv,active,sort) loaded after login. role is only
+// used to tell ADMIN apart; every other permission reads the position's LV.
+let positions = [];
+const posOf    = p => (p && p.position_id != null) ? positions.find(x=>x.id===p.position_id) : null;
+const isAdminP = p => !!p && p.role === 'ADMIN';
+const lvOf     = p => { const x = posOf(p); return x ? x.lv : 0; };
+const posLabel = p => isAdminP(p) ? 'Admin' : (posOf(p) ? `${posOf(p).name} (LV${posOf(p).lv})` : '–');
 
 // Every value that ends up inside an innerHTML template must go through esc() —
 // full_name, employee_code, task names, crew names and the whole jobs.details
@@ -182,11 +184,13 @@ function writeHashState(){
 let firstLoad = true;    // true until the first successful data load (drives the skeleton)
 let loadError = null;    // set when the initial jobs load fails (drives the error card)
 
-// ASSISTANT sees everything ADMIN sees but can't approve/reject jobs
+// Only ADMIN edits/approves in this app; LV3+ see ERP read-only
 const isReadOnly = () => !profile || profile.role !== 'ADMIN';
-// Who can open the "ผู้ใช้งานระบบ" view at all, and who gets the full toolset.
-const canManageUsers = () => !!profile && (profile.role === 'ADMIN' || profile.role === 'ASSISTANT');
+// Who can open the "ผู้ใช้งานระบบ" view at all (ADMIN full, LV4+ read-only), and who gets the full toolset.
+const canManageUsers = () => !!profile && (isAdminP(profile) || lvOf(profile) >= 4);
 const isUserAdminFull = () => !!profile && profile.role === 'ADMIN';
+// ADMIN and LV5 see both warehouses; LV4 sees own warehouse + extra scope
+const seesAllWh = () => !!profile && (isAdminP(profile) || lvOf(profile) >= 5);
 
 // ---------- date helpers (Asia/Bangkok) ----------
 function nowBkk(){ return new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Bangkok'})); }
@@ -291,7 +295,7 @@ function openProfileModal(){
   if (!profile) return;
   document.getElementById('pmName').textContent  = profile.full_name || '–';
   document.getElementById('pmCode').textContent  = profile.employee_code || '–';
-  document.getElementById('pmRole').textContent  = ROLE_LABEL[profile.role] || profile.role || '–';
+  document.getElementById('pmRole').textContent  = posLabel(profile);
   document.getElementById('pmHint').textContent = '';
   document.getElementById('profileModal').hidden = false;
 }
@@ -342,6 +346,7 @@ function confirmModal(text, opts){
 async function doLogout(){
   await sb.auth.signOut();
   profile = null; currentUser = null; jobs = []; roster = [];
+  renderNav();
   if (realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
   document.getElementById('loginCode').value = '';
   document.getElementById('loginPass').value = '';
@@ -350,17 +355,27 @@ async function doLogout(){
 }
 
 // Which app(s) this account may open. An explicit profiles.apps wins; otherwise
-// the role default. 'erp' = admin.html, 'mobile' = index.html.
+// the LV default. 'erp' = admin.html, 'mobile' = index.html.
 function allowedApps(p){
   if (p && Array.isArray(p.apps) && p.apps.length) return p.apps;
   if (!p) return [];
-  if (p.role === 'ADMIN') return ['erp','mobile'];
-  if (p.role === 'ASSISTANT') return ['erp'];
+  if (isAdminP(p)) return ['erp','mobile'];
+  if (lvOf(p) >= 3) return ['erp','mobile'];
   return ['mobile'];
+}
+
+// positions table (RLS: any active user reads; ADMIN also sees inactive ones)
+async function loadPositions(){
+  try{
+    const { data, error } = await sb.from('positions').select('id,name,lv,active,sort').order('sort');
+    if (error) throw error;
+    positions = data || [];
+  }catch(e){ /* keep previous list */ }
 }
 
 async function afterLogin(user){
   currentUser = user;
+  // '*' already carries position_id + warehouse
   const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
   if (error || !data){
     document.getElementById('loginHint').textContent = 'ไม่พบข้อมูลผู้ใช้งานนี้ในระบบ';
@@ -368,6 +383,8 @@ async function afterLogin(user){
     return;
   }
   profile = data;
+  await loadPositions();
+  renderNav();
   if (profile.active === false){
     document.getElementById('deniedText').textContent = 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
     showScreen('denied');
@@ -419,7 +436,8 @@ const NAV = [
   {id:'queue',      label:'คิวอนุมัติ',   short:'คิว',    icon:'queue', title:'คิวอนุมัติ', sub:'งานที่รออนุมัติ เรียงตามความเร่งด่วน'},
   {id:'details',    label:'งานทั้งหมด',   short:'งาน',    icon:'list',  title:'งานทั้งหมด', sub:'รายการงานทุกชิ้นตามตัวกรองที่เลือก'},
   {id:'tasks',      label:'ชนิดงาน',      short:'ชนิด',   icon:'box',   title:'ชนิดงาน', sub:'ชนิดงานทั้งหมดของแต่ละฝั่ง — ปิดใช้งานหรือลบถาวรได้'},
-  {id:'employees',  label:'พนักงาน',      short:'คน',     icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
+  {id:'positions',  label:'ตำแหน่ง & LV', short:'LV',     icon:'id',    title:'ตำแหน่ง & LV', sub:'จัดการตำแหน่งและระดับ LV — ผู้ใช้ทุกคนอ้างอิงตำแหน่งนี้', adminOnly:true},
+  {id:'employees',  label:'พนักงาน',      short:'คน',    icon:'users', title:'พนักงาน', sub:'สรุปจำนวนงานที่ทำของพนักงานแต่ละคน'},
   {id:'skillmatrix', label:'Skill Matrix', short:'สกิล',  icon:'matrix', title:'Skill Matrix', sub:'ใครทำงานชนิดไหนได้บ้าง — แต้มนับจากจำนวนครั้งที่เคยทำสำเร็จ'},
 ];
 // Secondary — reached via the gear icon in the header, not the main nav.
@@ -428,14 +446,19 @@ const SECONDARY = [
 ];
 const ALL_NAV = [...NAV, ...SECONDARY];
 
-document.getElementById('navList').innerHTML = NAV.map(n=>`
-  <button type="button" class="navbtn" data-view="${n.id}" aria-current="${n.id==='dashboard'}">
+// adminOnly items (ตำแหน่ง & LV) only show for ADMIN — rebuilt on login/logout
+function renderNav(){
+  const items = NAV.filter(n => !n.adminOnly || isUserAdminFull());
+  document.getElementById('navList').innerHTML = items.map(n=>`
+  <button type="button" class="navbtn" data-view="${n.id}" aria-current="${n.id===activeView}">
     <span class="nav-ic">${ICONS[n.icon]}</span><span class="nav-tx">${n.label}</span>
   </button>`).join('');
-document.getElementById('botNav').innerHTML = NAV.map(n=>`
-  <button type="button" class="botbtn" data-view="${n.id}" aria-current="${n.id==='dashboard'}">
+  document.getElementById('botNav').innerHTML = items.map(n=>`
+  <button type="button" class="botbtn" data-view="${n.id}" aria-current="${n.id===activeView}">
     ${ICONS[n.icon]}<span>${n.short}</span>
   </button>`).join('');
+}
+renderNav();
 document.getElementById('deniedLockIcon').innerHTML = ICONS.lock;
 
 // account actions — give each a glyph + label, then dock the row into the
@@ -489,6 +512,7 @@ const VIEW_FILTERS = {
   details:   ['range','wh','dept'],   // this view has its own search box in the table toolbar
   queue:     ['wh','dept','search'],
   tasks:     ['wh','dept','search'],
+  positions: [],
   employees: ['wh','dept','search'],
   skillmatrix: ['wh','dept','search'],
   users:     ['search'],
@@ -510,11 +534,13 @@ function syncFilterbar(){
   }
 }
 
-// the ADMIN sees every warehouse; anyone else sees only the ones in their scope
+// ADMIN + LV5 see every warehouse; others see home warehouse + extra (staff_scope) warehouses
 function myWhList(){
-  if (profile && profile.role === 'ADMIN') return WH_KEYS.slice();
+  if (seesAllWh()) return WH_KEYS.slice();
   const uid = currentUser && currentUser.id;
-  return [...new Set(scopes.filter(s=>s.profile_id===uid).map(s=>s.warehouse))].sort();
+  const set = new Set(scopes.filter(s=>s.profile_id===uid).map(s=>s.warehouse));
+  if (profile && profile.warehouse) set.add(profile.warehouse);
+  return [...set].sort();
 }
 function buildDeptChips(){
   const el = document.getElementById('deptSelect');
@@ -529,7 +555,7 @@ function renderWhChips(){
   const el = document.getElementById('whSelect');
   const grp = document.getElementById('whGroup');
   if (!el || !grp) return;
-  const isAdm = profile && profile.role === 'ADMIN';
+  const isAdm = seesAllWh();
   const mine = myWhList();
   let opts;
   if (isAdm) opts = [['ALL','ทั้งหมด'], ...WH_KEYS.map(w=>[w, w])];
@@ -570,6 +596,7 @@ function applyCustomRange(){
 
 function goView(id){
   if (id === 'users' && !canManageUsers()){ openProfileModal(); return; }
+  if (id === 'positions' && !isUserAdminFull()) id = 'dashboard';
   activeView = id;
   syncFilterbar();
   document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current', b.dataset.view===id));
@@ -580,6 +607,7 @@ function goView(id){
   document.getElementById('pageSub').textContent = n.sub;
   if (id==='users') Promise.all([refreshUsers(), refreshScopes()]).then(renderUsersTable);
   if (id==='tasks') refreshTasksAdmin().then(render);
+  if (id==='positions') Promise.all([loadPositions(), refreshUsers()]).then(render);
   if (id==='employees') refreshEmployeesAll().then(render);
   render();
 }
@@ -2484,12 +2512,21 @@ document.addEventListener('keydown', e=>{
   if (row && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); openEmpPanel(row.dataset.emp); }
 });
 
-function roleOptions(sel){
-  return ROLE_ORDER.map(r=>`<option value="${r}" ${sel===r?'selected':''}>${ROLE_LABEL[r]}</option>`).join('');
+// ตำแหน่ง dropdown: active positions "name (LVn)" + an "Admin" choice. `sel` is a
+// position id (string/number) or 'ADMIN'; an inactive current position is kept so it displays.
+function positionOptions(sel, withAdmin){
+  const s = sel == null ? '' : String(sel);
+  const list = positions.filter(x => x.active !== false || String(x.id) === s)
+    .sort((a,b)=> (a.sort-b.sort) || (a.lv-b.lv));
+  return list.map(x=>`<option value="${esc(x.id)}" ${String(x.id)===s?'selected':''}>${esc(x.name)} (LV${esc(x.lv)})${x.active===false?' · ปิด':''}</option>`).join('')
+    + (withAdmin ? `<option value="ADMIN" ${s==='ADMIN'?'selected':''}>Admin</option>` : '');
+}
+function whOptions(sel){
+  return WH_KEYS.map(w=>`<option value="${w}" ${sel===w?'selected':''}>${esc(WH_PLAIN[w])}</option>`).join('');
 }
 function deptOptions(wh, sel){
   const keys = deptKeysFor(wh);
-  return keys.map(d=>`<option value="${d}" ${sel===d?'selected':''}>${esc(deptName(d, wh))}</option>`).join('');
+  return keys.map(d=>`<option value="${esc(d)}" ${sel===d?'selected':''}>${esc(deptName(d, wh))}</option>`).join('');
 }
 // A SUPERVISOR / USER may cover more than one department (profiles.departments).
 function userDepts(u){
@@ -2548,11 +2585,12 @@ function appCheckboxes(selected, cls, disabled){
   ).join('') + `</span>`;
 }
 
-// Users-view sort: active first, then most-privileged role, then name (Thai).
+// Users-view sort: active first, then Admin, then highest LV, then name (Thai).
 function sortedUsers(){
+  const rank = u => isAdminP(u) ? 99 : lvOf(u);
   return users.slice().sort((a,b)=>
     ((a.active!==false?0:1) - (b.active!==false?0:1))
-    || ((ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9))
+    || (rank(b) - rank(a))
     || String(a.full_name||'').localeCompare(String(b.full_name||''), 'th'));
 }
 
@@ -2567,26 +2605,34 @@ function renderUsersTable(){
   const note = document.getElementById('usersViewNote');
   if (note) note.textContent = full
     ? 'เพิ่มบัญชี / แก้สิทธิ์-แผนก-รหัสพนักงาน / ปิดใช้งาน หรือ ลบถาวรได้จากที่นี่ · บัญชีที่มีประวัติงานลบถาวรไม่ได้ ให้ปิดใช้งานแทน'
-    : 'ผู้ช่วยผู้จัดการ — อ่านอย่างเดียว · เห็นเฉพาะบัญชีในคลังที่ได้รับมอบหมาย (แก้ไขไม่ได้ · ติดต่อผู้ดูแลระบบ)';
-  const nuRole = document.getElementById('nuRole');
-  if (full && nuRole && !nuRole.options.length){
-    nuRole.innerHTML = roleOptions('USER');
+    : 'LV4 ขึ้นไป — อ่านอย่างเดียว · เห็นเฉพาะบัญชีในคลังที่ได้รับมอบหมาย (แก้ไขไม่ได้ · ติดต่อผู้ดูแลระบบ)';
+  const nuPos = document.getElementById('nuPos');
+  if (full && nuPos){
+    // positions can change (ตำแหน่ง & LV view) — rebuild options, keep the pick
+    const keep = nuPos.value;
+    nuPos.innerHTML = positionOptions(keep || (positions.find(x=>x.active!==false) || {}).id, true);
+    const nuWh = document.getElementById('nuWh');
+    if (!nuWh.options.length){
+      nuWh.innerHTML = whOptions(WH_KEYS[0]);
+      document.getElementById('nuDept').innerHTML = deptOptions(nuWh.value);
+    }
     const grid = document.getElementById('nuScopeGrid');
-    if (grid) grid.innerHTML = scopeGridHTML([], 'nu-scope-cb');
+    if (grid && !grid.innerHTML) grid.innerHTML = scopeGridHTML([], 'nu-scope-cb');
     const acbs = document.getElementById('nuAppCbs');
-    if (acbs) acbs.innerHTML = ['erp','mobile'].map(a=>
+    if (acbs && !acbs.innerHTML) acbs.innerHTML = ['erp','mobile'].map(a=>
       `<label class="dept-cb"><input type="checkbox" class="nu-app-cb" value="${a}"> ${APP_LABEL[a]}</label>`).join('');
+    syncNewUserAdmin();
   }
 
   if (users.length===0){ wrap.innerHTML = `<p class="empty-note">ไม่พบข้อมูลผู้ใช้งาน</p>`; return; }
 
   const q = searchTerm;
   let list = sortedUsers();
-  if (!full) list = list.filter(u=>u.role !== 'ADMIN');   // ASSISTANT never sees ADMIN (RLS also enforces)
+  if (!full) list = list.filter(u=>!isAdminP(u));   // non-admin never sees ADMIN rows (RLS also enforces)
   if (q) list = list.filter(u=>
     (u.full_name||'').toLowerCase().includes(q)
     || (u.employee_code||'').toLowerCase().includes(q)
-    || (ROLE_LABEL[u.role]||'').toLowerCase().includes(q));
+    || posLabel(u).toLowerCase().includes(q));
   if (list.length===0){ wrap.innerHTML = `<p class="empty-note">ไม่พบผู้ใช้ที่ตรงกับ "${esc(q)}"</p>`; return; }
 
   const cnt = document.getElementById('usersCount'); if (cnt) cnt.textContent = `ผู้ใช้ทั้งหมด · ${list.length} บัญชี`;
@@ -2594,11 +2640,14 @@ function renderUsersTable(){
     const active = u.active !== false;
     const isSelf = currentUser && u.id === currentUser.id;
     const pairs = userScopePairs(u.id);
-    const scoped = u.role === 'SUPERVISOR' || u.role === 'ASSISTANT';
+    const isAdm = isAdminP(u);
     const statusBadge = `<span class="status-badge ${active?'approved':'rejected'}">${active?'ใช้งาน':'ปิดใช้งาน'}</span>`;
     const effApps = allowedApps(u);
     const nm = u.full_name || '–';
-    const roleCls = ({ADMIN:'r-admin',ASSISTANT:'r-asst',SUPERVISOR:'r-sup'})[u.role] || 'r-user';
+    const ulv = lvOf(u);
+    const roleCls = isAdm ? 'r-admin' : ulv >= 4 ? 'r-asst' : ulv >= 2 ? 'r-sup' : 'r-user';
+    const homeTxt = u.warehouse
+      ? `${esc(WH_PLAIN[u.warehouse]||u.warehouse)} · ${u.department ? esc(deptName(u.department, u.warehouse)) : '–'}` : '–';
     const head = (menu) => `
       <div class="uc-top">
         <span class="emp-avatar uc-av" aria-hidden="true">${esc(nm.trim().slice(0,1))}</span>
@@ -2609,51 +2658,52 @@ function renderUsersTable(){
           </div>
         </div>
         ${active ? '' : statusBadge}
-        <span class="role-pill ${roleCls}">${esc(u.role)}</span>
+        <span class="role-pill ${roleCls}">${esc(posLabel(u))}</span>
         ${menu || ''}
       </div>`;
 
     // ---- ASSISTANT: read-only card, no controls, no footer ----
     if (!full){
-      const scopeRO = u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
-        : scoped ? scopeSummary(pairs)
-        : (userDepts(u).length
-            ? userDepts(u).map(d=>deptBadge(d)).join(' ')
-            : '<span class="td-sub">–</span>');
       const appsRO = effApps.map(a=>`<span class="badge role">${APP_LABEL[a]||esc(a)}</span>`).join(' ')
-        + (Array.isArray(u.apps) && u.apps.length ? '' : ' <span class="td-sub">(ตาม role)</span>');
+        + (Array.isArray(u.apps) && u.apps.length ? '' : ' <span class="td-sub">(ตามตำแหน่ง)</span>');
       return `<article class="user-card ${active?'':'row-inactive'}">
         ${head('')}
         <div class="uc-fields">
-          <div class="uc-field"><span class="uc-lbl">คลัง × แผนก</span><div>${scopeRO}</div></div>
+          <div class="uc-field"><span class="uc-lbl">คลัง · แผนกหลัก</span><div>${homeTxt}</div></div>
+          <div class="uc-field"><span class="uc-lbl">สิทธิ์เสริม (คลัง×แผนก)</span><div>${scopeSummary(pairs)}</div></div>
           <div class="uc-field"><span class="uc-lbl">ระบบที่ใช้ได้</span><div>${appsRO}</div></div>
         </div>
       </article>`;
     }
 
-    const scopeCell = (scoped || u.role === 'ADMIN')
-      ? `<span class="td-sub" data-scope-admin ${u.role==='ADMIN'?'':'hidden'}>ทุกคลัง · ทุกแผนก</span><div data-scope-grid ${u.role==='ADMIN'?'hidden':''}>${scopeGridHTML(pairs, 'u-scope-cb')}</div>`
-      : u.role === 'ADMIN' ? '<span class="td-sub">ทุกคลัง · ทุกแผนก</span>'
-      : deptCheckboxes(userDepts(u), 'u-dept-cb');
+    const scopeCell = `<span class="td-sub" data-scope-admin ${isAdm?'':'hidden'}>ทุกคลัง · ทุกแผนก</span><div data-scope-grid ${isAdm?'hidden':''}>${scopeGridHTML(pairs, 'u-scope-cb')}</div>`;
     const menu = `<span class="uc-menu-wrap"><button type="button" class="ic-btn uc-kebab" data-kebab aria-haspopup="true" aria-expanded="false" aria-label="เมนูเพิ่มเติม" title="เมนูเพิ่มเติม">${IC_DOTS}</button>
         <div class="uc-menu" hidden role="menu">
           <button type="button" role="menuitem" data-reset-pass="${esc(u.id)}">รีเซ็ตรหัส</button>
           ${isSelf ? ''
             : `<button type="button" role="menuitem" data-toggle-user="${esc(u.id)}" data-next-active="${active?'false':'true'}">${active?'ปิดใช้งาน':'เปิดใช้งาน'}</button>`}
-          ${!isSelf && u.role !== 'ADMIN'
+          ${!isSelf && !isAdm
             ? `<button type="button" role="menuitem" class="danger" data-del-user="${esc(u.id)}">ลบถาวร</button>` : ''}
         </div></span>`;
     return `<article class="user-card ${active?'':'row-inactive'}" data-user-row="${esc(u.id)}">
       ${head(menu)}
       <details class="uc-edit">
-        <summary>แก้ไขสิทธิ์ · แผนก · ระบบ</summary>
+        <summary>แก้ไขตำแหน่ง · คลัง/แผนก · ระบบ</summary>
         <div class="uc-fields">
           <div class="uc-field">
-            <span class="uc-lbl">สิทธิ์</span>
-            <select class="mini-select" data-u-role ${isSelf?'disabled title="เปลี่ยนสิทธิ์ตัวเองไม่ได้"':''}>${roleOptions(u.role)}</select>
+            <span class="uc-lbl">ตำแหน่ง</span>
+            <select class="mini-select" data-u-pos ${isSelf?'disabled title="เปลี่ยนตำแหน่งตัวเองไม่ได้"':''}>${positionOptions(isAdm ? 'ADMIN' : u.position_id, true)}</select>
+          </div>
+          <div class="uc-field" data-home-block ${isAdm?'hidden':''}>
+            <span class="uc-lbl">คลังหลัก</span>
+            <select class="mini-select" data-u-wh>${whOptions(u.warehouse)}</select>
+          </div>
+          <div class="uc-field" data-home-block ${isAdm?'hidden':''}>
+            <span class="uc-lbl">แผนกหลัก</span>
+            <select class="mini-select" data-u-dept>${deptOptions(u.warehouse || WH_KEYS[0], u.department)}</select>
           </div>
           <div class="uc-field">
-            <span class="uc-lbl">คลัง × แผนก</span>
+            <span class="uc-lbl">สิทธิ์เสริม (คลัง×แผนก) · ไม่บังคับ</span>
             <div class="scope-cell">${scopeCell}</div>
           </div>
           <div class="uc-field">
@@ -2677,29 +2727,36 @@ async function saveUserRow(userId){
   if (!isUserAdminFull()) return;   // ASSISTANT view is read-only
   const row = document.querySelector(`[data-user-row="${userId}"]`);
   if (!row) return;
-  const role = row.querySelector('[data-u-role]').value;
-  const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
-
+  const posVal = row.querySelector('[data-u-pos]').value;
+  const wasAdmin = isAdminP(users.find(x=>x.id===userId));
+  const toAdmin = posVal === 'ADMIN';
+  const upd = {};
   let desiredScope = [];
-  let departments = null;
-  if (scoped){
+  if (toAdmin){
+    // Admin: no home / position; extra scope irrelevant
+    if (!wasAdmin) upd.role = 'ADMIN';
+    upd.position_id = null;
+  } else {
+    const position_id = Number(posVal);
+    const warehouse = row.querySelector('[data-u-wh]').value;
+    const department = row.querySelector('[data-u-dept]').value;
+    if (!position_id || !positions.some(x=>x.id===position_id)){ toast('เลือกตำแหน่ง'); return; }
+    if (!WH_KEYS.includes(warehouse) || !department){ toast('ต้องเลือกตำแหน่ง + คลังหลัก + แผนกหลัก'); return; }
     desiredScope = readScopeGrid(row, 'u-scope-cb');
-    if (!desiredScope.length){ toast('SUPERVISOR / ASSISTANT ต้องเลือกคลัง × แผนก อย่างน้อย 1 ช่อง'); return; }
-    departments = [...new Set(desiredScope.map(p=>p.department))];
-  } else if (role === 'USER'){
-    departments = [...row.querySelectorAll('.u-dept-cb:checked')].map(c=>c.value);
-    if (!departments.length){ toast('USER ต้องเลือกอย่างน้อย 1 ฝั่ง'); return; }
+    Object.assign(upd, { position_id, warehouse, department, departments: [department] });
+    // role of a non-admin is synced from the position by a DB trigger; only
+    // demoting a former ADMIN needs a role value (placeholder, trigger rewrites it)
+    if (wasAdmin) upd.role = 'USER';
   }
-  const department = departments && departments.length ? departments[0] : null;
 
   const appsChecked = [...row.querySelectorAll('.u-app-cb:checked')].map(c=>c.value);
   if (!appsChecked.length){ toast('เลือกระบบที่ใช้ได้อย่างน้อย 1 ระบบ (Skill Matrix / มือถือ)'); return; }
-  const apps = appsChecked;
+  upd.apps = appsChecked;
 
   const btn = row.querySelector('[data-save-user]');
   const label = btn.textContent; btn.textContent = '...'; btn.disabled = true;
   try{
-    const { error } = await sb.from('profiles').update({ role, department, departments, apps }).eq('id', userId);
+    const { error } = await sb.from('profiles').update(upd).eq('id', userId);
     if (error) throw error;
     // staff_scope diff — ADMIN / USER end up with desiredScope = [] -> all rows removed
     const { add, del } = diffScope(userId, desiredScope);
@@ -2799,15 +2856,21 @@ async function createUserFromForm(){
   const rawCode = document.getElementById('nuCode').value.trim();
   const full_name = document.getElementById('nuName').value.trim();
   const password = document.getElementById('nuPass').value;
-  const role = document.getElementById('nuRole').value;
-  const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
-  const grid = document.getElementById('nuScopeGrid');
-  const scope = readScopeGrid(grid, 'nu-scope-cb');
+  const posVal = document.getElementById('nuPos').value;
+  const isAdmNew = posVal === 'ADMIN';
+  const warehouse = document.getElementById('nuWh').value;
+  const department = document.getElementById('nuDept').value;
+  const scope = isAdmNew ? [] : readScopeGrid(document.getElementById('nuScopeGrid'), 'nu-scope-cb');
   const apps = [...document.querySelectorAll('#nuAppCbs .nu-app-cb:checked')].map(c=>c.value);
   if (!rawCode || !full_name || !password){ hint.textContent = 'กรอก รหัสพนักงาน / ชื่อ / รหัสผ่าน ให้ครบ'; return; }
   if (!employee_code){ hint.textContent = 'รูปแบบรหัสพนักงานไม่ถูกต้อง (ตัวอักษร/ตัวเลข/ขีด 3-20 ตัว)'; return; }
   if (password.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
-  if (scoped && !scope.length){ hint.textContent = 'SUPERVISOR / ASSISTANT ต้องเลือกคลัง × แผนก อย่างน้อย 1 ช่อง'; return; }
+  const position_id = Number(posVal);
+  if (!isAdmNew && !positions.some(x=>x.id===position_id && x.active!==false)){ hint.textContent = 'เลือกตำแหน่ง'; return; }
+  if (!isAdmNew && (!WH_KEYS.includes(warehouse) || !department)){ hint.textContent = 'ต้องเลือกตำแหน่ง + คลังหลัก + แผนกหลัก'; return; }
+  const payload = isAdmNew
+    ? { action: 'create', employee_code, password, full_name, role: 'ADMIN', scope: [], apps }
+    : { action: 'create', employee_code, password, full_name, role: 'USER', position_id, warehouse, department, departments: [department], scope, apps };
   hint.textContent = 'กำลังสร้างบัญชี...';
   try{
     const { data: { session } } = await sb.auth.getSession();
@@ -2818,7 +2881,7 @@ async function createUserFromForm(){
         'Authorization': 'Bearer ' + session.access_token,
         'apikey': SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ action: 'create', employee_code, password, full_name, role, scope, apps }),
+      body: JSON.stringify(payload),
     });
     const out = await res.json().catch(()=>({}));
     if (!res.ok || out.error) throw new Error(out.error || ('HTTP ' + res.status));
@@ -2834,9 +2897,13 @@ async function createUserFromForm(){
 // ---------- bulk create: one line per account, one shared initial password ----------
 function openBulkModal(){
   if (!isUserAdminFull()) return;
-  const role = document.getElementById('buRole');
-  if (!role.options.length){
-    role.innerHTML = roleOptions('USER');
+  // dropdowns = defaults for lines that omit the position / คลัง / แผนก column
+  const pos = document.getElementById('buPos');
+  pos.innerHTML = positionOptions(pos.value || (positions.find(x=>x.active!==false) || {}).id, true);
+  const bw = document.getElementById('buWh');
+  if (!bw.options.length){
+    bw.innerHTML = whOptions(WH_KEYS[0]);
+    document.getElementById('buDept').innerHTML = deptOptions(bw.value);
     document.getElementById('buAppCbs').innerHTML = ['erp','mobile'].map(a=>
       `<label class="dept-cb"><input type="checkbox" class="bu-app-cb" value="${a}"> ${APP_LABEL[a]}</label>`).join('');
   }
@@ -2853,14 +2920,18 @@ async function bulkCreateUsers(){
   const out = document.getElementById('buResults');
   const btn = document.getElementById('buSubmit');
   const password = document.getElementById('buPass').value;
-  const role = document.getElementById('buRole').value;
-  const scoped = role === 'SUPERVISOR' || role === 'ASSISTANT';
+  const defPos = document.getElementById('buPos').value;
+  const defWh = document.getElementById('buWh').value;
+  const defDept = document.getElementById('buDept').value;
   const scope = readScopeGrid(document.getElementById('buScopeGrid'), 'bu-scope-cb');
   const apps = [...document.querySelectorAll('#buAppCbs .bu-app-cb:checked')].map(c=>c.value);
   const lines = document.getElementById('buLines').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
   if (!lines.length){ hint.textContent = 'ใส่รายชื่ออย่างน้อย 1 บรรทัด'; return; }
   if (password.length < 8){ hint.textContent = 'รหัสผ่านต้องอย่างน้อย 8 ตัว'; return; }
-  if (scoped && !scope.length){ hint.textContent = 'SUPERVISOR / ASSISTANT ต้องเลือกคลัง × แผนก อย่างน้อย 1 ช่อง'; return; }
+  const lc = s => String(s||'').trim().toLowerCase();
+  const posByName = n => positions.find(x=>x.active!==false && lc(x.name)===lc(n));
+  const whByText = t => WH_KEYS.find(w=>lc(w)===lc(t) || lc(WH_PLAIN[w])===lc(t));
+  const deptByText = (wh, t) => deptKeysFor(wh).find(d=>lc(d)===lc(t) || lc(deptName(d, wh))===lc(t));
   btn.disabled = true; out.textContent = '';
   let ok = 0, bad = 0;
   const addLine = (good, text)=>{ out.textContent += (good ? '✓ ' : '✗ ') + text + '\n'; };
@@ -2868,11 +2939,25 @@ async function bulkCreateUsers(){
     const { data: { session } } = await sb.auth.getSession();
     for (let i = 0; i < lines.length; i++){
       hint.textContent = `กำลังสร้าง ${i+1}/${lines.length}...`;
-      const m = lines[i].match(/^(\S+)\s+(.+)$/);
+      // "รหัส ชื่อ-นามสกุล | ตำแหน่ง | คลัง | แผนก" (separator | , or tab; last 3 optional)
+      const cols = lines[i].split(/\s*[|\t,]\s*/);
+      const m = cols[0].match(/^(\S+)\s+(.+)$/);
       const employee_code = m ? normalizeEmpCode(m[1]) : '';
       const full_name = m ? m[2].trim() : '';
       if (!m){ bad++; addLine(false, `${lines[i]} — ต้องมีรหัสและชื่อ`); continue; }
       if (!employee_code){ bad++; addLine(false, `${m[1]} — รูปแบบรหัสพนักงานไม่ถูกต้อง`); continue; }
+      let body;
+      if (!cols[1] && defPos === 'ADMIN'){
+        body = { action: 'create', employee_code, password, full_name, role: 'ADMIN', scope: [], apps };
+      } else {
+        const px = cols[1] ? posByName(cols[1]) : positions.find(x=>x.id===Number(defPos));
+        if (!px){ bad++; addLine(false, `${employee_code} ${full_name} — ไม่พบตำแหน่ง "${cols[1]||defPos}"`); continue; }
+        const wh = cols[2] ? whByText(cols[2]) : defWh;
+        if (!wh){ bad++; addLine(false, `${employee_code} ${full_name} — คลัง "${cols[2]}" ไม่ถูกต้อง (A/B)`); continue; }
+        const dp = cols[3] ? deptByText(wh, cols[3]) : (deptKeysFor(wh).includes(defDept) ? defDept : null);
+        if (!dp){ bad++; addLine(false, `${employee_code} ${full_name} — ไม่พบแผนก "${cols[3]||defDept}" ในคลัง ${wh}`); continue; }
+        body = { action: 'create', employee_code, password, full_name, role: 'USER', position_id: px.id, warehouse: wh, department: dp, departments: [dp], scope, apps };
+      }
       try{
         const res = await fetch(ADMIN_USERS_FN, {
           method: 'POST',
@@ -2881,9 +2966,9 @@ async function bulkCreateUsers(){
             'Authorization': 'Bearer ' + session.access_token,
             'apikey': SUPABASE_ANON_KEY,
           },
-          body: JSON.stringify({ action: 'create', employee_code, password, full_name, role, scope, apps }),
+          body: JSON.stringify(body),
         });
-        const r = await res.json().catch(()=>({}));
+        const r =await res.json().catch(()=>({}));
         if (!res.ok || r.error) throw new Error(r.error || ('HTTP ' + res.status));
         ok++; addLine(true, `${employee_code} ${full_name}`);
       }catch(err){ bad++; addLine(false, `${employee_code} ${full_name} — ${err.message || err}`); }
@@ -2958,6 +3043,8 @@ function render(){
     renderTasksAdmin();
   } else if (activeView==='users'){
     renderUsersTable();
+  } else if (activeView==='positions'){
+    renderPositions();
   }
   writeHashState();
 }
@@ -3048,11 +3135,115 @@ showScreen('login');
   });
 })();
 
-// role change in user card: ADMIN hides scope grid, others show it
+// position change in user card: Admin hides home คลัง/แผนก + scope grid, others show them
 document.addEventListener('change', e => {
-  const sel = e.target.closest && e.target.closest('[data-u-role]'); if (!sel) return;
-  const card = sel.closest('[data-user-row]'); if (!card) return;
-  const isAdmin = sel.value === 'ADMIN';
-  card.querySelectorAll('[data-scope-admin]').forEach(el => el.hidden = !isAdmin);
-  card.querySelectorAll('[data-scope-grid]').forEach(el => el.hidden = isAdmin);
+  const t = e.target; if (!t || !t.closest) return;
+  const sel = t.closest('[data-u-pos]');
+  if (sel){
+    const card = sel.closest('[data-user-row]'); if (!card) return;
+    const isAdmin = sel.value === 'ADMIN';
+    card.querySelectorAll('[data-scope-admin]').forEach(el => el.hidden = !isAdmin);
+    card.querySelectorAll('[data-scope-grid]').forEach(el => el.hidden = isAdmin);
+    card.querySelectorAll('[data-home-block]').forEach(el => el.hidden = isAdmin);
+    return;
+  }
+  // home คลัง change -> refill that card's home แผนก list
+  const wh = t.closest('[data-u-wh]');
+  if (wh){
+    const card = wh.closest('[data-user-row]'); if (!card) return;
+    card.querySelector('[data-u-dept]').innerHTML = deptOptions(wh.value);
+    return;
+  }
+  if (t.id === 'nuWh'){ document.getElementById('nuDept').innerHTML = deptOptions(t.value); return; }
+  if (t.id === 'buWh'){ document.getElementById('buDept').innerHTML = deptOptions(t.value); return; }
+  if (t.id === 'nuPos'){ syncNewUserAdmin(); return; }
+});
+// create form: Admin has no home คลัง/แผนก and no extra scope
+function syncNewUserAdmin(){
+  const p = document.getElementById('nuPos'); if (!p) return;
+  document.querySelectorAll('#addUserForm .nu-nonadmin').forEach(el => el.hidden = p.value === 'ADMIN');
+}
+
+// ---------- ตำแหน่ง & LV (ADMIN only; direct writes, RLS is_admin) ----------
+function renderPositions(){
+  const tb = document.querySelector('#positionsTable tbody');
+  if (!tb) return;
+  const full = isUserAdminFull();
+  document.getElementById('addPositionForm').hidden = !full;
+  if (!full){ tb.innerHTML = ''; return; }
+  const cnt = new Map();
+  users.forEach(u=>{ if (u.position_id != null) cnt.set(u.position_id, (cnt.get(u.position_id)||0) + 1); });
+  const rows = positions.slice().sort((a,b)=> (a.sort-b.sort) || (a.lv-b.lv));
+  if (!rows.length){ tb.innerHTML = `<tr><td colspan="5" class="empty-note">ยังไม่มีตำแหน่ง</td></tr>`; return; }
+  tb.innerHTML = rows.map(p=>{
+    const on = p.active !== false, n = cnt.get(p.id) || 0;
+    const lvSel = [1,2,3,4,5].map(l=>`<option value="${l}" ${p.lv===l?'selected':''}>LV${l}</option>`).join('');
+    return `<tr class="${on?'':'row-inactive'}" data-pos-row="${esc(p.id)}">
+      <td><input type="text" class="code-input" data-pos-name value="${esc(p.name)}" maxlength="30" aria-label="ชื่อตำแหน่ง"></td>
+      <td><select class="mini-select" data-pos-lv aria-label="LV">${lvSel}</select></td>
+      <td><span class="status-badge ${on?'approved':'rejected'}">${on?'ใช้งาน':'ปิดใช้งาน'}</span></td>
+      <td class="mono">${n}</td>
+      <td>
+        <button type="button" class="mini-btn approve" data-pos-save="${esc(p.id)}">บันทึก</button>
+        <button type="button" class="mini-btn ${on?'reject':'approve'}" data-pos-toggle="${esc(p.id)}" data-next="${on?'false':'true'}">${on?'ปิดใช้งาน':'เปิดใช้งาน'}</button>
+        <button type="button" class="mini-btn reject" data-pos-del="${esc(p.id)}" ${n?`disabled title="มีผู้ใช้ ${n} คน — ลบไม่ได้"`:''}>ลบ</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+async function positionsRefresh(msg){
+  await Promise.all([loadPositions(), refreshUsers()]);
+  render();
+  if (msg) toast(msg, 'ok');
+}
+async function addPosition(){
+  if (!isUserAdminFull()) return;
+  const hint = document.getElementById('addPositionHint');
+  const name = document.getElementById('npName').value.trim();
+  const lv = Number(document.getElementById('npLv').value);
+  if (!name){ hint.textContent = 'กรอกชื่อตำแหน่ง'; return; }
+  if (!(lv >= 1 && lv <= 5)){ hint.textContent = 'เลือก LV 1-5'; return; }
+  if (positions.some(x=>x.name.toLowerCase() === name.toLowerCase())){ hint.textContent = 'มีชื่อตำแหน่งนี้แล้ว'; return; }
+  hint.textContent = '';
+  const sort = positions.reduce((m,x)=>Math.max(m, x.sort||0), 0) + 10;
+  const { error } = await sb.from('positions').insert({ name, lv, sort });
+  if (error){ toast('เพิ่มไม่สำเร็จ: ' + mapDbError(error)); return; }
+  document.getElementById('npName').value = '';
+  await positionsRefresh('เพิ่มตำแหน่งแล้ว');
+}
+async function savePosition(id){
+  if (!isUserAdminFull()) return;
+  const row = document.querySelector(`[data-pos-row="${id}"]`); if (!row) return;
+  const name = row.querySelector('[data-pos-name]').value.trim();
+  const lv = Number(row.querySelector('[data-pos-lv]').value);
+  if (!name){ toast('ชื่อตำแหน่งห้ามว่าง'); return; }
+  const { error } = await sb.from('positions').update({ name, lv }).eq('id', id);
+  if (error){ toast('บันทึกไม่สำเร็จ: ' + mapDbError(error)); return; }
+  await positionsRefresh('บันทึกแล้ว');
+}
+async function togglePosition(id, next){
+  if (!isUserAdminFull()) return;
+  if (!next){
+    const go = await confirmModal('ปิดใช้งานตำแหน่งนี้? สร้าง/ย้ายผู้ใช้ไปตำแหน่งนี้ไม่ได้อีก (ผู้ใช้เดิมยังอยู่)', { danger:true, yes:'ปิดใช้งาน' });
+    if (!go) return;
+  }
+  const { error } = await sb.from('positions').update({ active: next }).eq('id', id);
+  if (error){ toast('ทำรายการไม่สำเร็จ: ' + mapDbError(error)); return; }
+  await positionsRefresh();
+}
+async function deletePosition(id){
+  if (!isUserAdminFull()) return;
+  const p = positions.find(x=>String(x.id)===String(id));
+  if (users.some(u=>String(u.position_id)===String(id))){ toast('ลบไม่ได้: ยังมีผู้ใช้ในตำแหน่งนี้'); return; }
+  const go = await confirmModal(`ลบตำแหน่ง "${(p && p.name) || ''}" ถาวร?`, { danger:true, yes:'ลบถาวร' });
+  if (!go) return;
+  const { error } = await sb.from('positions').delete().eq('id', id);
+  if (error){ toast('ลบไม่สำเร็จ: ' + (error.code === '23503' ? 'ยังมีผู้ใช้ในตำแหน่งนี้' : mapDbError(error))); return; }
+  await positionsRefresh('ลบตำแหน่งแล้ว');
+}
+document.addEventListener('click', e=>{
+  const sv = e.target.closest('[data-pos-save]');   if (sv){ savePosition(sv.dataset.posSave); return; }
+  const tg = e.target.closest('[data-pos-toggle]'); if (tg){ togglePosition(tg.dataset.posToggle, tg.dataset.next === 'true'); return; }
+  const dl = e.target.closest('[data-pos-del]');    if (dl && !dl.disabled){ deletePosition(dl.dataset.posDel); return; }
+  if (e.target.closest('#createPositionBtn')){ addPosition(); return; }
 });

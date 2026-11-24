@@ -160,19 +160,40 @@ let currentUser = null;
 let realtimeChannel = null;
 
 const isAdmin = () => !!profile && profile.role === 'ADMIN';
-const isWorker = () => !!profile && profile.role === 'USER';
-const isSupervisorRole = () => !!profile && profile.role === 'SUPERVISOR';
-// A SUPERVISOR / ASSISTANT is scoped to (warehouse, department) pairs in
-// staff_scope; ADMIN is unscoped (everything).
-const myScopePairs = () => isAdmin()
-  ? WH_KEYS.flatMap(w => deptKeysFor(w).map(d => ({ warehouse:w, department:d })))
-  : myScope.map(s => ({ warehouse:s.warehouse, department:s.department }));
+// Positions (LV system): positions[id] = {id,name,lv,active,sort}. Non-admin
+// behaviour is driven by LV, never by profiles.role.
+let positions = {};
+const lvOf = p => (p && positions[p.position_id] && positions[p.position_id].lv) || 0;
+const myLv = () => lvOf(profile);
+const posLabel = p => {
+  if (!p) return '';
+  if (p.role === 'ADMIN') return 'Admin';
+  const pos = positions[p.position_id];
+  return pos ? `${pos.name} (LV${pos.lv})` : '';
+};
+const isWorker = () => !!profile && !isAdmin() && myLv() === 1;
+// LV2+ : opens/closes jobs for the team (the old SUPERVISOR flow)
+const isSupervisorRole = () => !!profile && !isAdmin() && myLv() >= 2;
+// LV3+ : also approves
+const canApproveRole = () => !!profile && !isAdmin() && myLv() >= 3;
+// Mirror of DB can_see: LV scope (LV5 all, LV4 home warehouse, LV1-3 home wh+dept)
+// plus staff_scope extras. UI only; DB is the truth.
+const myScopePairs = () => {
+  if (isAdmin()) return WH_KEYS.flatMap(w => deptKeysFor(w).map(d => ({ warehouse:w, department:d })));
+  const lv = myLv(), home = profile && profile.warehouse, out = [];
+  if (lv >= 5) WH_KEYS.forEach(w => deptKeysFor(w).forEach(d => out.push({ warehouse:w, department:d })));
+  else if (lv === 4 && home) deptKeysFor(home).forEach(d => out.push({ warehouse:home, department:d }));
+  else if (lv >= 1 && home && profile.department) out.push({ warehouse:home, department:profile.department });
+  myScope.forEach(s => out.push({ warehouse:s.warehouse, department:s.department }));
+  const seen = new Set();
+  return out.filter(p => { const k = p.warehouse+'|'+p.department; if (seen.has(k)) return false; seen.add(k); return true; });
+};
 const myWarehouses = () => [...new Set(myScopePairs().map(p=>p.warehouse))];
 const deptsForWh = wh => [...new Set(myScopePairs().filter(p=>p.warehouse===wh).map(p=>p.department))];
 const myDepts = () => {
   if (!profile) return [];
   if (isAdmin()) return deptKeysFor(null);
-  const fromScope = [...new Set(myScope.map(s=>s.department))];
+  const fromScope = [...new Set(myScopePairs().map(s=>s.department))];
   if (fromScope.length) return fromScope;
   if (Array.isArray(profile.departments) && profile.departments.length) return profile.departments;
   return profile.department ? [profile.department] : [];
@@ -213,12 +234,10 @@ function mapAuthError(err){
 }
 function showLogin(){ document.getElementById('loginOverlay').style.display='flex'; }
 function hideLogin(){ document.getElementById('loginOverlay').style.display='none'; }
-const ROLE_SHORT = { SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
-const ROLE_LABEL = { ADMIN:'ผู้ดูแลระบบ', ASSISTANT:'ผู้ช่วยผู้จัดการ', SUPERVISOR:'หัวหน้างาน', USER:'พนักงาน' };
 function refreshRoleBadge(){
   const whs = myWarehouses().join('/');
   const depts = myDepts().map(d=>deptName(d)).join(', ');
-  const label = isAdmin() ? 'ผู้ดูแลระบบ' : `คลัง ${whs} · ${depts} · ${ROLE_SHORT[profile.role]||''}`;
+  const label = isAdmin() ? 'ผู้ดูแลระบบ' : `คลัง ${whs} · ${depts} · ${posLabel(profile)}`;
   document.getElementById('roleBadge').textContent = label;
 }
 
@@ -226,6 +245,14 @@ async function loadProfile(user){
   const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
   if (error || !data) throw error || new Error('no-profile');
   return data;
+}
+async function loadPositions(){
+  try{
+    const { data, error } = await sb.from('positions').select('id,name,lv,active,sort');
+    if (error) throw error;
+    positions = {};
+    (data || []).forEach(r => { positions[r.id] = r; });
+  }catch(e){ /* keep previous */ }
 }
 async function loadMyScope(){
   if (isAdmin()){ myScope = []; return; }
@@ -242,7 +269,7 @@ function allowedApps(p){
   if (p && Array.isArray(p.apps) && p.apps.length) return p.apps;
   if (!p) return [];
   if (p.role === 'ADMIN') return ['erp','mobile'];
-  if (p.role === 'ASSISTANT') return ['erp'];
+  if (lvOf(p) >= 3) return ['erp','mobile'];
   return ['mobile'];
 }
 
@@ -257,6 +284,13 @@ async function afterLogin(user){
   }
   if (profile.active === false){
     document.getElementById('loginHint').textContent = 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+    await sb.auth.signOut();
+    profile = null;
+    return;
+  }
+  await loadPositions();
+  if (!isAdmin() && myLv() === 0){
+    document.getElementById('loginHint').textContent = 'บัญชีนี้ยังไม่มีตำแหน่ง กรุณาติดต่อผู้ดูแลระบบ';
     await sb.auth.signOut();
     profile = null;
     return;
@@ -390,7 +424,7 @@ function openProfileModal(){
   if (!profile) return;
   document.getElementById('pmName').textContent  = profile.full_name || '–';
   document.getElementById('pmCode').textContent  = profile.employee_code || '–';
-  document.getElementById('pmRole').textContent  = ROLE_LABEL[profile.role] || profile.role || '–';
+  document.getElementById('pmRole').textContent  = posLabel(profile) || profile.role || '–';
   document.getElementById('pmHint').textContent = '';
   const bd = document.getElementById('pwBackdrop');
   bd.classList.add('open');
@@ -451,10 +485,11 @@ function navForRole(){
     {id:'new', label:'งานของฉัน', icon:'bolt'},
     {id:'history', label:'ประวัติ', icon:'chart'},
   ];
-  // SUPERVISOR: record work directly — open a job (log start), close it (log end).
+  // LV2+: record work directly — open a job (log start), close it (log end). LV3+ also approves.
   return [
     {id:'new', label:'เปิดงาน', icon:'bolt'},
     {id:'openjobs', label:'งานเปิดอยู่', icon:'clock'},
+    ...(canApproveRole() ? [{id:'approve', label:'อนุมัติ', icon:'check'}] : []),
     {id:'tasks', label:'ชนิดงาน', icon:'box'},
     {id:'manage', label:'คนงาน', icon:'users'},
     {id:'history', label:'ประวัติ', icon:'chart'},
@@ -1652,7 +1687,7 @@ function render(){
     } else if (isWorker() && workerStep!=='success'){
       renderWorkerHome();
     }
-  } else if (activeTab==='approve' && isSupervisorRole()){
+  } else if (activeTab==='approve' && canApproveRole()){
     refreshPendingApprovals().then(renderApproveQueue);
   } else if (activeTab==='openjobs' && isSupervisorRole()){
     if (openjobsSub==='list') refreshOpenJobs().then(renderOpenJobs);

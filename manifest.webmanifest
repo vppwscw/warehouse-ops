@@ -7,7 +7,7 @@
   "start_url": "./auth/login?source=pwa",
   "scope": "./",
   "display": "standalone",
-  "orientation": "any",
+  "orientation": "portrait",
   "background_color": "#EDF0F3",
   "theme_color": "#1B5E8C",
   "icons": [

@@ -586,7 +586,7 @@ function renderStep2(){
       </div>`;
     }).join('') + (canAdd ? addBtn : '')
     : (canAdd
-      ? `<div class="empty-roster-inline job-empty"><b>ยังไม่มีแม่แบบงาน</b>${addBtn}</div>`
+      ? `<div class="empty-roster-inline job-empty"><b>ยังไม่มีงานในแผนกนี้</b>เริ่มจากสร้างกลุ่มงาน แล้วตั้งชื่องาน<button type="button" class="job-add" data-add-template>+ สร้างกลุ่มงานแรก</button></div>`
       : `<div class="empty-roster-inline">ยังไม่มีงานในแผนกนี้ ติดต่อหัวหน้า</div>`);
 }
 
@@ -832,6 +832,10 @@ function refreshTaskGroupUi(){
   const rows = taskModalScopeRows();
   const groups = [...new Set(rows.map(r=>r.group || DEFAULT_GROUP))].sort((a,b)=>a.localeCompare(b,'th'));
   if (taskGroupPick && taskGroupPick !== NEW_GROUP && !groups.includes(taskGroupPick)) taskGroupPick = null;
+  // nothing in this department yet: the first thing to make is a group
+  if (!groups.length && !taskGroupPick) taskGroupPick = NEW_GROUP;
+  const gl = document.getElementById('t-group-label');
+  if (gl) gl.textContent = groups.length ? '1. กลุ่มงาน (เลือก หรือสร้างใหม่)' : '1. สร้างกลุ่มงานก่อน';
   document.getElementById('t-group-chips').innerHTML =
     groups.map(g=>`<button type="button" class="chip" data-task-group="${esc(g)}" aria-pressed="${taskGroupPick===g}">${esc(g)}</button>`).join('') +
     `<button type="button" class="chip" data-task-group-new aria-pressed="${taskGroupPick===NEW_GROUP}">+ กลุ่มใหม่</button>`;
@@ -880,7 +884,7 @@ function openAddTaskModal(lock){
   } else if (ttl) ttl.textContent = 'เพิ่มชนิดงานใหม่';
   document.getElementById('addTaskBackdrop').classList.add('open');
   document.getElementById('addTaskModal').classList.add('open');
-  setTimeout(()=>document.getElementById('t-name').focus(), 50);
+  setTimeout(()=>document.getElementById(taskGroupPick === NEW_GROUP ? 't-group-new' : 't-name').focus(), 50);
 }
 function closeAddTaskModal(){
   document.getElementById('addTaskBackdrop').classList.remove('open');
@@ -911,8 +915,13 @@ document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
     await loadTasksFromDb();
     if (lock){
       closeAddTaskModal();
-      if (activeStep===2) renderStep2();
-      toast(`เพิ่ม "${name}" แล้ว`, 'ok');
+      toast(`เพิ่ม "${name}" แล้ว · เลือกคนต่อได้เลย`, 'ok');
+      // made from step 2: carry on with the new task -> pick crew -> set time
+      if (activeStep===2 && taskById(id)){
+        oTaskVal = id; crew = []; activeStep = 3;
+        doneFieldsBuiltForTask = null;
+        renderStep3(); renderScreens();
+      } else if (activeStep===2) renderStep2();
     } else setTimeout(closeAddTaskModal, 500);
   }catch(err){
     const denied = err && (err.code === '42501' || /row-level security|permission/i.test(err.message||''));

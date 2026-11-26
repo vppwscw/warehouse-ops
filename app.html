@@ -161,17 +161,17 @@
   <div class="field" style="margin-bottom:12px;"><label for="t-name">2. ชื่องาน</label><input id="t-name" placeholder="เช่น นำรถลงจากตู้"><div class="field-warn" id="t-name-warn" hidden></div></div>
   <div class="field" style="margin-bottom:12px;">
     <label for="t-unit">3. หน่วยที่นับ (ว่างไว้ = "จำนวน")</label>
-    <input id="t-unit" list="t-unit-presets" placeholder="จำนวน">
-    <datalist id="t-unit-presets">
-      <option value="ยอดตู้เข้า"></option>
-      <option value="จำนวนตู้"></option>
-      <option value="จำนวนคัน"></option>
-      <option value="จำนวนพาเลท"></option>
-      <option value="จำนวนกล่อง"></option>
-      <option value="จำนวนชิ้น"></option>
-      <option value="เที่ยว"></option>
-      <option value="ครั้ง"></option>
-    </datalist>
+    <div class="group-chips" id="t-unit-chips">
+      <button type="button" class="chip" data-unit="ยอดตู้เข้า" aria-pressed="false">ยอดตู้เข้า</button>
+      <button type="button" class="chip" data-unit="จำนวนตู้" aria-pressed="false">จำนวนตู้</button>
+      <button type="button" class="chip" data-unit="จำนวนคัน" aria-pressed="false">จำนวนคัน</button>
+      <button type="button" class="chip" data-unit="จำนวนพาเลท" aria-pressed="false">จำนวนพาเลท</button>
+      <button type="button" class="chip" data-unit="จำนวนกล่อง" aria-pressed="false">จำนวนกล่อง</button>
+      <button type="button" class="chip" data-unit="จำนวนชิ้น" aria-pressed="false">จำนวนชิ้น</button>
+      <button type="button" class="chip" data-unit="เที่ยว" aria-pressed="false">เที่ยว</button>
+      <button type="button" class="chip" data-unit="ครั้ง" aria-pressed="false">ครั้ง</button>
+    </div>
+    <input id="t-unit" placeholder="หรือพิมพ์หน่วยเอง" maxlength="40" style="margin-top:8px;">
   </div>
   <div class="field" style="margin-bottom:12px;">
     <label for="t-fixed">4. จำนวนต่อครั้ง (ว่างไว้ = กรอกเองทุกครั้ง)</label>
@@ -211,6 +211,6 @@
 <footer class="build-footer">Skill Matrix &middot; production build</footer>
 
 <script src="js/supabase-config.js?v=4"></script>
-<script src="js/mobile.js?v=46"></script>
+<script src="js/mobile.js?v=47"></script>
 </body>
 </html>

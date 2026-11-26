@@ -848,11 +848,24 @@ function refreshTaskGroupUi(){
   warn.textContent = st === 'dup' ? 'มีงานชื่อนี้แล้ว' : (st === 'similar' ? 'มีงานชื่อใกล้เคียงอยู่แล้ว ตรวจสอบก่อนเพิ่ม' : '');
   document.getElementById('taskSubmitBtn').disabled = st === 'dup';
 }
+function syncUnitChips(){
+  const v = (document.getElementById('t-unit').value || '').trim();
+  document.querySelectorAll('#t-unit-chips [data-unit]').forEach(c=>c.setAttribute('aria-pressed', String(c.dataset.unit === v)));
+}
 let taskModalWired = false;
 function wireTaskModalInputs(){
   if (taskModalWired) return;
   taskModalWired = true;
   document.getElementById('t-name').addEventListener('input', refreshTaskGroupUi);
+  // unit: tap a chip (tap again to clear) or type your own
+  const unitIn = document.getElementById('t-unit');
+  document.getElementById('t-unit-chips').addEventListener('click', e=>{
+    const c = e.target.closest('[data-unit]');
+    if (!c) return;
+    unitIn.value = unitIn.value === c.dataset.unit ? '' : c.dataset.unit;
+    syncUnitChips();
+  });
+  unitIn.addEventListener('input', syncUnitChips);
   document.getElementById('t-wh').addEventListener('change', ()=>setTimeout(refreshTaskGroupUi, 0));
   document.getElementById('t-dept').addEventListener('change', refreshTaskGroupUi);
   document.getElementById('t-group-chips').addEventListener('click', e=>{
@@ -867,6 +880,7 @@ function openAddTaskModal(lock){
   addTaskLock = (lock && lock.wh && lock.dept) ? lock : null;
   document.getElementById('t-name').value='';
   const tu = document.getElementById('t-unit'); if (tu) tu.value='';
+  syncUnitChips();
   const tq = document.getElementById('t-fixed'); if (tq) tq.value='';
   document.getElementById('taskHint').textContent='';
   fillWhSelect('t-wh', 't-wh-field');

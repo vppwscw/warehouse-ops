@@ -16,7 +16,7 @@
 <script src="js/pwa.js" data-sw="sw.js"></script>
 <script src="js/gateway.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/mobile.css?v=27">
+<link rel="stylesheet" href="css/mobile.css?v=28">
 </head>
 <body>
 
@@ -154,13 +154,21 @@
   <div class="field" id="t-wh-field" hidden style="margin-bottom:12px;"><label for="t-wh">คลัง</label><select id="t-wh"></select></div>
   <div class="field" id="t-dept-field" hidden style="margin-bottom:12px;"><label for="t-dept">ฝั่ง</label><select id="t-dept"></select></div>
   <div class="field" style="margin-bottom:12px;">
-    <label id="t-group-label">1. กลุ่มงาน</label>
+    <label id="t-group-label">กลุ่มงาน</label>
     <div class="group-chips" id="t-group-chips"></div>
     <input id="t-group-new" placeholder="ชื่อกลุ่มใหม่ เช่น Devanning" maxlength="60" hidden style="margin-top:8px;">
   </div>
-  <div class="field" style="margin-bottom:12px;"><label for="t-name">2. ชื่องาน</label><input id="t-name" placeholder="เช่น นำรถลงจากตู้"><div class="field-warn" id="t-name-warn" hidden></div></div>
+  <button type="button" class="btn" id="groupNextBtn">ถัดไป</button>
+  <button type="button" class="btn ghost" data-task-close>ยกเลิก</button>
+  <p class="hint" id="groupHint"></p>
+</div>
+
+<div class="modal-backdrop stack" id="addTask2Backdrop"></div>
+<div class="modal-card stack" id="addTask2Modal">
+  <div class="modal-title" id="t2Title">งานในกลุ่มนี้</div>
+  <div class="field" style="margin-bottom:12px;"><label for="t-name">ชื่องานของกลุ่มงานนี้</label><input id="t-name" placeholder="เช่น นำรถลงจากตู้"><div class="field-warn" id="t-name-warn" hidden></div></div>
   <div class="field" style="margin-bottom:12px;">
-    <label for="t-unit">3. หน่วยที่นับ (ว่างไว้ = "จำนวน")</label>
+    <label for="t-unit">ชนิดของหน่วย (ว่างไว้ = "จำนวน")</label>
     <div class="group-chips" id="t-unit-chips">
       <button type="button" class="chip" data-unit="ยอดตู้เข้า" aria-pressed="false">ยอดตู้เข้า</button>
       <button type="button" class="chip" data-unit="จำนวนตู้" aria-pressed="false">จำนวนตู้</button>
@@ -174,11 +182,11 @@
     <input id="t-unit" placeholder="หรือพิมพ์หน่วยเอง" maxlength="40" style="margin-top:8px;">
   </div>
   <div class="field" style="margin-bottom:12px;">
-    <label for="t-fixed">4. จำนวนต่อครั้ง (ว่างไว้ = กรอกเองทุกครั้ง)</label>
+    <label for="t-fixed">จำนวนต่อครั้ง (ว่างไว้ = กรอกเองทุกครั้ง)</label>
     <input id="t-fixed" type="number" min="1" inputmode="numeric" placeholder="เช่น 50">
   </div>
-  <button type="button" class="btn" id="taskSubmitBtn">+ เพิ่มชนิดงาน</button>
-  <button type="button" class="btn ghost" data-task-close>ยกเลิก</button>
+  <button type="button" class="btn" id="taskSubmitBtn">บันทึก</button>
+  <button type="button" class="btn ghost" id="groupOnlyBtn">ปิด · บันทึกเฉพาะกลุ่มงาน</button>
   <p class="hint" id="taskHint"></p>
 </div>
 
@@ -211,6 +219,6 @@
 <footer class="build-footer">Skill Matrix &middot; production build</footer>
 
 <script src="js/supabase-config.js?v=4"></script>
-<script src="js/mobile.js?v=47"></script>
+<script src="js/mobile.js?v=48"></script>
 </body>
 </html>

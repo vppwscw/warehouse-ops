@@ -2118,6 +2118,11 @@ async function renameTaskGroup(wh, dept, oldName, newName){
     q = oldName === TASK_DEFAULT_GROUP ? q.is('task_group', null) : q.eq('task_group', oldName);
     const { error } = await q;
     if (error) throw error;
+    // groups saved without tasks live in task_groups (mobile app); keep the name in step
+    if (oldName !== TASK_DEFAULT_GROUP){
+      if (newName === TASK_DEFAULT_GROUP) await sb.from('task_groups').delete().eq('warehouse', wh).eq('department', dept).eq('name', oldName);
+      else await sb.from('task_groups').update({ name: newName }).eq('warehouse', wh).eq('department', dept).eq('name', oldName);
+    }
     await refreshTasksAdmin(); await loadTasksFromDb(); render();
     toast('เปลี่ยนชื่อกลุ่มแล้ว', 'ok');
   }catch(err){ toast('เปลี่ยนชื่อกลุ่มไม่สำเร็จ: ' + mapDbError(err)); }

@@ -436,6 +436,24 @@ async function loadTasksFromDb(){
     }
   }catch(e){ /* keep fallback */ }
   Object.keys(TASKS).forEach(d => TASKS[d].forEach(t => t.dept = d));
+  await loadTaskGroups();
+}
+
+// groups can exist before any task (table task_groups); missing table = none
+let TASK_GROUPS = [];
+async function loadTaskGroups(){
+  try{
+    const { data, error } = await sb.from('task_groups').select('warehouse,department,name');
+    if (error) throw error;
+    TASK_GROUPS = (data || []).map(g=>({ wh:g.warehouse, dept:g.department, name:String(g.name).trim() })).filter(g=>g.name);
+  }catch(e){ TASK_GROUPS = []; }
+}
+const savedGroupsFor = (wh, dept) => TASK_GROUPS.filter(g=>g.wh===wh && g.dept===dept).map(g=>g.name);
+async function saveTaskGroup(wh, dept, name){
+  if (!name || name === DEFAULT_GROUP || savedGroupsFor(wh, dept).includes(name)) return;
+  const { error } = await sb.from('task_groups').insert({ warehouse: wh, department: dept, name });
+  if (error && error.code !== '23505') throw error;   // 23505 = already there
+  TASK_GROUPS.push({ wh, dept, name });
 }
 
 // ================= NAV (role-dependent, built after login) =================
@@ -569,14 +587,22 @@ function renderStep2(){
   const byGroup = {};
   whTasks.forEach(t=>{ const g = t.group || DEFAULT_GROUP; (byGroup[g] = byGroup[g] || []).push(t); });
   const cmp = (a,b)=>String(a).localeCompare(String(b), 'th');
+  savedGroupsFor(oWhVal, oDeptVal).forEach(g=>{ byGroup[g] = byGroup[g] || []; });  // groups with no task yet
   const groupNames = Object.keys(byGroup).sort(cmp);
   const allOpen = whTasks.length <= 6;
   let n = 0;
-  document.getElementById('jobChoiceList').innerHTML = whTasks.length
+  document.getElementById('jobChoiceList').innerHTML = groupNames.length
     ? groupNames.map(g=>{
       const items = byGroup[g].slice().sort((a,b)=>cmp(a.label, b.label));
-      return `<div class="jg${allOpen?' open':''}">
-        <button type="button" class="jg-head" data-toggle-group aria-expanded="${allOpen}"><span class="jg-name">${esc(g)}</span><span class="jg-count">${items.length}</span><span class="jg-chev">${ICONS.chev}</span></button>
+      const open = allOpen || !items.length;
+      if (!items.length) return `<div class="jg${open?' open':''}">
+        <button type="button" class="jg-head" data-toggle-group aria-expanded="${open}"><span class="jg-name">${esc(g)}</span><span class="jg-count">0</span><span class="jg-chev">${ICONS.chev}</span></button>
+        <div class="jg-body">${canAdd
+          ? `<button type="button" class="job-add" data-add-in-group="${esc(g)}">+ เพิ่มชื่องานในกลุ่มนี้</button>`
+          : `<div class="empty-roster-inline">ยังไม่มีงานในกลุ่มนี้</div>`}</div>
+      </div>`;
+      return `<div class="jg${open?' open':''}">
+        <button type="button" class="jg-head" data-toggle-group aria-expanded="${open}"><span class="jg-name">${esc(g)}</span><span class="jg-count">${items.length}</span><span class="jg-chev">${ICONS.chev}</span></button>
         <div class="jg-body">${items.map(t=>`
       <button type="button" class="job-choice" data-pick-task="${esc(t.id)}">
         <span class="pill-n">${String(++n).padStart(2,'0')}</span>
@@ -828,19 +854,27 @@ function taskNameState(){
   }
   return state;
 }
+function scopeGroups(){
+  const { wh, dept } = taskModalScope();
+  const set = new Set(taskModalScopeRows().map(r=>r.group || DEFAULT_GROUP));
+  savedGroupsFor(wh, dept).forEach(g=>set.add(g));
+  return [...set].sort((a,b)=>a.localeCompare(b,'th'));
+}
 function refreshTaskGroupUi(){
-  const rows = taskModalScopeRows();
-  const groups = [...new Set(rows.map(r=>r.group || DEFAULT_GROUP))].sort((a,b)=>a.localeCompare(b,'th'));
+  const groups = scopeGroups();
   if (taskGroupPick && taskGroupPick !== NEW_GROUP && !groups.includes(taskGroupPick)) taskGroupPick = null;
   // nothing in this department yet: the first thing to make is a group
   if (!groups.length && !taskGroupPick) taskGroupPick = NEW_GROUP;
   const gl = document.getElementById('t-group-label');
-  if (gl) gl.textContent = groups.length ? '1. กลุ่มงาน (เลือก หรือสร้างใหม่)' : '1. สร้างกลุ่มงานก่อน';
+  if (gl) gl.textContent = groups.length ? 'กลุ่มงาน (เลือก หรือสร้างใหม่)' : 'ตั้งชื่อกลุ่มงานก่อน';
   document.getElementById('t-group-chips').innerHTML =
     groups.map(g=>`<button type="button" class="chip" data-task-group="${esc(g)}" aria-pressed="${taskGroupPick===g}">${esc(g)}</button>`).join('') +
     `<button type="button" class="chip" data-task-group-new aria-pressed="${taskGroupPick===NEW_GROUP}">+ กลุ่มใหม่</button>`;
   const gi = document.getElementById('t-group-new');
   gi.hidden = taskGroupPick !== NEW_GROUP;
+  document.getElementById('groupHint').textContent = '';
+}
+function refreshTaskNameUi(){
   const st = taskNameState();
   const warn = document.getElementById('t-name-warn');
   warn.hidden = !st;
@@ -856,7 +890,7 @@ let taskModalWired = false;
 function wireTaskModalInputs(){
   if (taskModalWired) return;
   taskModalWired = true;
-  document.getElementById('t-name').addEventListener('input', refreshTaskGroupUi);
+  document.getElementById('t-name').addEventListener('input', refreshTaskNameUi);
   // unit: tap a chip (tap again to clear) or type your own
   const unitIn = document.getElementById('t-unit');
   document.getElementById('t-unit-chips').addEventListener('click', e=>{
@@ -876,17 +910,16 @@ function wireTaskModalInputs(){
     if (taskGroupPick === NEW_GROUP) document.getElementById('t-group-new').focus();
   });
 }
-function openAddTaskModal(lock){
+// Card 1: name / pick the group -> "ถัดไป" -> card 2 stacked on top:
+// task name, unit, qty -> "บันทึก"; or close and keep just the (new) group.
+let pendingGroup = null;      // group chosen in card 1
+let pendingGroupIsNew = false;
+function openAddTaskModal(lock, presetGroup){
   addTaskLock = (lock && lock.wh && lock.dept) ? lock : null;
-  document.getElementById('t-name').value='';
-  const tu = document.getElementById('t-unit'); if (tu) tu.value='';
-  syncUnitChips();
-  const tq = document.getElementById('t-fixed'); if (tq) tq.value='';
-  document.getElementById('taskHint').textContent='';
   fillWhSelect('t-wh', 't-wh-field');
   wireWhDeptLink('t-wh', 't-dept', 't-dept-field');
   fillDeptSelect('t-dept', 't-dept-field', 't-wh');
-  taskGroupPick = null;
+  taskGroupPick = presetGroup || null;
   document.getElementById('t-group-new').value = '';
   wireTaskModalInputs();
   refreshTaskGroupUi();
@@ -894,29 +927,72 @@ function openAddTaskModal(lock){
   if (addTaskLock){
     document.getElementById('t-wh-field').hidden = true;
     document.getElementById('t-dept-field').hidden = true;
-    if (ttl) ttl.textContent = `เพิ่มแม่แบบงาน · ${WH_PLAIN[addTaskLock.wh]||addTaskLock.wh} · ${deptName(addTaskLock.dept, addTaskLock.wh)}`;
-  } else if (ttl) ttl.textContent = 'เพิ่มชนิดงานใหม่';
+    if (ttl) ttl.textContent = `เพิ่มแม่แบบ · ${WH_PLAIN[addTaskLock.wh]||addTaskLock.wh} · ${deptName(addTaskLock.dept, addTaskLock.wh)}`;
+  } else if (ttl) ttl.textContent = 'เพิ่มแม่แบบ';
   document.getElementById('addTaskBackdrop').classList.add('open');
   document.getElementById('addTaskModal').classList.add('open');
-  setTimeout(()=>document.getElementById(taskGroupPick === NEW_GROUP ? 't-group-new' : 't-name').focus(), 50);
+  if (presetGroup){ goTaskStage2(); return; }
+  if (taskGroupPick === NEW_GROUP) setTimeout(()=>document.getElementById('t-group-new').focus(), 50);
+}
+function goTaskStage2(){
+  const hint = document.getElementById('groupHint');
+  let grp = chosenTaskGroup();
+  if (!grp){ hint.textContent = taskGroupPick === NEW_GROUP ? 'พิมพ์ชื่อกลุ่มใหม่ก่อน' : 'เลือกกลุ่มงานก่อน'; return; }
+  const existing = scopeGroups();
+  const same = existing.find(g=>normTaskName(g) === normTaskName(grp));
+  if (same) grp = same;                       // typed a name that already exists: use it
+  pendingGroup = grp;
+  pendingGroupIsNew = !same;
+  document.getElementById('t2Title').textContent = `งานในกลุ่ม "${grp}"`;
+  document.getElementById('t-name').value = '';
+  document.getElementById('t-unit').value = '';
+  syncUnitChips();
+  document.getElementById('t-fixed').value = '';
+  document.getElementById('taskHint').textContent = '';
+  document.getElementById('groupOnlyBtn').textContent = pendingGroupIsNew ? 'ปิด · บันทึกเฉพาะกลุ่มงาน' : 'ปิด';
+  refreshTaskNameUi();
+  document.getElementById('addTask2Backdrop').classList.add('open');
+  document.getElementById('addTask2Modal').classList.add('open');
+  setTimeout(()=>document.getElementById('t-name').focus(), 50);
+}
+function closeTaskStage2(){
+  document.getElementById('addTask2Backdrop').classList.remove('open');
+  document.getElementById('addTask2Modal').classList.remove('open');
 }
 function closeAddTaskModal(){
+  closeTaskStage2();
   document.getElementById('addTaskBackdrop').classList.remove('open');
   document.getElementById('addTaskModal').classList.remove('open');
 }
+document.getElementById('groupNextBtn').addEventListener('click', goTaskStage2);
+document.getElementById('groupOnlyBtn').addEventListener('click', async ()=>{
+  if (!pendingGroupIsNew){ closeAddTaskModal(); return; }
+  const { wh, dept } = taskModalScope();
+  const hint = document.getElementById('taskHint');
+  hint.textContent = 'กำลังบันทึกกลุ่ม...';
+  try{
+    await saveTaskGroup(wh, dept, pendingGroup);
+    closeAddTaskModal();
+    toast(`บันทึกกลุ่ม "${pendingGroup}" แล้ว · เพิ่มชื่องานทีหลังได้`, 'ok');
+    if (activeStep===2) renderStep2();
+  }catch(err){
+    const denied = err && (err.code === '42501' || /row-level security|permission/i.test(err.message||''));
+    hint.textContent = denied ? 'คุณไม่มีสิทธิ์เพิ่มกลุ่มในแผนกนี้' : 'บันทึกกลุ่มไม่สำเร็จ: ' + mapDbError(err);
+  }
+});
 document.getElementById('taskSubmitBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('t-name').value.trim();
   const hint = document.getElementById('taskHint');
-  if (!name){ hint.textContent = 'พิมพ์ชื่องานก่อน'; return; }
+  if (!name){ hint.textContent = 'พิมพ์ชื่องานก่อน หรือกด "ปิด" ถ้ายังไม่มีชื่องาน'; return; }
   const lock = addTaskLock;
-  const wh = lock ? lock.wh : pickedWh('t-wh');
-  const dept = lock ? lock.dept : pickedDept('t-dept', 't-wh');
+  const { wh, dept } = taskModalScope();
   if (taskNameState() === 'dup'){ hint.textContent = 'มีงานชื่อนี้แล้ว'; return; }
-  const grp = chosenTaskGroup();
-  if (!grp){ hint.textContent = taskGroupPick === NEW_GROUP ? 'พิมพ์ชื่อกลุ่มใหม่ก่อน' : 'เลือกกลุ่มงานก่อน'; return; }
+  const grp = pendingGroup;
+  if (!grp){ closeTaskStage2(); return; }
   const taskGroup = grp === DEFAULT_GROUP ? null : grp;
   hint.textContent = 'กำลังเพิ่ม...';
   try{
+    if (pendingGroupIsNew){ try{ await saveTaskGroup(wh, dept, grp); }catch(e){ /* the task still carries its group */ } }
     const id = wh.toLowerCase() + '_' + dept.toLowerCase() + '_' + Date.now();
     const unitLabel = (document.getElementById('t-unit')?.value || '').trim() || null;
     const fixedRaw = (document.getElementById('t-fixed')?.value || '').trim();
@@ -1132,10 +1208,16 @@ document.addEventListener('click', async (e)=>{
   }
 
   if (e.target.closest('#toggleAddTaskLink')){ openAddTaskModal(); return; }
+  const addInGroup = e.target.closest('[data-add-in-group]');
+  if (addInGroup){
+    if (isAdmin() || isSupervisorRole()) openAddTaskModal({ wh: oWhVal, dept: oDeptVal }, addInGroup.dataset.addInGroup);
+    return;
+  }
   if (e.target.closest('[data-add-template]')){
     if (isAdmin() || isSupervisorRole()) openAddTaskModal({ wh: oWhVal, dept: oDeptVal });
     return;
   }
+  if (e.target.closest('#addTask2Backdrop')){ closeTaskStage2(); return; }
   if (e.target.closest('#addTaskBackdrop') || e.target.closest('[data-task-close]')){ closeAddTaskModal(); return; }
 
   const rosterFilter = e.target.closest('[data-roster-filter]');

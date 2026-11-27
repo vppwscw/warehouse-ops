@@ -442,7 +442,7 @@ function renderNav(){
   document.getElementById('gearBtn').hidden = !adm;
   document.getElementById('exportCsvBtn').hidden = !adm;
   document.getElementById('navList').innerHTML = items.map(n=>`
-  <button type="button" class="navbtn" data-view="${n.id}" aria-current="${n.id===activeView}">
+  <button type="button" class="navbtn" data-view="${n.id}" data-tip="${n.label}" aria-current="${n.id===activeView}">
     <span class="nav-ic">${ICONS[n.icon]}</span><span class="nav-tx">${n.label}</span>
   </button>`).join('');
   document.getElementById('botNav').innerHTML = items.map(n=>`
@@ -456,6 +456,7 @@ document.getElementById('deniedLockIcon').innerHTML = ICONS.lock;
 // account actions — give each a glyph + label, then dock the row into the
 // sidebar bottom on tablet/desktop, or leave it in the page header on phones
 // (where the sidebar is replaced by the bottom tab bar).
+document.getElementById('gearBtn').dataset.tip = 'ผู้ใช้งานระบบ'; document.getElementById('exportCsvBtn').dataset.tip = 'ส่งออก CSV'; document.getElementById('changePwBtn').dataset.tip = 'โปรไฟล์ของฉัน'; document.getElementById('logoutBtn').dataset.tip = 'ออกจากระบบ';
 document.getElementById('gearBtn').innerHTML      = ICONS.gear     + '<span class="act-tx">ผู้ใช้งานระบบ</span>';
 document.getElementById('exportCsvBtn').innerHTML = ICONS.download + '<span class="act-tx">ส่งออก CSV</span>';
 document.getElementById('changePwBtn').innerHTML  = ICONS.id       + '<span class="act-tx">โปรไฟล์ของฉัน</span>';
@@ -472,18 +473,56 @@ document.getElementById('logoutBtn').innerHTML    = ICONS.logout   + '<span clas
 })();
 
 // ---- sidebar collapse (rail) ----
-// A manual toggle ≥960px (choice saved); below 960 the rail is forced and the
-// toggle is hidden; below 640 the sidebar is gone entirely (bottom tab bar).
+// Manual toggle (button at sidebar bottom or "[" key); choice saved in
+// localStorage 'wo.sidebar' ('rail'|'full'). html.sb-rail is also set before first
+// paint by js/sidebar-init.js. <=960px is forced collapsed (toggle hidden by CSS).
 (function(){
-  const shell  = document.querySelector('.shell');
+  const root   = document.documentElement;
   const toggle = document.getElementById('railToggle');
-  if (!shell || !toggle) return;
-  toggle.innerHTML = ICONS.chevron + '<span class="nav-tx">ย่อเมนู</span>';
+  if (!toggle) return;
+  toggle.innerHTML = ICONS.chevron + '<span class="nav-tx">ย่อเมนู</span><kbd class="sb-kbd">[</kbd>';
+  const label  = toggle.querySelector('.nav-tx');
   const forceMq = window.matchMedia('(max-width:960px)');
-  // locked collapsed (user 2026-11-24); expands as an overlay on hover/focus (CSS)
-  const apply = () => { shell.classList.add('rail'); toggle.hidden = true; };
-  forceMq.addEventListener('change', apply);
-  apply();
+  const getPref = () => { try{ return localStorage.getItem('wo.sidebar'); }catch(e){ return null; } };
+  const paint = () => {
+    const r = root.classList.contains('sb-rail');
+    const t = r ? 'ขยายเมนู' : 'ย่อเมนู';
+    toggle.setAttribute('aria-pressed', r); toggle.setAttribute('aria-label', t);
+    toggle.dataset.tip = t; label.textContent = t;
+  };
+  const set = (r) => {
+    try{ localStorage.setItem('wo.sidebar', r ? 'rail' : 'full'); }catch(e){}
+    root.classList.toggle('sb-rail', r || forceMq.matches); paint();
+  };
+  toggle.addEventListener('click', () => set(getPref() !== 'rail'));
+  document.addEventListener('keydown', e => {
+    if (e.key !== '[' || e.ctrlKey || e.metaKey || e.altKey || forceMq.matches) return;
+    if (document.getElementById('appShell').hidden) return;
+    const t = e.target, tag = t && t.tagName;
+    if (tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT' || (t && t.isContentEditable)) return;
+    set(getPref() !== 'rail');
+  });
+  forceMq.addEventListener('change', paint);
+  paint();
+
+  // tooltip on hover/focus — only while collapsed
+  const side = document.getElementById('sidebar');
+  const tip = document.createElement('div'); tip.className = 'sb-tip'; tip.setAttribute('role','tooltip'); document.body.appendChild(tip);
+  const hide = () => tip.classList.remove('on');
+  const show = el => {
+    if (!root.classList.contains('sb-rail')) return hide();
+    const txt = el.dataset.tip; if (!txt) return hide();
+    const r = el.getBoundingClientRect();
+    tip.textContent = txt; tip.style.left = (r.right + 12) + 'px'; tip.style.top = (r.top + r.height/2) + 'px'; tip.classList.add('on');
+  };
+  const tipEl = e => e.target.closest && e.target.closest('[data-tip]');
+  side.addEventListener('mouseover', e => { const el = tipEl(e); el ? show(el) : hide(); });
+  side.addEventListener('mouseleave', hide);
+  side.addEventListener('focusin', e => { const el = tipEl(e); el ? show(el) : hide(); });
+  side.addEventListener('focusout', hide);
+  side.addEventListener('click', hide);
+  side.addEventListener('scroll', hide);
+  new MutationObserver(hide).observe(root, {attributes:true, attributeFilter:['class']});
 })();
 
 // which filter controls make sense on each view (others are hidden)

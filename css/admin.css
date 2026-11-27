@@ -75,7 +75,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{outline:none;}
 
 /* nav shell: full sidebar, collapsible to an icon rail (JS toggle / forced <960px),
    bottom tab bar <640px */
-.shell{display:grid;grid-template-columns:224px 1fr;min-height:100vh;align-items:start;transition:grid-template-columns .18s ease;}
+.shell{display:grid;grid-template-columns:224px minmax(0,1fr);min-height:100vh;align-items:start;}
 .sidebar{background:var(--night) var(--night-grid);color:#fff;border-right:1px solid var(--night-2);padding:20px 14px;display:flex;flex-direction:column;gap:16px;
   position:sticky;top:0;height:100vh;overflow-y:auto;overscroll-behavior:contain;}
 .botnav{display:none;}
@@ -83,23 +83,6 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{outline:none;}
 .rail-toggle{margin-top:4px;color:var(--on-dark-2);font-size:12px;font-weight:500;}
 .rail-toggle svg{width:16px;height:16px;transition:transform .2s ease;}
 .rail-toggle:hover{color:#fff;}
-
-.shell.rail{grid-template-columns:64px 1fr;}
-.shell.rail .sidebar{padding:16px 8px;align-items:center;}
-.shell.rail .brand{gap:0;padding-bottom:14px;}
-.shell.rail .brand-full,
-.shell.rail #syncText,
-.shell.rail .navlist::before,
-.shell.rail #acctActions::before,
-.shell.rail .navbtn .nav-tx,
-.shell.rail .rail-toggle .nav-tx,
-.shell.rail #acctActions .act-tx{display:none;}
-.shell.rail .brand-mark{display:block;width:38px;height:auto;}
-.shell.rail .navbtn,
-.shell.rail #acctActions button,
-.shell.rail .rail-toggle{justify-content:center;gap:0;padding:10px;}
-.shell.rail .sync-box{padding:6px;justify-content:center;}
-.shell.rail .rail-toggle svg{transform:rotate(180deg);}
 
 @media (max-width:640px){
   .shell,.shell.rail{grid-template-columns:1fr;}
@@ -1117,20 +1100,6 @@ html,body,.sidebar,.main,.table-wrap,.hm-scroll,.modal{scrollbar-width:none;-ms-
 .pagehead > div:first-child{display:none}
 .pagehead:not(:has(#acctActions)){display:none}
 
-/* rail locked; hover/focus expands the sidebar over the page (user 2026-11-24) */
-@media (min-width:640px){
-  .shell.rail .sidebar{transition:width .18s ease,box-shadow .18s ease;width:64px;z-index:40}
-  .shell.rail .sidebar:hover,.shell.rail .sidebar:focus-within{width:240px;padding:16px 14px;align-items:stretch;box-shadow:8px 0 24px -8px rgba(0,0,0,.35)}
-  .shell.rail .sidebar:hover .brand-full,.shell.rail .sidebar:focus-within .brand-full{display:block}
-  .shell.rail .sidebar:hover .brand-mark,.shell.rail .sidebar:focus-within .brand-mark{display:none}
-  .shell.rail .sidebar:hover #syncText,.shell.rail .sidebar:hover .navlist::before,.shell.rail .sidebar:hover #acctActions::before,
-  .shell.rail .sidebar:hover .navbtn .nav-tx,.shell.rail .sidebar:hover #acctActions .act-tx,
-  .shell.rail .sidebar:focus-within #syncText,.shell.rail .sidebar:focus-within .navlist::before,.shell.rail .sidebar:focus-within #acctActions::before,
-  .shell.rail .sidebar:focus-within .navbtn .nav-tx,.shell.rail .sidebar:focus-within #acctActions .act-tx{display:revert}
-  .shell.rail .sidebar:hover .navbtn,.shell.rail .sidebar:hover #acctActions button,.shell.rail .sidebar:hover .sync-box,
-  .shell.rail .sidebar:focus-within .navbtn,.shell.rail .sidebar:focus-within #acctActions button,.shell.rail .sidebar:focus-within .sync-box{justify-content:flex-start;gap:11px;padding:10px 12px}
-}
-
 /* compact filter bar (user 2026-11-24): one slim row, no card, ~36px tall */
 .filterbar{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;margin-bottom:10px!important;gap:6px 14px!important;flex-wrap:wrap}
 .fb-group{gap:6px}
@@ -1145,3 +1114,47 @@ html,body,.sidebar,.main,.table-wrap,.hm-scroll,.modal{scrollbar-width:none;-ms-
 .searchbox{height:30px!important;border-radius:999px!important;max-width:240px!important;min-width:150px!important}
 .searchbox input{font-size:13px}
 .scope-line{display:none!important}
+
+/* ===== sidebar toggle (approved mockup erp-sidebar.html, 2026-11-27) =====
+   html.sb-rail = collapsed. Set before first paint by js/sidebar-init.js
+   (saved choice in localStorage 'wo.sidebar', or forced <=960px). No hover-expand. */
+:root{--sb-w-full:224px;--sb-w-rail:64px;--sb-dur:240ms;--sb-ease:cubic-bezier(.22,.61,.36,1);}
+.shell{grid-template-columns:var(--sb-w-full) minmax(0,1fr);transition:grid-template-columns var(--sb-dur) var(--sb-ease);}
+html.sb-rail .shell{grid-template-columns:var(--sb-w-rail) minmax(0,1fr);}
+.sidebar{padding:16px 12px;align-items:stretch;overflow-x:hidden;z-index:40;}
+/* logo: both images stacked, crossfade */
+.brand{position:relative;display:block;height:44px;box-sizing:content-box;margin:2px 0 0;padding:0 0 18px;}
+.brand-full,.brand-mark{position:absolute;left:0;top:0;height:44px;box-sizing:border-box;object-fit:contain;display:block;
+  transition:opacity var(--sb-dur) var(--sb-ease);}
+.brand-full{width:176px;max-width:none;padding:6px 10px;opacity:1;}
+.brand-mark{width:40px;padding:6px 4px;opacity:0;}
+html.sb-rail .brand-full{opacity:0;}
+html.sb-rail .brand-mark{opacity:1;}
+/* rows: fixed padding so icons never move */
+.navbtn,.sidebar #acctActions button{height:40px;padding:0 11px;gap:12px;justify-content:flex-start;}
+.navlist::before,.sidebar #acctActions::before{padding:0 11px 8px;white-space:nowrap;overflow:hidden;}
+.sidebar #acctActions{margin-top:auto;}
+.sync-box{height:32px;padding:0 11px;gap:12px;margin-top:6px;}
+.sync-dot{width:8px;height:8px;margin:0 5px;}
+/* labels: opacity only, never display:none */
+.nav-tx,.act-tx,#syncText,.sb-kbd,.navlist::before,.sidebar #acctActions::before{white-space:nowrap;overflow:hidden;opacity:1;
+  transition:opacity 144ms var(--sb-ease) 60ms;}
+html.sb-rail .nav-tx,html.sb-rail .act-tx,html.sb-rail #syncText,html.sb-rail .sb-kbd,
+html.sb-rail .navlist::before,html.sb-rail #acctActions::before{opacity:0;transition:opacity 96ms var(--sb-ease) 0ms;}
+.sidebar #acctActions .act-tx{display:inline;}
+html.sb-rail .navbtn .nav-badge{position:absolute;top:3px;right:3px;margin:0;padding:0 5px;}
+/* toggle button */
+.rail-toggle{margin-top:6px;border-top:1px solid rgba(255,255,255,.1);border-radius:0 0 10px 10px;height:48px;flex:none;}
+.rail-toggle svg{transition:transform var(--sb-dur) var(--sb-ease);}
+html.sb-rail .rail-toggle svg{transform:rotate(180deg);}
+.sb-kbd{margin-left:auto;font-family:inherit;font-size:11px;font-weight:600;color:var(--on-dark-2);border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:0 6px;}
+/* tooltip (JS, position:fixed so the scrolling sidebar can't clip it) */
+.sb-tip{position:fixed;z-index:60;pointer-events:none;background:#fff;color:var(--ink);font-size:12.5px;font-weight:600;padding:5px 10px;
+  border-radius:8px;white-space:nowrap;box-shadow:0 8px 24px -8px rgba(16,22,30,.3);transform:translateY(-50%);opacity:0;transition:opacity .12s;}
+.sb-tip.on{opacity:1;}
+/* <=960px: forced collapsed, toggle hidden */
+@media (max-width:960px){ .rail-toggle{display:none;} }
+@media (max-width:640px){ .shell,html.sb-rail .shell{grid-template-columns:1fr;} }
+@media (prefers-reduced-motion: reduce){
+  .shell,.brand-full,.brand-mark,.nav-tx,.act-tx,#syncText,.sb-kbd,.navlist::before,#acctActions::before,.rail-toggle svg,.sb-tip{transition:none!important;}
+}

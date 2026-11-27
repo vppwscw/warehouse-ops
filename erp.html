@@ -16,7 +16,8 @@
 <script src="js/pwa.js" data-sw="sw.js"></script>
 <script src="js/gateway.js?v=2"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<link rel="stylesheet" href="css/admin.css?v=88">
+<script src="js/sidebar-init.js?v=1"></script>
+<link rel="stylesheet" href="css/admin.css?v=90">
 </head>
 <body>
 
@@ -32,14 +33,14 @@
 
 <!-- ===== MAIN APP ===== -->
 <div class="shell" id="appShell" hidden>
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar" aria-label="เมนูหลัก">
     <div class="brand">
       <img class="brand-mark" id="brandMark" src="assets/vppw-mark.png?v=2" alt="">
       <img class="brand-full" src="assets/vppw-logo.png?v=2" alt="VPPW Warehouse-KM.23">
     </div>
     <nav class="navlist" id="navList"></nav>
     <div class="sync-box" id="syncBox"><span class="sync-dot"></span><span id="syncText">กำลังเชื่อมต่อ...</span></div>
-    <button type="button" class="rail-toggle navbtn" id="railToggle" aria-label="ย่อ/ขยายเมนู" aria-pressed="false"></button>
+    <button type="button" class="rail-toggle navbtn" id="railToggle" aria-label="ย่อเมนู" aria-controls="sidebar" aria-pressed="false" data-tip="ย่อเมนู"></button>
   </aside>
 
   <main class="main">
@@ -492,6 +493,6 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/supabase-config.js?v=4"></script>
 <script src="js/anim.js?v=1"></script>
-<script src="js/admin.js?v=95"></script>
+<script src="js/admin.js?v=96"></script>
 </body>
 </html>
